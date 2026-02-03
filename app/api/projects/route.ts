@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
-import type { Project, ProjectInsert } from "@/lib/db/types"
+import type { Project, ProjectInsert, Chat } from "@/lib/db/types"
 
 // GET /api/projects — List all projects
 export async function GET() {
@@ -59,6 +59,22 @@ export async function POST(request: NextRequest) {
     INSERT INTO projects (id, slug, name, description, color, repo_url, context_path, created_at, updated_at)
     VALUES (@id, @slug, @name, @description, @color, @repo_url, @context_path, @created_at, @updated_at)
   `).run(project)
+
+  // Create default "General" chat for the project
+  const chatId = crypto.randomUUID()
+  const chat: Chat = {
+    id: chatId,
+    project_id: id,
+    title: "General",
+    participants: JSON.stringify(["ada"]),
+    created_at: now,
+    updated_at: now,
+  }
+  
+  db.prepare(`
+    INSERT INTO chats (id, project_id, title, participants, created_at, updated_at)
+    VALUES (@id, @project_id, @title, @participants, @created_at, @updated_at)
+  `).run(chat)
 
   return NextResponse.json({ project }, { status: 201 })
 }
