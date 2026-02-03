@@ -1,10 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Trash2, Clock, Calendar } from "lucide-react"
+import { X, Trash2, Clock, Calendar, MessageSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTaskStore } from "@/lib/stores/task-store"
-import type { Task, TaskStatus, TaskPriority } from "@/lib/db/types"
+import { CommentThread } from "./comment-thread"
+import { CommentInput } from "./comment-input"
+import type { Task, TaskStatus, TaskPriority, Comment } from "@/lib/db/types"
 
 interface TaskModalProps {
   task: Task | null
@@ -47,6 +49,10 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
   
+  // Comments state
+  const [comments, setComments] = useState<Comment[]>([])
+  const [loadingComments, setLoadingComments] = useState(false)
+  
   const updateTask = useTaskStore((s) => s.updateTask)
   const deleteTask = useTaskStore((s) => s.deleteTask)
 
@@ -62,8 +68,39 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
       const taskTags = task.tags ? JSON.parse(task.tags) as string[] : []
       setTags(taskTags.join(", "))
       setShowDeleteConfirm(false)
+      
+      // Fetch comments
+      fetchComments(task.id)
     }
   }, [task, open])
+
+  const fetchComments = async (taskId: string) => {
+    setLoadingComments(true)
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/comments`)
+      if (response.ok) {
+        const data = await response.json()
+        setComments(data.comments)
+      }
+    } finally {
+      setLoadingComments(false)
+    }
+  }
+
+  const handleAddComment = async (content: string) => {
+    if (!task) return
+    
+    const response = await fetch(`/api/tasks/${task.id}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      setComments((prev) => [...prev, data.comment])
+    }
+  }
 
   const handleSave = async () => {
     if (!task) return
@@ -75,6 +112,9 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
       .map((t) => t.trim())
       .filter((t) => t.length > 0)
     
+    const oldStatus = task.status
+    const newStatus = status
+    
     try {
       await updateTask(task.id, {
         title: title.trim(),
@@ -85,6 +125,24 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
         requires_human_review: requiresHumanReview ? 1 : 0,
         tags: tagArray.length > 0 ? JSON.stringify(tagArray) : null,
       })
+      
+      // Auto-create status change comment if status changed
+      if (oldStatus !== newStatus) {
+        const oldLabel = STATUS_OPTIONS.find(s => s.value === oldStatus)?.label || oldStatus
+        const newLabel = STATUS_OPTIONS.find(s => s.value === newStatus)?.label || newStatus
+        
+        await fetch(`/api/tasks/${task.id}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: `Status changed from ${oldLabel} to ${newLabel}`,
+            type: "status_change",
+            author: "dan",
+            author_type: "human",
+          }),
+        })
+      }
+      
       onOpenChange(false)
     } finally {
       setSaving(false)
@@ -114,7 +172,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
       />
       
       {/* Modal */}
-      <div className="relative bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+      <div className="relative bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between p-4 border-b border-[var(--border)]">
           <div className="flex-1 pr-4">
@@ -134,7 +192,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
               >
                 {STATUS_OPTIONS.find(s => s.value === status)?.label}
               </span>
-              {task.requires_human_review && (
+              {requiresHumanReview && (
                 <span className="px-2 py-0.5 rounded text-xs font-medium bg-[var(--accent-red)] text-white">
                   Needs Review
                 </span>
@@ -164,23 +222,34 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Add a description..."
-                  className="w-full min-h-[150px] bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-blue)] resize-none"
+                  className="w-full min-h-[100px] bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-blue)] resize-none"
                 />
               </div>
               
-              {/* Comments placeholder */}
+              {/* Comments Section */}
               <div className="border-t border-[var(--border)] pt-4">
-                <label className="text-sm font-medium text-[var(--text-secondary)] mb-2 block">
-                  Comments
-                </label>
-                <div className="text-sm text-[var(--text-muted)] italic">
-                  Comments coming in issue #52
+                <div className="flex items-center gap-2 mb-4">
+                  <MessageSquare className="h-4 w-4 text-[var(--text-secondary)]" />
+                  <label className="text-sm font-medium text-[var(--text-secondary)]">
+                    Comments ({comments.length})
+                  </label>
                 </div>
+                
+                {loadingComments ? (
+                  <div className="text-sm text-[var(--text-muted)]">Loading comments...</div>
+                ) : (
+                  <>
+                    <div className="max-h-[300px] overflow-y-auto mb-4">
+                      <CommentThread comments={comments} />
+                    </div>
+                    <CommentInput onSubmit={handleAddComment} />
+                  </>
+                )}
               </div>
             </div>
             
             {/* Sidebar */}
-            <div className="w-56 space-y-4">
+            <div className="w-52 space-y-4 flex-shrink-0">
               {/* Status */}
               <div>
                 <label className="text-sm font-medium text-[var(--text-secondary)] mb-1 block">
