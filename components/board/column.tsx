@@ -1,5 +1,6 @@
 "use client"
 
+import { Droppable } from "@hello-pangea/dnd"
 import type { Task, TaskStatus } from "@/lib/db/types"
 import { TaskCard } from "./task-card"
 import { Plus } from "lucide-react"
@@ -41,22 +42,36 @@ export function Column({
         </div>
       </div>
       
-      {/* Tasks */}
-      <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-        {tasks.map((task) => (
-          <TaskCard 
-            key={task.id} 
-            task={task} 
-            onClick={() => onTaskClick(task)}
-          />
-        ))}
-        
-        {tasks.length === 0 && (
-          <div className="text-center py-8 text-sm text-[var(--text-muted)]">
-            No tasks
+      {/* Droppable Task Area */}
+      <Droppable droppableId={status}>
+        {(provided, snapshot) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            className={`flex-1 p-2 space-y-2 overflow-y-auto transition-colors ${
+              snapshot.isDraggingOver 
+                ? "bg-[var(--accent-blue)]/10 border-2 border-dashed border-[var(--accent-blue)] rounded" 
+                : ""
+            }`}
+          >
+            {tasks.map((task, index) => (
+              <TaskCard 
+                key={task.id} 
+                task={task}
+                index={index}
+                onClick={() => onTaskClick(task)}
+              />
+            ))}
+            {provided.placeholder}
+            
+            {tasks.length === 0 && !snapshot.isDraggingOver && (
+              <div className="text-center py-8 text-sm text-[var(--text-muted)]">
+                No tasks
+              </div>
+            )}
           </div>
         )}
-      </div>
+      </Droppable>
       
       {/* Add button */}
       {showAddButton && onAddTask && (

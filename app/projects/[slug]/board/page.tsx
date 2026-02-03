@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react"
 import { Board } from "@/components/board/board"
 import { CreateTaskModal } from "@/components/board/create-task-modal"
+import { TaskModal } from "@/components/board/task-modal"
 import type { Task, TaskStatus, Project } from "@/lib/db/types"
 
 type PageProps = {
@@ -15,6 +16,7 @@ export default function BoardPage({ params }: PageProps) {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [createModalStatus, setCreateModalStatus] = useState<TaskStatus>("backlog")
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
 
   useEffect(() => {
     async function fetchProject() {
@@ -34,8 +36,7 @@ export default function BoardPage({ params }: PageProps) {
 
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task)
-    // TODO: Open task modal (implemented in #51)
-    console.log("Task clicked:", task.title)
+    setTaskModalOpen(true)
   }
 
   if (!project) {
@@ -59,6 +60,12 @@ export default function BoardPage({ params }: PageProps) {
         onOpenChange={setCreateModalOpen}
         projectId={project.id}
         initialStatus={createModalStatus}
+      />
+      
+      <TaskModal
+        task={selectedTask}
+        open={taskModalOpen}
+        onOpenChange={setTaskModalOpen}
       />
     </>
   )
