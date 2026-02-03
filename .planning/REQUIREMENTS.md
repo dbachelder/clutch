@@ -111,46 +111,46 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SESS-01 | TBD | Pending |
-| SESS-02 | TBD | Pending |
-| SESS-03 | TBD | Pending |
-| SESS-04 | TBD | Pending |
-| ANLY-01 | TBD | Pending |
-| ANLY-02 | TBD | Pending |
-| ANLY-03 | TBD | Pending |
-| ANLY-04 | TBD | Pending |
-| CRON-01 | TBD | Pending |
-| CRON-02 | TBD | Pending |
-| CRON-03 | TBD | Pending |
-| CRON-04 | TBD | Pending |
-| CRON-05 | TBD | Pending |
-| CHAT-01 | TBD | Pending |
-| CHAT-02 | TBD | Pending |
-| CHAT-03 | TBD | Pending |
-| CHAT-04 | TBD | Pending |
-| TASK-01 | TBD | Pending |
-| TASK-02 | TBD | Pending |
-| TASK-03 | TBD | Pending |
-| TASK-04 | TBD | Pending |
-| TASK-05 | TBD | Pending |
-| PROJ-01 | TBD | Pending |
-| PROJ-02 | TBD | Pending |
-| PROJ-03 | TBD | Pending |
-| PROJ-04 | TBD | Pending |
-| PROJ-05 | TBD | Pending |
-| UI-01 | TBD | Pending |
-| UI-02 | TBD | Pending |
-| UI-03 | TBD | Pending |
-| UI-04 | TBD | Pending |
-| INFR-01 | TBD | Pending |
-| INFR-02 | TBD | Pending |
-| INFR-03 | TBD | Pending |
+| SESS-01 | Phase 3 | Pending |
+| SESS-02 | Phase 3 | Pending |
+| SESS-03 | Phase 3 | Pending |
+| SESS-04 | Phase 3 | Pending |
+| ANLY-01 | Phase 5 | Pending |
+| ANLY-02 | Phase 5 | Pending |
+| ANLY-03 | Phase 5 | Pending |
+| ANLY-04 | Phase 5 | Pending |
+| CRON-01 | Phase 4 | Pending |
+| CRON-02 | Phase 4 | Pending |
+| CRON-03 | Phase 4 | Pending |
+| CRON-04 | Phase 4 | Pending |
+| CRON-05 | Phase 4 | Pending |
+| CHAT-01 | Phase 6 | Pending |
+| CHAT-02 | Phase 6 | Pending |
+| CHAT-03 | Phase 6 | Pending |
+| CHAT-04 | Phase 6 | Pending |
+| TASK-01 | Phase 7 | Pending |
+| TASK-02 | Phase 7 | Pending |
+| TASK-03 | Phase 7 | Pending |
+| TASK-04 | Phase 7 | Pending |
+| TASK-05 | Phase 7 | Pending |
+| PROJ-01 | Phase 8 | Pending |
+| PROJ-02 | Phase 8 | Pending |
+| PROJ-03 | Phase 8 | Pending |
+| PROJ-04 | Phase 8 | Pending |
+| PROJ-05 | Phase 8 | Pending |
+| UI-01 | Phase 9 | Pending |
+| UI-02 | Phase 9 | Pending |
+| UI-03 | Phase 9 | Pending |
+| UI-04 | Phase 2 | Pending |
+| INFR-01 | Phase 10 | Pending |
+| INFR-02 | Phase 10 | Pending |
+| INFR-03 | Phase 10 | Pending |
 
 **Coverage:**
 - v1 requirements: 33 total
-- Mapped to phases: 0
-- Unmapped: 33 ⚠️
+- Mapped to phases: 33
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-02*
-*Last updated: 2026-02-02 after initial definition*
+*Last updated: 2026-02-02 after roadmap creation*
