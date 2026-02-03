@@ -101,6 +101,67 @@ export default function CronPage() {
     router.push(`/cron/${jobId}`)
   }
 
+  const handleRunJob = async (jobId: string) => {
+    try {
+      // TODO: Replace with actual OpenClaw API call
+      // const response = await fetch('/api/cron/run', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ jobId })
+      // })
+      
+      // if (!response.ok) {
+      //   throw new Error(`Failed to run job: ${response.statusText}`)
+      // }
+
+      // For now, show success notification
+      console.log(`Running job: ${jobId}`)
+      // TODO: Show toast notification
+      
+    } catch (err) {
+      console.error('Failed to run job:', err)
+      // TODO: Show error toast notification
+    }
+  }
+
+  const handleToggleJob = async (jobId: string, enabled: boolean) => {
+    try {
+      // TODO: Replace with actual OpenClaw API call
+      // const response = await fetch('/api/cron/update', {
+      //   method: 'PATCH',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ 
+      //     jobId,
+      //     patch: { enabled }
+      //   })
+      // })
+      
+      // if (!response.ok) {
+      //   throw new Error(`Failed to toggle job: ${response.statusText}`)
+      // }
+
+      // For now, optimistic UI update
+      setJobs(prevJobs => 
+        prevJobs.map(job => 
+          job.jobId === jobId 
+            ? { 
+                ...job, 
+                enabled,
+                nextRunMs: enabled ? (job.schedule.kind === 'at' ? job.schedule.atMs : Date.now() + 120000) : undefined
+              } 
+            : job
+        )
+      )
+      
+      console.log(`${enabled ? 'Enabled' : 'Disabled'} job: ${jobId}`)
+      // TODO: Show toast notification
+      
+    } catch (err) {
+      console.error('Failed to toggle job:', err)
+      // TODO: Show error toast notification
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -158,6 +219,8 @@ export default function CronPage() {
         <CronTable 
           jobs={jobs}
           onJobClick={handleJobClick}
+          onRunJob={handleRunJob}
+          onToggleJob={handleToggleJob}
           loading={loading}
         />
         

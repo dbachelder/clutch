@@ -4,10 +4,12 @@ import CronRow from "./cron-row"
 interface CronTableProps {
   jobs: CronJob[]
   onJobClick: (jobId: string) => void
+  onRunJob?: (jobId: string) => Promise<void>
+  onToggleJob?: (jobId: string, enabled: boolean) => Promise<void>
   loading?: boolean
 }
 
-export default function CronTable({ jobs, onJobClick, loading = false }: CronTableProps) {
+export default function CronTable({ jobs, onJobClick, onRunJob, onToggleJob, loading = false }: CronTableProps) {
   if (loading) {
     return (
       <div className="bg-white shadow rounded-lg">
@@ -96,6 +98,12 @@ export default function CronTable({ jobs, onJobClick, loading = false }: CronTab
               >
                 Next Run
               </th>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -104,6 +112,8 @@ export default function CronTable({ jobs, onJobClick, loading = false }: CronTab
                 key={job.jobId}
                 job={job}
                 onClick={onJobClick}
+                onRunJob={onRunJob}
+                onToggleJob={onToggleJob}
               />
             ))}
           </tbody>

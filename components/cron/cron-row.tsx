@@ -1,12 +1,16 @@
 import { CronJob, formatRelativeTime, formatAbsoluteTime } from "@/lib/cron-utils"
 import ScheduleBadge from "./schedule-badge"
+import RunButton from "./run-button"
+import EnableToggle from "./enable-toggle"
 
 interface CronRowProps {
   job: CronJob
   onClick: (jobId: string) => void
+  onRunJob?: (jobId: string) => Promise<void>
+  onToggleJob?: (jobId: string, enabled: boolean) => Promise<void>
 }
 
-export default function CronRow({ job, onClick }: CronRowProps) {
+export default function CronRow({ job, onClick, onRunJob, onToggleJob }: CronRowProps) {
   const handleClick = () => {
     onClick(job.jobId)
   }
@@ -73,16 +77,35 @@ export default function CronRow({ job, onClick }: CronRowProps) {
       </td>
       
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-        {job.nextRunMs ? (
+        {job.nextRunMs && job.enabled ? (
           <div>
             <div>{formatRelativeTime(job.nextRunMs)}</div>
             <div className="text-xs text-gray-400">
               {formatAbsoluteTime(job.nextRunMs)}
             </div>
           </div>
-        ) : (
+        ) : job.enabled ? (
           <span className="text-gray-400">N/A</span>
+        ) : (
+          <span className="text-gray-400">Paused</span>
         )}
+      </td>
+      
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div className="flex items-center space-x-2">
+          <EnableToggle
+            jobId={job.jobId}
+            jobName={job.name}
+            enabled={job.enabled}
+            onToggle={onToggleJob}
+          />
+          <RunButton
+            jobId={job.jobId}
+            jobName={job.name}
+            onRun={onRunJob}
+            disabled={!job.enabled}
+          />
+        </div>
       </td>
     </tr>
   )
