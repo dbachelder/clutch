@@ -64,6 +64,68 @@ npm install
 npm run dev
 ```
 
+## Testing
+
+The project uses Vitest with React Testing Library for unit and component tests.
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run tests with coverage report
+npm test -- --coverage
+
+# Run tests in watch mode (re-runs on file changes)
+npm test -- --watch
+
+# Run tests with UI (browser-based test runner)
+npm run test:ui
+```
+
+### Test Structure
+
+- **Unit tests**: `lib/__tests__/` - Test utility functions and business logic
+- **Component tests**: `components/__tests__/` - Test React components with user interactions
+- **Test setup**: `lib/test-setup.ts` - Global test configuration and mocks
+
+### Writing Tests
+
+Follow these patterns when adding tests:
+
+**Utility functions** (lib/):
+```typescript
+import { describe, it, expect } from 'vitest'
+import { myUtility } from '../my-utility'
+
+describe('myUtility', () => {
+  it('handles basic case', () => {
+    expect(myUtility('input')).toBe('expected')
+  })
+})
+```
+
+**React components** (components/):
+```typescript
+import { describe, it, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { MyComponent } from '../my-component'
+
+describe('MyComponent', () => {
+  it('renders correctly', () => {
+    render(<MyComponent />)
+    expect(screen.getByText('Expected text')).toBeInTheDocument()
+  })
+})
+```
+
+### Coverage Requirements
+
+- Aim for >80% coverage on utility functions
+- Test all component user interactions and edge cases
+- Mock external dependencies (WebSocket, APIs, Next.js router)
+
 ## Status
 
 🚧 **Planning phase** — laying groundwork.
