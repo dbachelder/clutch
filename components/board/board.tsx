@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { DragDropContext, type DropResult } from "@hello-pangea/dnd"
 import { useTaskStore } from "@/lib/stores/task-store"
 import { Column } from "./column"
 import type { Task, TaskStatus } from "@/lib/db/types"
@@ -20,11 +21,30 @@ const COLUMNS: { status: TaskStatus; title: string; color: string; showAdd: bool
 ]
 
 export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
-  const { tasks, loading, error, fetchTasks, getTasksByStatus } = useTaskStore()
+  const { tasks, loading, error, fetchTasks, getTasksByStatus, moveTask } = useTaskStore()
 
   useEffect(() => {
     fetchTasks(projectId)
   }, [fetchTasks, projectId])
+
+  const handleDragEnd = (result: DropResult) => {
+    const { destination, source, draggableId } = result
+
+    // Dropped outside a column
+    if (!destination) return
+
+    // Dropped in same position
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return
+    }
+
+    // Move the task to new status
+    const newStatus = destination.droppableId as TaskStatus
+    moveTask(draggableId, newStatus)
+  }
 
   if (loading && tasks.length === 0) {
     return (
@@ -48,19 +68,21 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
-      {COLUMNS.map((col) => (
-        <Column
-          key={col.status}
-          status={col.status}
-          title={col.title}
-          color={col.color}
-          tasks={getTasksByStatus(col.status)}
-          onTaskClick={onTaskClick}
-          onAddTask={() => onAddTask(col.status)}
-          showAddButton={col.showAdd}
-        />
-      ))}
-    </div>
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <div className="flex gap-4 overflow-x-auto pb-4">
+        {COLUMNS.map((col) => (
+          <Column
+            key={col.status}
+            status={col.status}
+            title={col.title}
+            color={col.color}
+            tasks={getTasksByStatus(col.status)}
+            onTaskClick={onTaskClick}
+            onAddTask={() => onAddTask(col.status)}
+            showAddButton={col.showAdd}
+          />
+        ))}
+      </div>
+    </DragDropContext>
   )
 }

@@ -10,6 +10,7 @@
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
     "@tanstack/react-table": "^8.21.3",
     "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",
