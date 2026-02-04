@@ -146,16 +146,16 @@ const columns: ColumnDef<SessionRowData>[] = [
     ),
   },
   {
-    accessorKey: 'tokens.total',
+    accessorKey: 'totalTokens',
     header: ({ column }) => <SortHeader column={column}>Tokens</SortHeader>,
-    cell: ({ row }) => (
-      <div className="flex flex-col">
-        <span className="tabular-nums">{formatTokens(row.original.tokens.total)}</span>
-        <span className="text-xs text-muted-foreground">
-          {formatTokens(row.original.tokens.input)} in / {formatTokens(row.original.tokens.output)} out
-        </span>
-      </div>
-    ),
+    cell: ({ row }) => {
+      const tokens = row.original.totalTokens || row.original.tokens?.total || 0;
+      return (
+        <div className="flex flex-col">
+          <span className="tabular-nums">{formatTokens(tokens)}</span>
+        </div>
+      );
+    },
   },
   {
     accessorKey: 'duration',
@@ -228,7 +228,7 @@ interface SessionTableProps {
 
 export function SessionTable({ onRowClick }: SessionTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: 'updatedAt', desc: true },
+    { id: 'createdAt', desc: true },
   ]);
   
   const sessions = useSessionStore((state) => state.sessions);
