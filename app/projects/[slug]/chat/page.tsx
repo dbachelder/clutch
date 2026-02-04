@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, use, useCallback } from "react"
-import { MessageSquare, Wifi, WifiOff, Bot, Clock, Cpu, Activity } from "lucide-react"
+import { MessageSquare, Wifi, WifiOff, Bot, Clock, Cpu, Activity, Timer } from "lucide-react"
 import { useChatStore } from "@/lib/stores/chat-store"
 import { useChatEvents } from "@/lib/hooks/use-chat-events"
 import { useOpenClawChat } from "@/lib/hooks/use-openclaw-chat"
@@ -126,9 +126,11 @@ export default function ChatPage({ params }: PageProps) {
     createdAt?: number
     updatedAt?: number
     runtime?: string
+    isCron?: boolean
   }
   
   const [activeSubagents, setActiveSubagents] = useState<SubAgentDetails[]>([])
+  const [activeCrons, setActiveCrons] = useState<SubAgentDetails[]>([])
 
   useEffect(() => {
     if (!rpcConnected) return
@@ -167,9 +169,46 @@ export default function ChatPage({ params }: PageProps) {
               createdAt: s.createdAt as number | undefined,
               updatedAt: s.updatedAt as number | undefined,
               runtime,
+              isCron: false,
             }
           })
+
+        // Filter for cron sessions associated with this project
+        // Look for cron sessions with labels that match the project slug
+        const crons = (sessions || [])
+          .filter((s) => {
+            // Look for sessions with cron-related labels that match the project
+            const isRecentlyActive = s.updatedAt && s.updatedAt > fiveMinutesAgo
+            const matchesProject = s.label && s.label.includes(slug) // e.g., "trap-work-loop"
+            const isCronSession = s.sessionTarget === "isolated" && s.label && s.label.includes("loop")
+            
+            return isRecentlyActive && (matchesProject || isCronSession)
+          })
+          .map((s) => {
+            // Calculate runtime if we have creation time
+            let runtime: string | undefined
+            if (s.createdAt) {
+              const runtimeMs = Date.now() - s.createdAt
+              const minutes = Math.floor(runtimeMs / 60000)
+              const seconds = Math.floor((runtimeMs % 60000) / 1000)
+              runtime = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+            }
+            
+            return {
+              key: s.key as string,
+              label: s.label as string | undefined,
+              model: s.model as string | undefined,
+              status: s.status as string | undefined,
+              agentId: s.agentId as string | undefined,
+              createdAt: s.createdAt as number | undefined,
+              updatedAt: s.updatedAt as number | undefined,
+              runtime,
+              isCron: true,
+            }
+          })
+
         setActiveSubagents(subagents)
+        setActiveCrons(crons)
       } catch (err) {
         console.error("[Chat] Failed to poll subagents:", err)
       }
@@ -350,50 +389,103 @@ export default function ChatPage({ params }: PageProps) {
                         enabled={settings.streamingEnabled} 
                         onChange={toggleStreaming} 
                       />
-                      {activeSubagents.length > 0 && (
+                      {(activeSubagents.length > 0 || activeCrons.length > 0) && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span 
                               className="flex items-center gap-1 text-purple-400 cursor-help hover:text-purple-300 transition-colors"
                             >
                               <Bot className="h-3 w-3 animate-pulse" />
-                              {activeSubagents.length} sub-agent{activeSubagents.length > 1 ? "s" : ""}
+                              {activeSubagents.length > 0 && (
+                                <span>{activeSubagents.length} sub-agent{activeSubagents.length > 1 ? "s" : ""}</span>
+                              )}
+                              {activeSubagents.length > 0 && activeCrons.length > 0 && <span> | </span>}
+                              {activeCrons.length > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Timer className="h-3 w-3" />
+                                  {activeCrons.length} cron{activeCrons.length > 1 ? "s" : ""}
+                                </span>
+                              )}
                             </span>
                           </TooltipTrigger>
                           <TooltipContent className="p-3 max-w-sm">
                             <div className="space-y-2">
-                              <div className="font-medium text-white mb-2">Active Sub-Agents</div>
-                              {activeSubagents.map((agent) => (
-                                <div key={agent.key} className="space-y-1 pb-2 border-b border-gray-600 last:border-b-0 last:pb-0">
-                                  <div className="flex items-center gap-2">
-                                    <Bot className="h-3 w-3 text-purple-300" />
-                                    <span className="font-medium text-white">
-                                      {agent.label || agent.key}
-                                    </span>
-                                  </div>
-                                  
-                                  <div className="text-xs space-y-1 ml-5">
-                                    <div className="flex items-center gap-2">
-                                      <Cpu className="h-3 w-3 text-blue-400" />
-                                      <span>Model: {formatModel(agent.model)}</span>
+                              {activeSubagents.length > 0 && (
+                                <>
+                                  <div className="font-medium text-white mb-2">Active Sub-Agents</div>
+                                  {activeSubagents.map((agent) => (
+                                    <div key={agent.key} className="space-y-1 pb-2 border-b border-gray-600 last:border-b-0 last:pb-0">
+                                      <div className="flex items-center gap-2">
+                                        <Bot className="h-3 w-3 text-purple-300" />
+                                        <span className="font-medium text-white">
+                                          {agent.label || agent.key}
+                                        </span>
+                                      </div>
+                                      
+                                      <div className="text-xs space-y-1 ml-5">
+                                        <div className="flex items-center gap-2">
+                                          <Cpu className="h-3 w-3 text-blue-400" />
+                                          <span>Model: {formatModel(agent.model)}</span>
+                                        </div>
+                                        
+                                        {agent.runtime && (
+                                          <div className="flex items-center gap-2">
+                                            <Clock className="h-3 w-3 text-green-400" />
+                                            <span>Runtime: {agent.runtime}</span>
+                                          </div>
+                                        )}
+                                        
+                                        {agent.status && (
+                                          <div className="flex items-center gap-2">
+                                            <Activity className="h-3 w-3 text-yellow-400" />
+                                            <span>Status: {formatStatus(agent.status)}</span>
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                    
-                                    {agent.runtime && (
+                                  ))}
+                                </>
+                              )}
+                              
+                              {activeCrons.length > 0 && (
+                                <>
+                                  {activeSubagents.length > 0 && (
+                                    <div className="border-t border-gray-600 pt-2 mt-2"></div>
+                                  )}
+                                  <div className="font-medium text-white mb-2">Active Cron Jobs</div>
+                                  {activeCrons.map((cron) => (
+                                    <div key={cron.key} className="space-y-1 pb-2 border-b border-gray-600 last:border-b-0 last:pb-0">
                                       <div className="flex items-center gap-2">
-                                        <Clock className="h-3 w-3 text-green-400" />
-                                        <span>Runtime: {agent.runtime}</span>
+                                        <Timer className="h-3 w-3 text-orange-300" />
+                                        <span className="font-medium text-white">
+                                          {cron.label || cron.key}
+                                        </span>
                                       </div>
-                                    )}
-                                    
-                                    {agent.status && (
-                                      <div className="flex items-center gap-2">
-                                        <Activity className="h-3 w-3 text-yellow-400" />
-                                        <span>Status: {formatStatus(agent.status)}</span>
+                                      
+                                      <div className="text-xs space-y-1 ml-5">
+                                        <div className="flex items-center gap-2">
+                                          <Cpu className="h-3 w-3 text-blue-400" />
+                                          <span>Model: {formatModel(cron.model)}</span>
+                                        </div>
+                                        
+                                        {cron.runtime && (
+                                          <div className="flex items-center gap-2">
+                                            <Clock className="h-3 w-3 text-green-400" />
+                                            <span>Runtime: {cron.runtime}</span>
+                                          </div>
+                                        )}
+                                        
+                                        {cron.status && (
+                                          <div className="flex items-center gap-2">
+                                            <Activity className="h-3 w-3 text-yellow-400" />
+                                            <span>Status: {formatStatus(cron.status)}</span>
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+                                    </div>
+                                  ))}
+                                </>
+                              )}
                               
                               <div className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-600">
                                 Click a session key to view details
