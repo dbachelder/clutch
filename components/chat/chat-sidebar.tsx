@@ -5,6 +5,7 @@ import { Plus, MessageSquare, Trash2, X, ChevronDown, ChevronRight, ListTodo, Ex
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { useChatStore, type ChatWithLastMessage } from "@/lib/stores/chat-store"
+import { TaskModal } from "@/components/board/task-modal"
 import type { Task } from "@/lib/db/types"
 
 interface ChatSidebarProps {
@@ -52,6 +53,10 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
   // Recently shipped state
   const [recentlyShipped, setRecentlyShipped] = useState<Task[]>([])
   const [recentlyShippedExpanded, setRecentlyShippedExpanded] = useState(true)
+  
+  // Task modal state
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
 
   // Fetch work queue tasks
   const fetchWorkQueue = useCallback(async () => {
@@ -107,6 +112,19 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
         ? { ...section, expanded: !section.expanded }
         : section
     ))
+  }
+
+  const handleTaskClick = (task: Task) => {
+    setSelectedTask(task)
+    setTaskModalOpen(true)
+  }
+
+  const handleTaskModalClose = (open: boolean) => {
+    setTaskModalOpen(open)
+    if (!open) {
+      // Refresh work queue when modal closes to reflect any changes
+      fetchWorkQueue()
+    }
   }
 
   const handleCreateChat = async () => {
@@ -400,10 +418,10 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                 {section.expanded && (
                   <div className="pb-1">
                     {section.tasks.map((task) => (
-                      <Link
+                      <button
                         key={task.id}
-                        href={projectSlug ? `/projects/${projectSlug}/board?task=${task.id}` : '#'}
-                        className="flex items-start gap-2 px-3 py-2 hover:bg-[var(--bg-tertiary)] transition-colors group"
+                        onClick={() => handleTaskClick(task)}
+                        className="w-full flex items-start gap-2 px-3 py-2 hover:bg-[var(--bg-tertiary)] transition-colors group text-left"
                       >
                         <div 
                           className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
@@ -419,7 +437,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                             {truncateTitle(task.title)}
                           </p>
                         </div>
-                      </Link>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -451,10 +469,10 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
             {recentlyShippedExpanded && (
               <div className="border-b border-[var(--border)]">
                 {recentlyShipped.map((task) => (
-                  <Link
+                  <button
                     key={task.id}
-                    href={projectSlug ? `/projects/${projectSlug}/board?task=${task.id}` : '#'}
-                    className="flex items-start gap-2 px-3 py-2 hover:bg-[var(--bg-tertiary)] transition-colors group"
+                    onClick={() => handleTaskClick(task)}
+                    className="w-full flex items-start gap-2 px-3 py-2 hover:bg-[var(--bg-tertiary)] transition-colors group text-left"
                   >
                     <CheckCircle2 className="h-3 w-3 text-green-500 mt-1 flex-shrink-0" />
                     <div className="min-w-0 flex-1">
@@ -465,7 +483,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                         {formatRelativeTime(task.completed_at)}
                       </span>
                     </div>
-                  </Link>
+                  </button>
                 ))}
               </div>
             )}
@@ -479,6 +497,11 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     <>
       {backdrop}
       {sidebarContent}
+      <TaskModal
+        task={selectedTask}
+        open={taskModalOpen}
+        onOpenChange={handleTaskModalClose}
+      />
     </>
   )
 }
