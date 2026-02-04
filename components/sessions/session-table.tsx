@@ -165,13 +165,17 @@ const columns: ColumnDef<SessionRowData>[] = [
     ),
   },
   {
-    accessorKey: 'createdAt',
-    header: ({ column }) => <SortHeader column={column}>Started</SortHeader>,
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {formatDistanceToNow(new Date(row.original.createdAt), { addSuffix: true })}
-      </span>
-    ),
+    accessorKey: 'updatedAt',
+    header: ({ column }) => <SortHeader column={column}>Last Active</SortHeader>,
+    cell: ({ row }) => {
+      const ts = row.original.updatedAt;
+      if (!ts) return <span className="text-sm text-muted-foreground">—</span>;
+      return (
+        <span className="text-sm text-muted-foreground">
+          {formatDistanceToNow(new Date(ts), { addSuffix: true })}
+        </span>
+      );
+    },
   },
 ];
 
@@ -228,7 +232,7 @@ interface SessionTableProps {
 
 export function SessionTable({ onRowClick }: SessionTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: 'createdAt', desc: true },
+    { id: 'updatedAt', desc: true },
   ]);
   
   const sessions = useSessionStore((state) => state.sessions);
