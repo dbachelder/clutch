@@ -7,6 +7,8 @@ import { MainLayout } from "@/components/layout/main-layout";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -27,7 +29,8 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} font-sans subpixel-antialiased`}
+        style={{ fontOpticalSizing: "auto" }}
       >
         <Providers>
           <MainLayout>

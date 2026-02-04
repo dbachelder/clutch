@@ -149,6 +149,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: subpixel-antialiased;
+    -moz-osx-font-smoothing: auto;
+    font-feature-settings: "liga", "kern";
+  }
+  
+  /* Improve text rendering specifically for chat content */
+  .chat-text {
+    -webkit-font-smoothing: subpixel-antialiased;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "liga", "kern";
   }
 }
 
