@@ -273,7 +273,7 @@ export default function ChatPage({ params }: PageProps) {
     }
   }, [chats, activeChat, setActiveChat])
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, images?: string[]) => {
     if (!activeChat) return
     
     console.log("[Chat] handleSendMessage called, openClawConnected:", openClawConnected)
@@ -293,15 +293,22 @@ export default function ChatPage({ params }: PageProps) {
       }
     }
     
+    // Prepare message content with images
+    let messageContent = content
+    if (images && images.length > 0) {
+      const imageMarkdown = images.map(url => `![Image](${url})`).join("\n")
+      messageContent = content ? `${content}\n\n${imageMarkdown}` : imageMarkdown
+    }
+    
     // Save user message to local DB
-    await sendMessageToDb(activeChat.id, content, "dan")
+    await sendMessageToDb(activeChat.id, messageContent, "dan")
     
     // Send to OpenClaw main session via WebSocket
     // Note: runId tracking is handled in onTypingStart to avoid race conditions
     if (openClawConnected) {
       try {
         console.log("[Chat] Calling sendToOpenClaw with chatId:", activeChat.id)
-        const runId = await sendToOpenClaw(content, activeChat.id)
+        const runId = await sendToOpenClaw(messageContent, activeChat.id)
         console.log("[Chat] sendToOpenClaw returned runId:", runId)
       } catch (error) {
         console.error("[Chat] Failed to send to OpenClaw:", error)

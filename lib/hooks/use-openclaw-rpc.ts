@@ -9,7 +9,23 @@ export function useOpenClawRpc() {
 
   // List sessions via RPC
   const listSessions = useCallback(async (params?: SessionListParams): Promise<SessionListResponse> => {
-    return rpc<SessionListResponse>("sessions.list", (params || {}) as Record<string, unknown>);
+    const response = await rpc<{ sessions: Array<Record<string, unknown>> }>("sessions.list", (params || {}) as Record<string, unknown>);
+    // Map OpenClaw's 'key' field to our 'id' field for compatibility
+    const sessions = (response.sessions || []).map((s) => ({
+      id: s.key as string,
+      name: (s.key as string)?.split(':').pop() || 'unknown',
+      type: (s.kind as string) || 'main',
+      model: s.model as string,
+      status: 'idle' as const,
+      updatedAt: s.updatedAt as string,
+      createdAt: s.updatedAt as string, // OpenClaw doesn't return createdAt separately
+      tokens: {
+        input: (s.inputTokens as number) || 0,
+        output: (s.outputTokens as number) || 0,
+        total: (s.totalTokens as number) || 0,
+      },
+    }));
+    return { sessions, total: sessions.length };
   }, [rpc]);
 
   // List agents via RPC
