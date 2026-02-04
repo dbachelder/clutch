@@ -19,7 +19,7 @@ export default function SessionDetailPage({ params }: PageProps) {
   const { slug, sessionKey } = use(params)
   const decodedSessionKey = decodeURIComponent(sessionKey)
   const router = useRouter()
-  const { connected, getSessionPreviewRaw } = useOpenClawRpc()
+  const { connected, getSessionPreview } = useOpenClawRpc()
   const [messages, setMessages] = useState<PreviewItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -29,23 +29,24 @@ export default function SessionDetailPage({ params }: PageProps) {
     
     setLoading(true)
     try {
-      const response = await getSessionPreviewRaw(decodedSessionKey, 100)
-      // sessions.preview returns { previews: [{ key, status, items }] }
-      const preview = response?.previews?.[0]
-      if (preview?.status === 'ok' || preview?.status === 'empty') {
-        setMessages((preview.items || []) as PreviewItem[])
+      const response = await getSessionPreview(decodedSessionKey, 100)
+      // sessions.preview returns SessionPreview with messages array
+      if (response?.session) {
+        const messages = (response.messages || []).map(msg => ({
+          role: msg.role,
+          text: msg.content
+        }))
+        setMessages(messages)
         setError(null)
-      } else if (preview?.status === 'missing') {
-        setError('Session not found')
       } else {
-        setError('Failed to load session')
+        setError('Session not found')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load session history')
     } finally {
       setLoading(false)
     }
-  }, [connected, getSessionPreviewRaw, decodedSessionKey])
+  }, [connected, getSessionPreview, decodedSessionKey])
 
   useEffect(() => {
     if (connected) {

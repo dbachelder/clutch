@@ -224,7 +224,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
       />
       
       {/* Modal */}
-      <div className="relative bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+      <div className="relative bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between p-4 border-b border-[var(--border)]">
           <div className="flex-1 pr-4">
@@ -273,7 +273,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
         
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4">
-          <div className="flex gap-6">
+          <div className="flex gap-8">
             {/* Main content */}
             <div className="flex-1 space-y-4">
               {/* Description */}
@@ -285,7 +285,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Add a description..."
-                  className="w-full min-h-[100px] bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-blue)] resize-none"
+                  className="w-full min-h-[200px] max-h-[400px] bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-blue)] resize-y"
                 />
               </div>
               
@@ -302,7 +302,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
                   <div className="text-sm text-[var(--text-muted)]">Loading comments...</div>
                 ) : (
                   <>
-                    <div className="max-h-[300px] overflow-y-auto mb-4">
+                    <div className="max-h-[500px] overflow-y-auto mb-4">
                       <CommentThread comments={comments} />
                     </div>
                     <CommentInput onSubmit={handleAddComment} />
@@ -312,7 +312,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
             </div>
             
             {/* Sidebar */}
-            <div className="w-52 space-y-4 flex-shrink-0">
+            <div className="w-64 space-y-4 flex-shrink-0">
               {/* Status */}
               <div>
                 <label className="text-sm font-medium text-[var(--text-secondary)] mb-1 block">

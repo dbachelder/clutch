@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useOpenClawWS } from "@/lib/providers/openclaw-ws-provider";
-import { SessionListResponse, SessionListParams, SessionPreview, AgentListResponse, AgentListParams, AgentDetail } from "@/lib/types";
+import { SessionListResponse, SessionListParams, SessionPreview, AgentListResponse, AgentListParams, AgentDetail, SessionType } from "@/lib/types";
 
 export function useOpenClawRpc() {
   const { status, rpc } = useOpenClawWS();
@@ -14,7 +14,7 @@ export function useOpenClawRpc() {
     const sessions = (response.sessions || []).map((s) => ({
       id: s.key as string,
       name: (s.key as string)?.split(':').pop() || 'unknown',
-      type: (s.kind as string) || 'main',
+      type: ((s.kind as string) || 'main') as SessionType,
       model: s.model as string,
       status: 'idle' as const,
       updatedAt: s.updatedAt as string,
