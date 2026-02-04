@@ -113,7 +113,7 @@ export default function ProjectSessionsPage({ params }: PageProps) {
                     {session.label || session.displayName || session.key}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {session.model || 'unknown model'} · {formatTokens(session.totalTokens || 0)} tokens
+                    {session.model || 'unknown model'} · {formatTokens(session.tokens?.total || 0)} tokens
                   </div>
                 </div>
                 <div className="text-sm text-muted-foreground">
