@@ -52,7 +52,7 @@ type ChatResponse = {
 
 type EventCallback = (data: any) => void;
 type PendingRequest = {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
 };
@@ -80,6 +80,7 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
   const mountedRef = useRef(true);
   const connectingRef = useRef(false);
   const reconnectAttempts = useRef(0);
+  const connectRef = useRef<(() => void) | null>(null);
   
   // Store pending RPC requests
   const pendingRequests = useRef<Map<string, PendingRequest>>(new Map());
@@ -113,6 +114,16 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
       });
     }
   }, []);
+  
+  // Clean up active chat state (used when aborting)
+  const cleanupActiveChatState = useCallback((sessionKey?: string) => {
+    if (activeRunId.current) {
+      console.log('[OpenClawWS] Cleaning up active chat state for runId:', activeRunId.current);
+      emitEvent('chat.typing.end', { sessionKey });
+      activeRunId.current = null;
+      if (mountedRef.current) setIsSending(false);
+    }
+  }, [emitEvent]);
 
   // Connect to OpenClaw WebSocket
   const connect = useCallback(() => {
@@ -267,7 +278,12 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
         reconnectAttempts.current++;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current - 1), 30000);
         console.log(`[OpenClawWS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current})`);
-        reconnectTimeoutRef.current = setTimeout(connect, delay);
+        reconnectTimeoutRef.current = setTimeout(() => {
+          // Use ref to avoid circular dependency
+          if (mountedRef.current && connectRef.current) {
+            connectRef.current();
+          }
+        }, delay);
       } else {
         console.log('[OpenClawWS] WebSocket endpoint not available, falling back to HTTP API');
       }
@@ -278,6 +294,11 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
       connectingRef.current = false;
     };
   }, [clearPendingRequests, emitEvent]);
+
+  // Store connect in ref to avoid circular dependency
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -319,11 +340,82 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
       return response.json() as Promise<T>;
     }
     
+    if (method === 'chat.abort') {
+      const response = await fetch('/api/chat/abort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params || {}),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.json() as Promise<T>;
+    }
+    
     throw new Error(`HTTP fallback not implemented for method: ${method}`);
   }, []);
 
   // Generic RPC request method
   const rpc = useCallback(async <T,>(method: string, params?: Record<string, unknown>): Promise<T> => {
+    // Handle chat.abort specially to clean up state
+    if (method === 'chat.abort') {
+      const sessionKey = params?.sessionKey as string | undefined;
+      
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        // Use HTTP fallback for abort
+        console.warn('[OpenClawWS] WebSocket not connected, using HTTP fallback for chat.abort');
+        try {
+          const result = await httpFallback<T>(method, params);
+          cleanupActiveChatState(sessionKey);
+          return result;
+        } catch (error) {
+          // Even if HTTP fallback fails, clean up local state
+          cleanupActiveChatState(sessionKey);
+          throw error;
+        }
+      }
+
+      // WebSocket abort
+      const id = generateUUID();
+      
+      return new Promise<T>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (pendingRequests.current.has(id)) {
+            pendingRequests.current.delete(id);
+            cleanupActiveChatState(sessionKey);
+            reject(new Error(`RPC timeout for method: ${method}`));
+          }
+        }, 60000);
+        
+        pendingRequests.current.set(id, {
+          resolve: (value) => {
+            cleanupActiveChatState(sessionKey);
+            resolve(value as T);
+          },
+          reject: (error) => {
+            cleanupActiveChatState(sessionKey);
+            reject(error);
+          },
+          timeout,
+        });
+        
+        try {
+          wsRef.current!.send(JSON.stringify({
+            type: 'req',
+            id,
+            method,
+            params: params || {},
+          }));
+        } catch (error) {
+          pendingRequests.current.delete(id);
+          clearTimeout(timeout);
+          cleanupActiveChatState(sessionKey);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+    }
+
+    // Regular RPC for other methods
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       // Try HTTP fallback instead of throwing error
       console.warn('[OpenClawWS] WebSocket not connected, attempting HTTP fallback');
@@ -359,7 +451,7 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
-  }, []);
+  }, [cleanupActiveChatState, httpFallback]);
 
   // Subscribe to events
   const subscribe = useCallback((event: string, callback: EventCallback): (() => void) => {
@@ -416,6 +508,7 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
   // Connect on mount, cleanup on unmount
   useEffect(() => {
     mountedRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     connect();
     
     return () => {

@@ -24,7 +24,7 @@ type PageProps = {
 export default function ChatPage({ params }: PageProps) {
   const { slug } = use(params)
   const [projectId, setProjectId] = useState<string | null>(null)
-  const [project, setProject] = useState<any>(null)
+  const [project, setProject] = useState<{ id: string; chat_layout?: 'slack' | 'imessage' } | null>(null)
   const [createTaskMessage, setCreateTaskMessage] = useState<ChatMessage | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -121,7 +121,7 @@ export default function ChatPage({ params }: PageProps) {
   // Generate session key based on active chat
   const sessionKey = activeChat ? `trap:${activeChat.id}` : "main"
 
-  const { connected: openClawConnected, sending: openClawSending, sendMessage: sendToOpenClaw, abortChat } = useOpenClawChat({
+  const { connected: openClawConnected, sendMessage: sendToOpenClaw, abortChat } = useOpenClawChat({
     sessionKey,
     onMessage: handleOpenClawMessage,
     onDelta: handleOpenClawDelta,
@@ -365,13 +365,36 @@ export default function ChatPage({ params }: PageProps) {
   }
 
   const handleStopChat = async () => {
-    if (!openClawConnected) return
+    if (!activeChat) return
+    
+    console.log("[Chat] Stopping chat response for chat:", activeChat.id)
     
     try {
-      console.log("[Chat] Aborting chat response")
-      await abortChat()
+      // Attempt to abort via OpenClaw
+      if (openClawConnected) {
+        console.log("[Chat] Aborting chat via WebSocket")
+        await abortChat()
+      } else {
+        console.log("[Chat] OpenClaw not connected, cleaning up local state only")
+      }
     } catch (error) {
       console.error("[Chat] Failed to abort chat:", error)
+    } finally {
+      // Always clean up local state, even if abort failed
+      console.log("[Chat] Cleaning up local UI state")
+      
+      // Clear typing indicators for Ada
+      setTyping(activeChat.id, "ada", false)
+      
+      // Clear streaming message if any
+      clearStreamingMessage(activeChat.id)
+      
+      // Show user that response was cancelled
+      await sendMessageToDb(
+        activeChat.id,
+        "_Response cancelled by user_",
+        "system"
+      )
     }
   }
 
@@ -379,7 +402,7 @@ export default function ChatPage({ params }: PageProps) {
     setCreateTaskMessage(message)
   }
 
-  const handleTaskCreated = async (taskId: string) => {
+  const handleTaskCreated = async () => {
     // Optionally post a message linking to the task
     if (activeChat) {
       await sendMessageToDb(
