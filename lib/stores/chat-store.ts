@@ -9,10 +9,18 @@ export type ChatWithLastMessage = Chat & {
   } | null
 }
 
+interface StreamingMessage {
+  runId: string
+  author: string
+  content: string
+  timestamp: number
+}
+
 interface ChatState {
   chats: ChatWithLastMessage[]
   activeChat: ChatWithLastMessage | null
   messages: Record<string, ChatMessage[]>
+  streamingMessages: Record<string, StreamingMessage> // chatId -> streaming message
   loading: boolean
   loadingMessages: boolean
   error: string | null
@@ -33,12 +41,19 @@ interface ChatState {
   // SSE event handlers
   receiveMessage: (chatId: string, message: ChatMessage) => void
   setTyping: (chatId: string, author: string, state: "thinking" | "typing" | false) => void
+  
+  // Streaming handlers
+  startStreamingMessage: (chatId: string, runId: string, author: string) => void
+  appendToStreamingMessage: (chatId: string, delta: string) => void
+  finalizeStreamingMessage: (chatId: string, finalMessage?: ChatMessage) => void
+  clearStreamingMessage: (chatId: string) => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
   chats: [],
   activeChat: null,
   messages: {},
+  streamingMessages: {},
   loading: false,
   loadingMessages: false,
   error: null,
@@ -293,6 +308,81 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       
       return store
+    })
+  },
+
+  // Start a new streaming message
+  startStreamingMessage: (chatId, runId, author) => {
+    set((state) => ({
+      streamingMessages: {
+        ...state.streamingMessages,
+        [chatId]: {
+          runId,
+          author,
+          content: "",
+          timestamp: Date.now(),
+        },
+      },
+    }))
+  },
+
+  // Append delta text to streaming message
+  appendToStreamingMessage: (chatId, delta) => {
+    set((state) => {
+      const current = state.streamingMessages[chatId]
+      if (!current) return state
+
+      return {
+        streamingMessages: {
+          ...state.streamingMessages,
+          [chatId]: {
+            ...current,
+            content: current.content + delta,
+          },
+        },
+      }
+    })
+  },
+
+  // Finalize streaming message (replace with final message or convert)
+  finalizeStreamingMessage: (chatId, finalMessage) => {
+    set((state) => {
+      const streaming = state.streamingMessages[chatId]
+      if (!streaming) return state
+
+      const newState = {
+        streamingMessages: { ...state.streamingMessages },
+      }
+      delete newState.streamingMessages[chatId]
+
+      // If we have a final message from the server, use that
+      // Otherwise, convert the streaming message to a regular message
+      if (finalMessage) {
+        const existing = state.messages[chatId] || []
+        if (!existing.some((m) => m.id === finalMessage.id)) {
+          return {
+            ...newState,
+            messages: {
+              ...state.messages,
+              [chatId]: [...existing, finalMessage],
+            },
+          }
+        }
+      }
+
+      return newState
+    })
+  },
+
+  // Clear streaming message without finalizing
+  clearStreamingMessage: (chatId) => {
+    set((state) => {
+      const newStreamingMessages = { ...state.streamingMessages }
+      delete newStreamingMessages[chatId]
+      
+      return {
+        streamingMessages: newStreamingMessages,
+      }
     })
   },
 }))
