@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 import { MessageSquare } from "lucide-react"
 import { MessageBubble } from "./message-bubble"
+import { StreamingMessage } from "./streaming-message"
 import type { ChatMessage } from "@/lib/db/types"
 
 interface TypingIndicator {
@@ -10,8 +11,15 @@ interface TypingIndicator {
   state: "thinking" | "typing"
 }
 
+interface StreamingMessage {
+  author: string
+  content: string
+  timestamp: number
+}
+
 interface ChatThreadProps {
   messages: ChatMessage[]
+  streamingMessage?: StreamingMessage | null
   loading?: boolean
   currentUser?: string
   onCreateTask?: (message: ChatMessage) => void
@@ -20,6 +28,7 @@ interface ChatThreadProps {
 
 export function ChatThread({ 
   messages, 
+  streamingMessage = null,
   loading = false, 
   currentUser = "dan",
   onCreateTask,
@@ -28,10 +37,10 @@ export function ChatThread({
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Scroll to bottom on new messages or typing indicator
+  // Scroll to bottom on new messages, streaming content, or typing indicator
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages.length, typingIndicators.length])
+  }, [messages.length, streamingMessage?.content, typingIndicators.length])
 
   if (loading) {
     return (
@@ -79,6 +88,18 @@ export function ChatThread({
           ))}
         </div>
       ))}
+      
+      {/* Streaming message */}
+      {streamingMessage && (
+        <div className="space-y-1">
+          <StreamingMessage
+            author={streamingMessage.author}
+            content={streamingMessage.content}
+            timestamp={streamingMessage.timestamp}
+            isOwnMessage={streamingMessage.author === currentUser}
+          />
+        </div>
+      )}
       
       {/* Typing indicator */}
       {typingIndicators.length > 0 && (

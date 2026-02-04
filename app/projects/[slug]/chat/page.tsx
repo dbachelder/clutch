@@ -6,11 +6,13 @@ import { useChatStore } from "@/lib/stores/chat-store"
 import { useChatEvents } from "@/lib/hooks/use-chat-events"
 import { useOpenClawChat } from "@/lib/hooks/use-openclaw-chat"
 import { useOpenClawRpc } from "@/lib/hooks/use-openclaw-rpc"
+import { useSettings } from "@/lib/hooks/use-settings"
 import { ChatSidebar } from "@/components/chat/chat-sidebar"
 import { ChatThread } from "@/components/chat/chat-thread"
 import { ChatInput } from "@/components/chat/chat-input"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { CreateTaskFromMessage } from "@/components/chat/create-task-from-message"
+import { StreamingToggle } from "@/components/chat/streaming-toggle"
 import type { ChatMessage } from "@/lib/db/types"
 
 type PageProps = {
@@ -26,6 +28,7 @@ export default function ChatPage({ params }: PageProps) {
     chats, 
     activeChat, 
     messages, 
+    streamingMessages,
     loadingMessages,
     typingIndicators,
     fetchChats, 
@@ -33,7 +36,14 @@ export default function ChatPage({ params }: PageProps) {
     setActiveChat,
     receiveMessage,
     setTyping,
+    startStreamingMessage,
+    appendToStreamingMessage,
+    finalizeStreamingMessage,
+    clearStreamingMessage,
   } = useChatStore()
+
+  // Settings for streaming toggle
+  const { settings, toggleStreaming } = useSettings()
 
   // OpenClaw WebSocket connection for main session
   const handleOpenClawMessage = useCallback(async (msg: { role: string; content: string | Array<{ type: string; text?: string }> }, runId: string) => {
@@ -41,6 +51,11 @@ export default function ChatPage({ params }: PageProps) {
     if (!activeChat) {
       console.log("[Chat] No activeChat, ignoring message")
       return
+    }
+    
+    // Clear streaming message if we were streaming
+    if (settings.streamingEnabled && streamingMessages[activeChat.id]?.runId === runId) {
+      clearStreamingMessage(activeChat.id)
     }
     
     // Dedupe with race-condition guard: check, wait, re-check
@@ -79,7 +94,7 @@ export default function ChatPage({ params }: PageProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: text, author: "ada" }),
     }).catch(console.error)
-  }, [activeChat])
+  }, [activeChat, settings.streamingEnabled, streamingMessages, clearStreamingMessage])
 
   const handleOpenClawTypingStart = useCallback(() => {
     if (activeChat) {
@@ -93,14 +108,25 @@ export default function ChatPage({ params }: PageProps) {
     }
   }, [activeChat, setTyping])
 
-  const handleOpenClawDelta = useCallback(() => {
-    if (activeChat) {
-      // Switch from "thinking" to "typing" on first delta
-      setTyping(activeChat.id, "ada", "typing")
+  const handleOpenClawDelta = useCallback((delta: string, runId: string) => {
+    if (!activeChat) return
+    
+    // Switch from "thinking" to "typing" on first delta
+    setTyping(activeChat.id, "ada", "typing")
+    
+    // Handle streaming if enabled
+    if (settings.streamingEnabled) {
+      // If this is the first delta for this runId, start a new streaming message
+      if (!streamingMessages[activeChat.id] || streamingMessages[activeChat.id].runId !== runId) {
+        startStreamingMessage(activeChat.id, runId, "ada")
+      }
+      
+      // Append the delta to the streaming message
+      appendToStreamingMessage(activeChat.id, delta)
     }
-  }, [activeChat, setTyping])
+  }, [activeChat, setTyping, settings.streamingEnabled, streamingMessages, startStreamingMessage, appendToStreamingMessage])
 
-  const { connected: openClawConnected, sending: openClawSending, sendMessage: sendToOpenClaw } = useOpenClawChat({
+  const { connected: openClawConnected, sending: openClawSending, sendMessage: sendToOpenClaw, abortChat } = useOpenClawChat({
     sessionKey: "main",
     onMessage: handleOpenClawMessage,
     onDelta: handleOpenClawDelta,
@@ -209,6 +235,17 @@ export default function ChatPage({ params }: PageProps) {
     }
   }
 
+  const handleStopChat = async () => {
+    if (!openClawConnected) return
+    
+    try {
+      console.log("[Chat] Aborting chat response")
+      await abortChat()
+    } catch (error) {
+      console.error("[Chat] Failed to abort chat:", error)
+    }
+  }
+
   const handleCreateTask = (message: ChatMessage) => {
     setCreateTaskMessage(message)
   }
@@ -251,6 +288,10 @@ export default function ChatPage({ params }: PageProps) {
                       )}
                     </div>
                     <div className="flex items-center gap-3">
+                      <StreamingToggle 
+                        enabled={settings.streamingEnabled} 
+                        onChange={toggleStreaming} 
+                      />
                       {activeSubagents.length > 0 && (
                         <span 
                           className="flex items-center gap-1 text-purple-400 cursor-help"
@@ -279,13 +320,18 @@ export default function ChatPage({ params }: PageProps) {
               {/* Messages */}
               <ChatThread 
                 messages={currentMessages} 
+                streamingMessage={activeChat ? streamingMessages[activeChat.id] || null : null}
                 loading={loadingMessages}
                 onCreateTask={handleCreateTask}
                 typingIndicators={typingIndicators[activeChat.id] || []}
               />
               
               {/* Input */}
-              <ChatInput onSend={handleSendMessage} />
+              <ChatInput 
+                onSend={handleSendMessage}
+                onStop={handleStopChat}
+                isAssistantTyping={activeChat ? (typingIndicators[activeChat.id] || []).some(t => t.author === "ada") : false}
+              />
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">

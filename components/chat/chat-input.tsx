@@ -1,23 +1,28 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send } from "lucide-react"
+import { Send, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ContextIndicator } from "@/components/chat/context-indicator"
 
 interface ChatInputProps {
   onSend: (content: string) => Promise<void>
+  onStop?: () => Promise<void>
   disabled?: boolean
   placeholder?: string
+  isAssistantTyping?: boolean
 }
 
 export function ChatInput({ 
   onSend, 
+  onStop,
   disabled = false,
   placeholder = "Type a message...",
+  isAssistantTyping = false,
 }: ChatInputProps) {
   const [content, setContent] = useState("")
   const [sending, setSending] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [contextUpdateTrigger, setContextUpdateTrigger] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -30,7 +35,7 @@ export function ChatInput({
   }, [content])
 
   const handleSend = async () => {
-    if (!content.trim() || sending || disabled) return
+    if (!content.trim() || sending || disabled || isAssistantTyping) return
     
     const message = content.trim()
     setContent("") // Clear immediately for responsiveness
@@ -46,6 +51,19 @@ export function ChatInput({
     } finally {
       setSending(false)
       textareaRef.current?.focus()
+    }
+  }
+
+  const handleStop = async () => {
+    if (!onStop || stopping) return
+    
+    setStopping(true)
+    try {
+      await onStop()
+    } catch (error) {
+      console.error("Failed to stop chat:", error)
+    } finally {
+      setStopping(false)
     }
   }
 
@@ -78,14 +96,27 @@ export function ChatInput({
           />
         </div>
         
-        <Button
-          onClick={handleSend}
-          disabled={!content.trim() || sending || disabled}
-          size="lg"
-          className="rounded-xl"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+        {isAssistantTyping ? (
+          <Button
+            onClick={handleStop}
+            disabled={!onStop || stopping}
+            size="lg"
+            variant="destructive"
+            className="rounded-xl"
+            title="Stop response"
+          >
+            <Square className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button
+            onClick={handleSend}
+            disabled={!content.trim() || sending || disabled}
+            size="lg"
+            className="rounded-xl"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       
       {/* Context indicator */}

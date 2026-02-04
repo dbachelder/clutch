@@ -86,10 +86,20 @@ export function useOpenClawChat({
     return sendChatMessage(message, sessionKey, trapChatId);
   }, [enabled, sendChatMessage, sessionKey]);
 
+  // Abort current chat response
+  const abortChat = useCallback(async (): Promise<void> => {
+    if (!enabled) {
+      throw new Error("Chat hook is disabled");
+    }
+
+    return rpc("chat.abort", { sessionKey });
+  }, [enabled, rpc, sessionKey]);
+
   return {
     connected: status === 'connected',
     sending: isSending,
     sendMessage,
+    abortChat,
     rpc,
   };
 }
