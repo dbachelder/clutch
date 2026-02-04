@@ -66,6 +66,22 @@ export interface ChatMessage {
   created_at: number
 }
 
+export type NotificationType = "escalation" | "request_input" | "completion" | "system"
+export type NotificationSeverity = "info" | "warning" | "critical"
+
+export interface Notification {
+  id: string
+  task_id: string | null
+  project_id: string | null
+  type: NotificationType
+  severity: NotificationSeverity
+  title: string
+  message: string
+  agent: string | null
+  read: number // SQLite boolean
+  created_at: number
+}
+
 export type EventType = 
   | "task_created"
   | "task_moved"
