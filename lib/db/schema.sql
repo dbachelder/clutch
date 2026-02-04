@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   dispatch_status TEXT,
   dispatch_requested_at INTEGER,
   dispatch_requested_by TEXT,
+  position INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee);
+CREATE INDEX IF NOT EXISTS idx_tasks_position ON tasks(project_id, status, position);
 
 -- Comments
 CREATE TABLE IF NOT EXISTS comments (

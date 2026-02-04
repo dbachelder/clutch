@@ -2,15 +2,7 @@ import { db } from "../lib/db"
 import fs from "fs"
 import path from "path"
 
-const schemaPath = path.join(__dirname, "../lib/db/schema.sql")
-const schema = fs.readFileSync(schemaPath, "utf-8")
-
-console.log("Running migrations...")
-console.log(`Database: ${db.name}`)
-
-db.exec(schema)
-
-// Migration: Add dispatch columns to tasks (if not exists)
+// Migration: Add columns to tasks (if not exists) - MUST run before schema.sql
 const addColumnIfNotExists = (table: string, column: string, type: string) => {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
   if (!columns.find(c => c.name === column)) {
@@ -19,10 +11,20 @@ const addColumnIfNotExists = (table: string, column: string, type: string) => {
   }
 }
 
+console.log("Running migrations...")
+console.log(`Database: ${db.name}`)
+
 console.log("\nChecking for schema updates...")
 addColumnIfNotExists("tasks", "dispatch_status", "TEXT")
 addColumnIfNotExists("tasks", "dispatch_requested_at", "INTEGER")
 addColumnIfNotExists("tasks", "dispatch_requested_by", "TEXT")
+addColumnIfNotExists("tasks", "position", "INTEGER DEFAULT 0")
+
+// Now run schema.sql for new tables and indexes
+const schemaPath = path.join(__dirname, "../lib/db/schema.sql")
+const schema = fs.readFileSync(schemaPath, "utf-8")
+
+db.exec(schema)
 
 // Check if signals table exists, create if not
 const signalsTable = db.prepare(`

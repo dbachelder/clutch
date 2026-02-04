@@ -30,6 +30,7 @@ export interface Task {
   dispatch_status: DispatchStatus | null
   dispatch_requested_at: number | null
   dispatch_requested_by: string | null
+  position: number
   created_at: number
   updated_at: number
   completed_at: number | null
