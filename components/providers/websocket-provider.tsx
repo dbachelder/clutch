@@ -20,7 +20,7 @@ interface WebSocketContextValue {
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
-const WS_URL = process.env.NEXT_PUBLIC_OPENCLAW_WS_URL || 'ws://localhost:18790/ws';
+const WS_URL = process.env.NEXT_PUBLIC_OPENCLAW_WS_URL || '';
 const RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const PING_INTERVAL = 30000;
@@ -53,6 +53,13 @@ export function WebSocketProvider({ children, url = WS_URL }: WebSocketProviderP
   }, []);
 
   const connect = useCallback(() => {
+    // Skip connection if no URL configured
+    if (!url) {
+      console.log('[WebSocket] No URL configured, skipping connection');
+      setStatus('disconnected');
+      return;
+    }
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
