@@ -37,9 +37,13 @@ export function ChatHeader({ chat }: ChatHeaderProps) {
       setLoadingSession(true)
       try {
         const preview = await getSessionPreview(chat.session_key)
+        if (!preview?.session) {
+          setSessionInfo(null)
+          return
+        }
         setSessionInfo({
           model: preview.session.model,
-          contextPercent: Math.round(preview.contextPercentage),
+          contextPercent: Math.round(preview.contextPercentage ?? 0),
         })
       } catch (error) {
         console.error("[ChatHeader] Failed to fetch session info:", error)
