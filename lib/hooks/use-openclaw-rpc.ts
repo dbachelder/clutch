@@ -8,7 +8,6 @@ function generateUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
-  // Fallback implementation
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = Math.random() * 16 | 0
     const v = c === 'x' ? r : (r & 0x3 | 0x8)
@@ -17,16 +16,13 @@ function generateUUID(): string {
 }
 
 // Dynamic WebSocket URL based on page protocol
-// HTTPS pages must use WSS through nginx proxy, HTTP can use WS directly
 function getWebSocketUrl(): string {
   if (typeof window === "undefined") return ""
   
-  // When on HTTPS, use the same-origin WSS proxy
   if (window.location.protocol === "https:") {
     return `wss://${window.location.host}/openclaw-ws`
   }
   
-  // When on HTTP (dev), use direct connection
   return process.env.NEXT_PUBLIC_OPENCLAW_WS_URL || ""
 }
 
@@ -51,13 +47,13 @@ interface PendingRequest<T> {
 }
 
 export function useOpenClawRpc() {
-  console.log("[OpenClawRPC] Hook initializing")
   const wsRef = useRef<WebSocket | null>(null)
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const connectingRef = useRef(false)
   const pendingRequests = useRef<Map<string, PendingRequest<unknown>>>(new Map())
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
 
   // Clear all pending requests with an error
   const clearPendingRequests = useCallback((errorMessage: string) => {
@@ -73,7 +69,6 @@ export function useOpenClawRpc() {
   const connect = useCallback(() => {
     const wsUrl = getWebSocketUrl()
     if (!wsUrl) {
-      console.log("[OpenClawRPC] WebSocket URL not configured")
       return
     }
 
@@ -86,35 +81,30 @@ export function useOpenClawRpc() {
     }
 
     connectingRef.current = true
-    setConnecting(true)
-    console.log("[OpenClawRPC] Connecting to", wsUrl)
+    if (mountedRef.current) setConnecting(true)
     
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {
-      console.log("[OpenClawRPC] WebSocket open, sending connect handshake")
-      
-      // Send connect handshake (required first message)
       const connectId = generateUUID()
-      console.log("[OpenClawRPC] Connect ID:", connectId)
       
       const timeout = setTimeout(() => {
         if (pendingRequests.current.has(connectId)) {
           pendingRequests.current.delete(connectId)
           ws.close()
           connectingRef.current = false
-          setConnecting(false)
+          if (mountedRef.current) setConnecting(false)
         }
-      }, 10000) // 10s timeout for handshake
+      }, 10000)
       
       pendingRequests.current.set(connectId, {
         resolve: () => {
-          console.log("[OpenClawRPC] Connected and authenticated")
-          setConnected(true)
+          if (mountedRef.current) {
+            setConnected(true)
+            setConnecting(false)
+          }
           connectingRef.current = false
-          setConnecting(false)
-          // Clear any reconnect timeout
           if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current)
             reconnectTimeoutRef.current = null
@@ -123,7 +113,7 @@ export function useOpenClawRpc() {
         reject: (e) => {
           console.error("[OpenClawRPC] Connect handshake failed:", e)
           connectingRef.current = false
-          setConnecting(false)
+          if (mountedRef.current) setConnecting(false)
           ws.close()
         },
         timeout,
@@ -152,9 +142,7 @@ export function useOpenClawRpc() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as RPCResponse<unknown>
-        console.log("[OpenClawRPC] Received:", data.type, data.id, "pending:", Array.from(pendingRequests.current.keys()))
         
-        // Handle RPC responses (type: "res")
         if (data.type === "res" && data.id && pendingRequests.current.has(data.id)) {
           const pending = pendingRequests.current.get(data.id)!
           pendingRequests.current.delete(data.id)
@@ -175,23 +163,25 @@ export function useOpenClawRpc() {
 
     ws.onclose = (event) => {
       console.log("[OpenClawRPC] Disconnected", event.code, event.reason)
-      setConnected(false)
+      if (mountedRef.current) {
+        setConnected(false)
+        setConnecting(false)
+      }
       connectingRef.current = false
-      setConnecting(false)
       
-      // Reject all pending requests
       clearPendingRequests("WebSocket disconnected")
       
-      // Reconnect after delay with exponential backoff
-      const delay = Math.min(1000 * Math.pow(2, Math.random() * 2), 30000)
-      console.log(`[OpenClawRPC] Reconnecting in ${Math.round(delay)}ms`)
-      reconnectTimeoutRef.current = setTimeout(connect, delay)
+      // Reconnect after delay
+      if (mountedRef.current) {
+        const delay = Math.min(1000 * Math.pow(2, Math.random() * 2), 30000)
+        reconnectTimeoutRef.current = setTimeout(connect, delay)
+      }
     }
 
     ws.onerror = (error) => {
       console.error("[OpenClawRPC] WebSocket error:", error)
       connectingRef.current = false
-      setConnecting(false)
+      if (mountedRef.current) setConnecting(false)
     }
   }, [clearPendingRequests])
 
@@ -223,13 +213,12 @@ export function useOpenClawRpc() {
     const id = generateUUID()
     
     return new Promise<T>((resolve, reject) => {
-      // Set up timeout
       const timeout = setTimeout(() => {
         if (pendingRequests.current.has(id)) {
           pendingRequests.current.delete(id)
           reject(new Error(`RPC timeout for method: ${method}`))
         }
-      }, 60000) // 60s timeout
+      }, 60000)
       
       pendingRequests.current.set(id, {
         resolve: (value) => resolve(value as T),
@@ -257,13 +246,13 @@ export function useOpenClawRpc() {
     return rpc<SessionListResponse>("sessions.list", (params || {}) as Record<string, unknown>)
   }, [rpc])
 
-  // Connect on mount
+  // Connect on mount, cleanup on unmount
   useEffect(() => {
-    console.log("[OpenClawRPC] useEffect running, calling connect()")
+    mountedRef.current = true
     connect()
     
     return () => {
-      console.log("[OpenClawRPC] useEffect cleanup, calling disconnect()")
+      mountedRef.current = false
       disconnect()
     }
   }, [connect, disconnect])
