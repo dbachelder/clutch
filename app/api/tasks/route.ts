@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     params.push(status)
   }
   
-  query += " ORDER BY created_at DESC"
+  query += " ORDER BY position ASC, created_at ASC"
   
   const tasks = db.prepare(query).all(...params) as Task[]
 
@@ -62,6 +62,14 @@ export async function POST(request: NextRequest) {
   const now = Date.now()
   const id = crypto.randomUUID()
   
+  // Get the highest position in this column to append new task at the end
+  const maxPositionResult = db.prepare(`
+    SELECT MAX(position) as max_pos FROM tasks 
+    WHERE project_id = ? AND status = ?
+  `).get(project_id, status) as { max_pos: number | null }
+  
+  const position = (maxPositionResult?.max_pos ?? -1) + 1
+  
   const task: Task = {
     id,
     project_id,
@@ -76,6 +84,7 @@ export async function POST(request: NextRequest) {
     dispatch_status: null,
     dispatch_requested_at: null,
     dispatch_requested_by: null,
+    position,
     created_at: now,
     updated_at: now,
     completed_at: null,
@@ -86,13 +95,13 @@ export async function POST(request: NextRequest) {
       id, project_id, title, description, status, priority, 
       assignee, requires_human_review, tags, session_id,
       dispatch_status, dispatch_requested_at, dispatch_requested_by,
-      created_at, updated_at, completed_at
+      position, created_at, updated_at, completed_at
     )
     VALUES (
       @id, @project_id, @title, @description, @status, @priority,
       @assignee, @requires_human_review, @tags, @session_id,
       @dispatch_status, @dispatch_requested_at, @dispatch_requested_by,
-      @created_at, @updated_at, @completed_at
+      @position, @created_at, @updated_at, @completed_at
     )
   `).run(task)
 

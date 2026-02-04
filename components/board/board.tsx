@@ -41,9 +41,16 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
       return
     }
 
-    // Move the task to new status
     const newStatus = destination.droppableId as TaskStatus
-    moveTask(draggableId, newStatus)
+    const sourceStatus = source.droppableId as TaskStatus
+
+    // If same column, it's a reorder operation
+    if (destination.droppableId === source.droppableId) {
+      moveTask(draggableId, newStatus, destination.index)
+    } else {
+      // Moving to different column
+      moveTask(draggableId, newStatus)
+    }
   }
 
   if (loading && tasks.length === 0) {
