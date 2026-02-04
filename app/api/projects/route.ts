@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const body = await request.json()
   
-  const { name, slug, description, color, repo_url, chat_layout, local_path, github_repo } = body
+  const { name, slug, description, color, repo_url, chat_layout, local_path, github_repo, work_loop_enabled, work_loop_schedule } = body
   
   if (!name || !slug) {
     return NextResponse.json(
@@ -44,6 +44,25 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+  }
+
+  // Validate work_loop_enabled if provided
+  if (work_loop_enabled !== undefined && typeof work_loop_enabled !== 'boolean') {
+    return NextResponse.json(
+      { error: "work_loop_enabled must be a boolean" },
+      { status: 400 }
+    )
+  }
+
+  // Validate work_loop_schedule if provided
+  if (work_loop_schedule) {
+    if (typeof work_loop_schedule !== 'string') {
+      return NextResponse.json(
+        { error: "work_loop_schedule must be a string" },
+        { status: 400 }
+      )
+    }
+    // TODO: Add cron validation if needed
   }
 
   // Check slug uniqueness
@@ -72,13 +91,15 @@ export async function POST(request: NextRequest) {
     local_path: local_path || null,
     github_repo: github_repo || null,
     chat_layout: chat_layout || 'slack',
+    work_loop_enabled: work_loop_enabled ? 1 : 0,
+    work_loop_schedule: work_loop_schedule || '*/5 * * * *',
     created_at: now,
     updated_at: now,
   }
 
   db.prepare(`
-    INSERT INTO projects (id, slug, name, description, color, repo_url, context_path, local_path, github_repo, chat_layout, created_at, updated_at)
-    VALUES (@id, @slug, @name, @description, @color, @repo_url, @context_path, @local_path, @github_repo, @chat_layout, @created_at, @updated_at)
+    INSERT INTO projects (id, slug, name, description, color, repo_url, context_path, local_path, github_repo, chat_layout, work_loop_enabled, work_loop_schedule, created_at, updated_at)
+    VALUES (@id, @slug, @name, @description, @color, @repo_url, @context_path, @local_path, @github_repo, @chat_layout, @work_loop_enabled, @work_loop_schedule, @created_at, @updated_at)
   `).run(project)
 
   // Create default "General" chat for the project

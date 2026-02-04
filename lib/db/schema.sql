@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS projects (
   local_path TEXT,
   github_repo TEXT,
   chat_layout TEXT DEFAULT 'slack',
+  work_loop_enabled INTEGER DEFAULT 0,
+  work_loop_schedule TEXT DEFAULT '*/5 * * * *',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

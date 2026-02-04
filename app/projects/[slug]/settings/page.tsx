@@ -1,7 +1,7 @@
 "use client"
 
 import { use, useState, useEffect } from "react"
-import { Settings, MessageSquare, Save, Loader2, Folder, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Settings, MessageSquare, Save, Loader2, Folder, AlertCircle, CheckCircle2, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,10 @@ export default function SettingsPage({ params }: PageProps) {
   const [pathError, setPathError] = useState<string>('')
   const [repoError, setRepoError] = useState<string>('')
 
+  // Work loop configuration state
+  const [workLoopEnabled, setWorkLoopEnabled] = useState<boolean>(false)
+  const [workLoopSchedule, setWorkLoopSchedule] = useState<string>('*/5 * * * *')
+
   // Fetch project data
   useEffect(() => {
     async function fetchProject() {
@@ -37,6 +41,8 @@ export default function SettingsPage({ params }: PageProps) {
           setChatLayout(data.project.chat_layout || 'slack')
           setLocalPath(data.project.local_path || '')
           setGithubRepo(data.project.github_repo || '')
+          setWorkLoopEnabled(Boolean(data.project.work_loop_enabled))
+          setWorkLoopSchedule(data.project.work_loop_schedule || '*/5 * * * *')
         }
       } catch (error) {
         console.error('Failed to fetch project:', error)
@@ -151,6 +157,8 @@ export default function SettingsPage({ params }: PageProps) {
           chat_layout: chatLayout,
           local_path: localPath.trim() || null,
           github_repo: githubRepo.trim() || null,
+          work_loop_enabled: workLoopEnabled,
+          work_loop_schedule: workLoopSchedule,
         }),
       })
 
@@ -161,6 +169,17 @@ export default function SettingsPage({ params }: PageProps) {
 
       const data = await response.json()
       setProject(data.project)
+
+      // If work loop settings changed, update cron jobs
+      if (workLoopEnabled !== Boolean(project.work_loop_enabled) || 
+          workLoopSchedule !== project.work_loop_schedule) {
+        try {
+          await fetch('/api/work-loop/setup', { method: 'POST' })
+        } catch (error) {
+          console.error('Failed to update work loop cron jobs:', error)
+          // Don't fail the save operation for this
+        }
+      }
     } catch (error) {
       console.error('Failed to save settings:', error)
       // TODO: Show error toast
@@ -193,7 +212,9 @@ export default function SettingsPage({ params }: PageProps) {
 
   const hasChanges = chatLayout !== project.chat_layout ||
     localPath !== (project.local_path || '') ||
-    githubRepo !== (project.github_repo || '')
+    githubRepo !== (project.github_repo || '') ||
+    workLoopEnabled !== Boolean(project.work_loop_enabled) ||
+    workLoopSchedule !== project.work_loop_schedule
 
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-8">
@@ -321,6 +342,84 @@ export default function SettingsPage({ params }: PageProps) {
                 The GitHub repository in owner/repository format. This enables agents to create pull requests, issues, and access repository information.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Work Loop Configuration */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-[var(--text-primary)]" />
+            <Label className="text-base font-medium text-[var(--text-primary)]">
+              Automated Work Loop
+            </Label>
+          </div>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Configure automated task processing that pulls from your Kanban board and creates pull requests.
+          </p>
+          
+          <div className="space-y-4">
+            {/* Enable Work Loop */}
+            <div className="flex items-start space-x-3 p-4 rounded-lg border border-[var(--border)] hover:bg-[var(--bg-secondary)]/50 transition-colors">
+              <input
+                type="checkbox"
+                id="work-loop-enabled"
+                checked={workLoopEnabled}
+                onChange={(e) => setWorkLoopEnabled(e.target.checked)}
+                className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <div className="space-y-2 flex-1">
+                <Label htmlFor="work-loop-enabled" className="text-base font-medium cursor-pointer">
+                  Enable Work Loop
+                </Label>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Automatically process tasks from the &apos;ready&apos; status, create pull requests, and move them through the workflow.
+                </p>
+              </div>
+            </div>
+
+            {/* Cron Schedule */}
+            {workLoopEnabled && (
+              <div className="space-y-2">
+                <Label htmlFor="work-loop-schedule" className="text-sm font-medium">
+                  Schedule (Cron Expression)
+                </Label>
+                <Input
+                  id="work-loop-schedule"
+                  type="text"
+                  placeholder="*/5 * * * *"
+                  value={workLoopSchedule}
+                  onChange={(e) => setWorkLoopSchedule(e.target.value)}
+                  className="flex-1"
+                />
+                <p className="text-sm text-[var(--text-secondary)]">
+                  How often to check for ready tasks. Default is every 5 minutes. Use{' '}
+                  <a 
+                    href="https://crontab.guru" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    crontab.guru
+                  </a>{' '}
+                  to build cron expressions.
+                </p>
+              </div>
+            )}
+
+            {/* Prerequisites warning */}
+            {workLoopEnabled && (!localPath.trim() || !githubRepo.trim()) && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-orange-50 border border-orange-200">
+                <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-orange-800">
+                    Configuration Required
+                  </p>
+                  <p className="text-sm text-orange-700 mt-1">
+                    Work loop requires both local path and GitHub repository to be configured.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
