@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useState, use, useCallback, useRef } from "react"
-import { MessageSquare, Wifi, WifiOff } from "lucide-react"
+import { MessageSquare, Wifi, WifiOff, Bot } from "lucide-react"
 import { useChatStore } from "@/lib/stores/chat-store"
 import { useChatEvents } from "@/lib/hooks/use-chat-events"
 import { useOpenClawChat } from "@/lib/hooks/use-openclaw-chat"
+import { useOpenClawRpc } from "@/lib/hooks/use-openclaw-rpc"
 import { ChatSidebar } from "@/components/chat/chat-sidebar"
 import { ChatThread } from "@/components/chat/chat-thread"
 import { ChatInput } from "@/components/chat/chat-input"
@@ -87,6 +88,40 @@ export default function ChatPage({ params }: PageProps) {
     onTypingStart: handleOpenClawTypingStart,
     onTypingEnd: handleOpenClawTypingEnd,
   })
+
+  // Sub-agent monitoring via RPC
+  const { connected: rpcConnected, listSessions } = useOpenClawRpc()
+  const [activeSubagents, setActiveSubagents] = useState<Array<{ key: string; label?: string; model?: string }>>([])
+
+  useEffect(() => {
+    if (!rpcConnected) return
+    
+    const pollSubagents = async () => {
+      try {
+        const response = await listSessions({ limit: 50 })
+        // Filter for sessions spawned by main and not completed
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sessions = response.sessions as any[]
+        const subagents = (sessions || [])
+          .filter((s) => 
+            s.spawnedBy === "agent:main:main" && 
+            s.totalTokens !== undefined // Active sessions have token counts
+          )
+          .map((s) => ({
+            key: s.key as string,
+            label: s.label as string | undefined,
+            model: s.model as string | undefined,
+          }))
+        setActiveSubagents(subagents)
+      } catch (err) {
+        console.error("[Chat] Failed to poll subagents:", err)
+      }
+    }
+    
+    pollSubagents()
+    const interval = setInterval(pollSubagents, 10000) // Poll every 10s
+    return () => clearInterval(interval)
+  }, [rpcConnected, listSessions])
 
   // SSE subscription for real-time local updates
   const handleNewMessage = useCallback((message: ChatMessage) => {
@@ -186,7 +221,16 @@ export default function ChatPage({ params }: PageProps) {
                     </p>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-3 text-xs">
+                  {activeSubagents.length > 0 && (
+                    <span 
+                      className="flex items-center gap-1 text-purple-400 cursor-help"
+                      title={activeSubagents.map(s => s.label || s.key).join(", ")}
+                    >
+                      <Bot className="h-3 w-3 animate-pulse" />
+                      {activeSubagents.length} sub-agent{activeSubagents.length > 1 ? "s" : ""}
+                    </span>
+                  )}
                   {openClawConnected ? (
                     <span className="flex items-center gap-1 text-green-500">
                       <Wifi className="h-3 w-3" />
