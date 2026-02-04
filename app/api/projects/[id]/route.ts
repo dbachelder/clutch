@@ -42,7 +42,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const { name, slug, description, color, repo_url, context_path, chat_layout } = body
+  const { name, slug, description, color, repo_url, context_path, chat_layout, local_path, github_repo } = body
+  
+  // Validate local_path if provided
+  if (local_path !== undefined && local_path !== null && typeof local_path !== 'string') {
+    return NextResponse.json(
+      { error: "local_path must be a string" },
+      { status: 400 }
+    )
+  }
+
+  // Validate github_repo format if provided
+  if (github_repo !== undefined && github_repo !== null) {
+    if (typeof github_repo !== 'string' || !/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(github_repo)) {
+      return NextResponse.json(
+        { error: "github_repo must be in owner/repo format" },
+        { status: 400 }
+      )
+    }
+  }
   
   // If changing slug, check uniqueness
   if (slug && slug !== existing.slug) {
@@ -66,6 +84,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     color: color ?? existing.color,
     repo_url: repo_url !== undefined ? repo_url : existing.repo_url,
     context_path: context_path !== undefined ? context_path : existing.context_path,
+    local_path: local_path !== undefined ? local_path : existing.local_path,
+    github_repo: github_repo !== undefined ? github_repo : existing.github_repo,
     chat_layout: chat_layout ?? existing.chat_layout,
     updated_at: Date.now(),
   }
@@ -74,6 +94,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     UPDATE projects 
     SET name = @name, slug = @slug, description = @description, 
         color = @color, repo_url = @repo_url, context_path = @context_path,
+        local_path = @local_path, github_repo = @github_repo,
         chat_layout = @chat_layout, updated_at = @updated_at
     WHERE id = @id
   `).run(updated)
