@@ -67,7 +67,7 @@ export default function SessionsPage() {
     }
     
     try {
-      const response = await listSessions({ limit: 100 });
+      const response = await listSessions({ limit: 10 });
       setSessions(response.sessions);
       if (isInitialLoad) {
         setInitialized(true);
@@ -121,7 +121,7 @@ export default function SessionsPage() {
     
     setLoading(true);
     try {
-      const response = await listSessions({ limit: 100 });
+      const response = await listSessions({ limit: 10 });
       setSessions(response.sessions);
       setError(null);
     } catch (err) {
