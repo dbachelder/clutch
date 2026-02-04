@@ -223,8 +223,8 @@ export function ChatInput({
         </div>
       )}
       
-      {/* Chat input and send button container - with proper vertical alignment */}
-      <div className="flex gap-2 md:gap-3 items-end">
+      {/* Chat input and send button container - aligned to top */}
+      <div className="flex gap-2 md:gap-3 items-start">
         <div className="flex-1">
           <textarea
             ref={textareaRef}
