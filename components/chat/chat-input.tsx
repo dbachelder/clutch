@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Square, X, Image as ImageIcon } from "lucide-react"
+import { Send, Square, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ContextIndicator } from "@/components/chat/context-indicator"
 
@@ -248,7 +248,11 @@ export function ChatInput({
             className="rounded-xl h-[44px] w-[44px] flex-shrink-0 touch-manipulation"
             title="Stop response"
           >
-            <Square className="h-4 w-4 md:h-5 md:w-5" />
+            {stopping ? (
+              <div className="animate-spin rounded-full h-4 w-4 md:h-5 md:w-5 border-2 border-white border-t-transparent" />
+            ) : (
+              <Square className="h-4 w-4 md:h-5 md:w-5" />
+            )}
           </Button>
         ) : (
           <Button
