@@ -116,7 +116,7 @@ export default function ChatPage({ params }: PageProps) {
     
     const pollSubagents = async () => {
       try {
-        const response = await listSessions({ limit: 50 })
+        const response = await listSessions({ limit: 10 })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sessions = response.sessions as any[]
         const fiveMinutesAgo = Date.now() - 5 * 60 * 1000

@@ -22,7 +22,7 @@ export default function ProjectSessionsPage({ params }: PageProps) {
     if (!connected) return
     
     try {
-      const response = await listSessions({ limit: 100 })
+      const response = await listSessions({ limit: 10 })
       setSessions(response.sessions || [])
       setError(null)
     } catch (err) {
