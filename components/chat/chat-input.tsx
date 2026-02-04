@@ -112,6 +112,9 @@ export function ChatInput({
     setImages([])
     setSending(true)
     
+    // Keep focus on input after clearing
+    textareaRef.current?.focus()
+    
     try {
       // Upload images if any
       let uploadedUrls: string[] = []
@@ -276,4 +279,3 @@ export function ChatInput({
     </div>
   )
 }// Updated
-// Updated
