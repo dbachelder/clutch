@@ -146,16 +146,16 @@ const columns: ColumnDef<SessionRowData>[] = [
     ),
   },
   {
-    accessorKey: 'tokens.total',
+    accessorKey: 'totalTokens',
     header: ({ column }) => <SortHeader column={column}>Tokens</SortHeader>,
-    cell: ({ row }) => (
-      <div className="flex flex-col">
-        <span className="tabular-nums">{formatTokens(row.original.tokens.total)}</span>
-        <span className="text-xs text-muted-foreground">
-          {formatTokens(row.original.tokens.input)} in / {formatTokens(row.original.tokens.output)} out
-        </span>
-      </div>
-    ),
+    cell: ({ row }) => {
+      const tokens = row.original.totalTokens || row.original.tokens?.total || 0;
+      return (
+        <div className="flex flex-col">
+          <span className="tabular-nums">{formatTokens(tokens)}</span>
+        </div>
+      );
+    },
   },
   {
     accessorKey: 'duration',
@@ -165,13 +165,17 @@ const columns: ColumnDef<SessionRowData>[] = [
     ),
   },
   {
-    accessorKey: 'createdAt',
-    header: ({ column }) => <SortHeader column={column}>Started</SortHeader>,
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {formatDistanceToNow(new Date(row.original.createdAt), { addSuffix: true })}
-      </span>
-    ),
+    accessorKey: 'updatedAt',
+    header: ({ column }) => <SortHeader column={column}>Last Active</SortHeader>,
+    cell: ({ row }) => {
+      const ts = row.original.updatedAt;
+      if (!ts) return <span className="text-sm text-muted-foreground">—</span>;
+      return (
+        <span className="text-sm text-muted-foreground">
+          {formatDistanceToNow(new Date(ts), { addSuffix: true })}
+        </span>
+      );
+    },
   },
 ];
 

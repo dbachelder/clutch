@@ -90,9 +90,14 @@ export default function SessionsPage() {
 
   // Load sessions when connected and set up auto-refresh
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    
     if (connected && !isInitialized) {
-      console.log("[SessionsPage] Connected, fetching sessions...");
-      fetchSessions(true);
+      // Small delay to let connection stabilize
+      timeoutId = setTimeout(() => {
+        console.log("[SessionsPage] Connected, fetching sessions...");
+        fetchSessions(true);
+      }, 500);
     }
     
     // Set up auto-refresh every 10 seconds when connected
@@ -103,6 +108,7 @@ export default function SessionsPage() {
     }
     
     return () => {
+      if (timeoutId) clearTimeout(timeoutId);
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
@@ -130,9 +136,9 @@ export default function SessionsPage() {
     router.push(`/sessions/${sessionId}`);
   };
 
-  // Count sessions by status
+  // Count sessions by status  
   const runningCount = sessions.filter((s) => s.status === 'running').length;
-  const totalTokens = sessions.reduce((acc, s) => acc + s.tokens.total, 0);
+  const totalTokens = sessions.reduce((acc, s) => acc + (s.totalTokens || s.tokens?.total || 0), 0);
 
   return (
     <div className="container mx-auto py-8 px-4">

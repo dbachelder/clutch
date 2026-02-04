@@ -2,17 +2,26 @@
 
 import { useCallback, useRef, useEffect, useState } from "react"
 
+// Fallback for non-secure contexts where crypto.randomUUID isn't available
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0
+    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
+}
+
 // Dynamic WebSocket URL based on page protocol
-// HTTPS pages must use WSS through nginx proxy, HTTP can use WS directly
 function getWebSocketUrl(): string {
   if (typeof window === "undefined") return ""
   
-  // When on HTTPS, use the same-origin WSS proxy
   if (window.location.protocol === "https:") {
     return `wss://${window.location.host}/openclaw-ws`
   }
   
-  // When on HTTP (dev), use direct connection
   return process.env.NEXT_PUBLIC_OPENCLAW_WS_URL || ""
 }
 
@@ -58,16 +67,37 @@ export function useOpenClawChat({
   const [sending, setSending] = useState(false)
   const pendingRequests = useRef<Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>>(new Map())
   const activeRunId = useRef<string | null>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
+
+  // Store callbacks in refs so they don't cause reconnection
+  const onDeltaRef = useRef(onDelta)
+  const onMessageRef = useRef(onMessage)
+  const onErrorRef = useRef(onError)
+  const onTypingStartRef = useRef(onTypingStart)
+  const onTypingEndRef = useRef(onTypingEnd)
+
+  // Keep refs updated
+  useEffect(() => {
+    onDeltaRef.current = onDelta
+    onMessageRef.current = onMessage
+    onErrorRef.current = onError
+    onTypingStartRef.current = onTypingStart
+    onTypingEndRef.current = onTypingEnd
+  }, [onDelta, onMessage, onError, onTypingStart, onTypingEnd])
 
   // Connect to OpenClaw WebSocket
   const connect = useCallback(() => {
     const wsUrl = getWebSocketUrl()
     if (!enabled || !wsUrl) {
-      console.log("[OpenClawChat] WebSocket URL not configured")
       return
     }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      return
+    }
+
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
       return
     }
 
@@ -77,12 +107,11 @@ export function useOpenClawChat({
 
     ws.onopen = () => {
       console.log("[OpenClawChat] WebSocket open, sending connect handshake")
-      // Send connect handshake (required first message)
-      const connectId = crypto.randomUUID()
+      const connectId = generateUUID()
       pendingRequests.current.set(connectId, {
         resolve: () => {
           console.log("[OpenClawChat] Connected and authenticated")
-          setConnected(true)
+          if (mountedRef.current) setConnected(true)
         },
         reject: (e) => {
           console.error("[OpenClawChat] Connect handshake failed:", e)
@@ -112,7 +141,6 @@ export function useOpenClawChat({
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        console.log("[OpenClawChat] Received:", data.type, data)
         
         // Handle RPC responses (type: "res")
         if (data.type === "res" && data.id && pendingRequests.current.has(data.id)) {
@@ -126,42 +154,33 @@ export function useOpenClawChat({
           return
         }
 
-        // Handle agent events (streaming deltas)
-        if (data.type === "event" && data.event === "agent") {
-          const payload = data.payload
-          if (payload.stream === "assistant" && payload.data?.delta) {
-            onDelta?.(payload.data.delta, payload.runId)
-          }
-        }
-        
-        // Handle chat events (started/final/error)
+        // Handle events (type: "event")
         if (data.type === "event" && data.event === "chat") {
           const payload = data.payload as ChatResponse
           
           if (payload.state === "started") {
             activeRunId.current = payload.runId
-            onTypingStart?.()
+            onTypingStartRef.current?.()
           } else if (payload.state === "delta") {
-            // Legacy delta handling (in case server uses this format)
             const text = typeof payload.message?.content === "string" 
               ? payload.message.content 
               : payload.message?.content?.[0]?.text || ""
-            onDelta?.(text, payload.runId)
+            onDeltaRef.current?.(text, payload.runId)
           } else if (payload.state === "final") {
-            onTypingEnd?.()
+            onTypingEndRef.current?.()
             if (payload.message) {
-              onMessage?.(payload.message, payload.runId)
+              onMessageRef.current?.(payload.message, payload.runId)
             }
             if (activeRunId.current === payload.runId) {
               activeRunId.current = null
-              setSending(false)
+              if (mountedRef.current) setSending(false)
             }
           } else if (payload.state === "error") {
-            onTypingEnd?.()
-            onError?.(payload.errorMessage || "Unknown error", payload.runId)
+            onTypingEndRef.current?.()
+            onErrorRef.current?.(payload.errorMessage || "Unknown error", payload.runId)
             if (activeRunId.current === payload.runId) {
               activeRunId.current = null
-              setSending(false)
+              if (mountedRef.current) setSending(false)
             }
           }
         }
@@ -172,15 +191,17 @@ export function useOpenClawChat({
 
     ws.onclose = () => {
       console.log("[OpenClawChat] Disconnected")
-      setConnected(false)
-      // Reconnect after delay
-      setTimeout(connect, 3000)
+      if (mountedRef.current) {
+        setConnected(false)
+        // Reconnect after delay
+        reconnectTimeoutRef.current = setTimeout(connect, 3000)
+      }
     }
 
     ws.onerror = (error) => {
       console.error("[OpenClawChat] Error:", error)
     }
-  }, [enabled, onDelta, onMessage, onError, onTypingStart, onTypingEnd])
+  }, [enabled]) // Only depends on enabled now
 
   // Send RPC request
   const rpc = useCallback(async (method: string, params: Record<string, unknown>): Promise<unknown> => {
@@ -188,12 +209,11 @@ export function useOpenClawChat({
       throw new Error("WebSocket not connected")
     }
 
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     return new Promise((resolve, reject) => {
       pendingRequests.current.set(id, { resolve, reject })
       wsRef.current!.send(JSON.stringify({ type: "req", id, method, params }))
       
-      // Timeout after 60s
       setTimeout(() => {
         if (pendingRequests.current.has(id)) {
           pendingRequests.current.delete(id)
@@ -210,9 +230,8 @@ export function useOpenClawChat({
     }
 
     setSending(true)
-    const idempotencyKey = crypto.randomUUID()
+    const idempotencyKey = generateUUID()
     
-    // Include Trap chat context in the message
     const contextMessage = trapChatId 
       ? `[Trap Chat ID: ${trapChatId}]\n\n${message}`
       : message
@@ -224,10 +243,9 @@ export function useOpenClawChat({
         idempotencyKey,
       }) as { runId: string; status: string }
       
-      // Trigger typing indicator when server acknowledges with "started"
       if (result.status === "started") {
         activeRunId.current = result.runId
-        onTypingStart?.()
+        onTypingStartRef.current?.()
       }
       
       return result.runId
@@ -235,12 +253,18 @@ export function useOpenClawChat({
       setSending(false)
       throw error
     }
-  }, [connected, sessionKey, rpc, onTypingStart])
+  }, [connected, sessionKey, rpc])
 
-  // Connect on mount
+  // Connect on mount, cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true
     connect()
+    
     return () => {
+      mountedRef.current = false
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
       wsRef.current?.close()
     }
   }, [connect])

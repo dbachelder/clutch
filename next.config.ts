@@ -1,11 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Allow dev server access from LAN
+  // Allow dev server access from anywhere (dev only)
+  // These are hostnames, not full URLs
   allowedDevOrigins: [
-    "http://192.168.7.200:3002",
-    "http://localhost:3002",
-    "https://ada.codesushi.com",
+    "192.168.7.200",
+    "ada.codesushi.com",
   ],
 };
 
