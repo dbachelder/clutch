@@ -246,6 +246,21 @@ export function useOpenClawRpc() {
     return rpc<SessionListResponse>("sessions.list", (params || {}) as Record<string, unknown>)
   }, [rpc])
 
+  // Get session preview with history
+  const getSessionPreview = useCallback(async (sessionKey: string, limit?: number) => {
+    return rpc<{ session: unknown; messages: unknown[] }>("sessions.preview", { sessionKey, limit: limit || 50 })
+  }, [rpc])
+
+  // Reset session
+  const resetSession = useCallback(async (sessionKey: string) => {
+    return rpc<void>("sessions.reset", { sessionKey })
+  }, [rpc])
+
+  // Compact session context
+  const compactSession = useCallback(async (sessionKey: string) => {
+    return rpc<void>("sessions.compact", { sessionKey })
+  }, [rpc])
+
   // Connect on mount, cleanup on unmount
   useEffect(() => {
     mountedRef.current = true
@@ -264,6 +279,9 @@ export function useOpenClawRpc() {
     disconnect,
     rpc,
     listSessions,
+    getSessionPreview,
+    resetSession,
+    compactSession,
   }
 }
 
