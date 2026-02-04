@@ -29,9 +29,15 @@ export function ContextIndicator({
       setLoading(true)
       const preview: SessionPreview = await getSessionPreview(sessionKey, 1) // Only need 1 message for context info
       
+      // Handle missing session data gracefully
+      if (!preview?.session) {
+        setContextData(null)
+        return
+      }
+      
       // Calculate actual token counts if available
-      const tokens = preview.session.tokens.total
-      const percentage = preview.contextPercentage
+      const tokens = preview.session.tokens?.total ?? 0
+      const percentage = preview.contextPercentage ?? 0
       
       // Estimate total context window based on percentage
       // If percentage is 0, avoid division by zero
