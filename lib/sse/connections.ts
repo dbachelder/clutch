@@ -6,7 +6,7 @@
 type ChatConnection = ReadableStreamDefaultController
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var chatConnections: Map<string, Set<ChatConnection>> | undefined
 }
 

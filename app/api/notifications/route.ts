@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const unreadOnly = searchParams.get("unread") === "true"
   const limit = parseInt(searchParams.get("limit") || "50")
   
-  let query = `
+  const query = `
     SELECT * FROM notifications 
     ${unreadOnly ? "WHERE read = 0" : ""}
     ORDER BY 

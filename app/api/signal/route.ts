@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
   const onlyUnresponded = searchParams.get("unresponded") === "true"
   const limit = parseInt(searchParams.get("limit") || "50")
   
-  let whereConditions: string[] = []
-  let params: any[] = []
+  const whereConditions: string[] = []
+  const params: any[] = []
   
   if (taskId) {
     whereConditions.push("task_id = ?")

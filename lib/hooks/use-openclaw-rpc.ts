@@ -27,6 +27,11 @@ export function useOpenClawRpc() {
     return rpc<void>("sessions.compact", { sessionKey });
   }, [rpc]);
 
+  // Cancel running session
+  const cancelSession = useCallback(async (sessionKey: string) => {
+    return rpc<void>("sessions.cancel", { sessionKey });
+  }, [rpc]);
+
   return {
     connected: status === 'connected',
     connecting: status === 'connecting' || status === 'reconnecting',
@@ -43,6 +48,7 @@ export function useOpenClawRpc() {
     getSessionPreview,
     resetSession,
     compactSession,
+    cancelSession,
   };
 }
 

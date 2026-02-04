@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, RotateCcw, Archive, AlertCircle, X } from 'lucide-react';
+import { ArrowLeft, Loader2, RotateCcw, Archive, AlertCircle, X, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSessionStore } from '@/lib/stores/session-store';
 import { useOpenClawRpc } from '@/lib/hooks/use-openclaw-rpc';
@@ -31,6 +31,7 @@ export default function SessionDetailPage() {
   const [sessionPreview, setSessionPreview] = useState<SessionPreview | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [notification, setNotification] = useState<{
     message: string;
@@ -44,7 +45,7 @@ export default function SessionDetailPage() {
   };
   
   const session = useSessionStore((state) => state.getSessionById(sessionId));
-  const { getSessionPreview, resetSession, compactSession, connected } = useOpenClawRpc();
+  const { getSessionPreview, resetSession, compactSession, cancelSession, connected } = useOpenClawRpc();
 
   // Load session preview data
   useEffect(() => {
@@ -101,6 +102,23 @@ export default function SessionDetailPage() {
     }
   };
 
+  // Handle session cancel
+  const handleCancelSession = async () => {
+    try {
+      setIsCanceling(true);
+      await cancelSession(sessionId);
+      showToast("Session has been canceled successfully", "success");
+      // Reload session preview after cancel
+      const preview = await getSessionPreview(sessionId);
+      setSessionPreview(preview);
+    } catch (error) {
+      console.error('Failed to cancel session:', error);
+      showToast("Failed to cancel session", "error");
+    } finally {
+      setIsCanceling(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="container mx-auto py-8 px-4 flex items-center justify-center min-h-[400px]">
@@ -141,6 +159,24 @@ export default function SessionDetailPage() {
           
           {/* Action Buttons */}
           <div className="flex gap-2">
+            {/* Cancel Button - only show if session appears to be running */}
+            {displaySession?.status !== 'idle' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancelSession}
+                disabled={!connected || isCanceling}
+                title="Cancel running session"
+              >
+                {isCanceling ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Square className="h-4 w-4 mr-2" />
+                )}
+                Cancel
+              </Button>
+            )}
+            
             <Button
               variant="outline"
               size="sm"

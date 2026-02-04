@@ -100,7 +100,7 @@ export default function ChatPage({ params }: PageProps) {
     }
   }, [activeChat, setTyping])
 
-  const { connected: openClawConnected, sending: openClawSending, sendMessage: sendToOpenClaw } = useOpenClawChat({
+  const { connected: openClawConnected, sending: openClawSending, sendMessage: sendToOpenClaw, abortChat } = useOpenClawChat({
     sessionKey: "main",
     onMessage: handleOpenClawMessage,
     onDelta: handleOpenClawDelta,
@@ -209,6 +209,17 @@ export default function ChatPage({ params }: PageProps) {
     }
   }
 
+  const handleStopChat = async () => {
+    if (!openClawConnected) return
+    
+    try {
+      console.log("[Chat] Aborting chat response")
+      await abortChat()
+    } catch (error) {
+      console.error("[Chat] Failed to abort chat:", error)
+    }
+  }
+
   const handleCreateTask = (message: ChatMessage) => {
     setCreateTaskMessage(message)
   }
@@ -285,7 +296,11 @@ export default function ChatPage({ params }: PageProps) {
               />
               
               {/* Input */}
-              <ChatInput onSend={handleSendMessage} />
+              <ChatInput 
+                onSend={handleSendMessage}
+                onStop={handleStopChat}
+                isAssistantTyping={activeChat ? (typingIndicators[activeChat.id] || []).some(t => t.author === "ada") : false}
+              />
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">
