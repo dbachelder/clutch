@@ -50,7 +50,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
 
           // Paragraphs
           p: ({ children }) => (
-            <p className="text-[15px] leading-relaxed mb-2 last:mb-0 font-normal">
+            <p className="text-base leading-relaxed mb-2 last:mb-0 font-normal">
               {children}
             </p>
           ),
@@ -109,7 +109,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
             </ol>
           ),
           li: ({ children }) => (
-            <li className="text-[15px] leading-relaxed font-normal">
+            <li className="text-base leading-relaxed font-normal">
               {children}
             </li>
           ),
