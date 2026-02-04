@@ -133,8 +133,12 @@ export function useOpenClawChat({
           if (payload.state === "started") {
             activeRunId.current = payload.runId
             onTypingStart?.()
-          } else if (payload.state === "delta" && payload.delta) {
-            onDelta?.(payload.delta, payload.runId)
+          } else if (payload.state === "delta") {
+            // Server sends message with accumulated text, not just delta
+            const text = typeof payload.message?.content === "string" 
+              ? payload.message.content 
+              : payload.message?.content?.[0]?.text || ""
+            onDelta?.(text, payload.runId)
           } else if (payload.state === "final") {
             onTypingEnd?.()
             if (payload.message) {
