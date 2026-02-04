@@ -79,10 +79,14 @@ class WebSocketManager {
 
     switch (message.type) {
       case 'subscribe':
-        this.subscribeToProject(clientId, message.projectId, message.userId)
+        if (message.projectId) {
+          this.subscribeToProject(clientId, message.projectId, message.userId)
+        }
         break
       case 'unsubscribe':
-        this.unsubscribeFromProject(clientId, message.projectId)
+        if (message.projectId) {
+          this.unsubscribeFromProject(clientId, message.projectId)
+        }
         break
       case 'ping':
         this.sendToClient(clientId, { type: 'pong', data: {} })
