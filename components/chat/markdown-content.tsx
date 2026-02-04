@@ -11,7 +11,7 @@ interface MarkdownContentProps {
 
 export function MarkdownContent({ content, className = "" }: MarkdownContentProps) {
   return (
-    <div className={`markdown-content ${className}`}>
+    <div className={`markdown-content chat-text ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
@@ -50,7 +50,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
 
           // Paragraphs
           p: ({ children }) => (
-            <p className="text-sm leading-relaxed mb-2 last:mb-0">
+            <p className="text-[15px] leading-relaxed mb-2 last:mb-0 font-normal">
               {children}
             </p>
           ),
@@ -109,7 +109,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
             </ol>
           ),
           li: ({ children }) => (
-            <li className="text-sm leading-relaxed">
+            <li className="text-[15px] leading-relaxed font-normal">
               {children}
             </li>
           ),

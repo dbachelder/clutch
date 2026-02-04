@@ -68,7 +68,7 @@ export function MessageBubble({
         
         {/* Bubble */}
         <div 
-          className={`inline-block px-3 md:px-4 py-2 md:py-3 rounded-2xl text-sm md:text-base ${
+          className={`inline-block px-3 md:px-4 py-2 md:py-3 rounded-2xl text-[15px] md:text-base leading-relaxed font-medium chat-text ${
             isOwnMessage
               ? "bg-[var(--accent-blue)] text-white rounded-br-md"
               : "bg-[var(--bg-tertiary)] text-[var(--text-primary)] rounded-bl-md"
