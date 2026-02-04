@@ -11,6 +11,8 @@ export interface Project {
   local_path: string | null
   github_repo: string | null
   chat_layout: 'slack' | 'imessage'
+  work_loop_enabled: number  // SQLite boolean (0/1)
+  work_loop_schedule: string  // cron expression
   created_at: number
   updated_at: number
 }

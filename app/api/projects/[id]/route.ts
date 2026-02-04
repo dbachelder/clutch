@@ -42,7 +42,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const { name, slug, description, color, repo_url, context_path, chat_layout, local_path, github_repo } = body
+  const { name, slug, description, color, repo_url, context_path, chat_layout, local_path, github_repo, work_loop_enabled, work_loop_schedule } = body
   
   // Validate local_path if provided
   if (local_path !== undefined && local_path !== null && typeof local_path !== 'string') {
@@ -60,6 +60,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { status: 400 }
       )
     }
+  }
+
+  // Validate work_loop_enabled if provided
+  if (work_loop_enabled !== undefined && typeof work_loop_enabled !== 'boolean') {
+    return NextResponse.json(
+      { error: "work_loop_enabled must be a boolean" },
+      { status: 400 }
+    )
+  }
+
+  // Validate work_loop_schedule if provided
+  if (work_loop_schedule !== undefined && work_loop_schedule !== null) {
+    if (typeof work_loop_schedule !== 'string') {
+      return NextResponse.json(
+        { error: "work_loop_schedule must be a string" },
+        { status: 400 }
+      )
+    }
+    // TODO: Add cron validation if needed
   }
   
   // If changing slug, check uniqueness
@@ -87,6 +106,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     local_path: local_path !== undefined ? local_path : existing.local_path,
     github_repo: github_repo !== undefined ? github_repo : existing.github_repo,
     chat_layout: chat_layout ?? existing.chat_layout,
+    work_loop_enabled: work_loop_enabled !== undefined ? (work_loop_enabled ? 1 : 0) : existing.work_loop_enabled,
+    work_loop_schedule: work_loop_schedule !== undefined ? work_loop_schedule : existing.work_loop_schedule,
     updated_at: Date.now(),
   }
 
@@ -95,7 +116,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     SET name = @name, slug = @slug, description = @description, 
         color = @color, repo_url = @repo_url, context_path = @context_path,
         local_path = @local_path, github_repo = @github_repo,
-        chat_layout = @chat_layout, updated_at = @updated_at
+        chat_layout = @chat_layout, work_loop_enabled = @work_loop_enabled,
+        work_loop_schedule = @work_loop_schedule, updated_at = @updated_at
     WHERE id = @id
   `).run(updated)
 

@@ -23,6 +23,8 @@ addColumnIfNotExists("chats", "session_key", "TEXT")
 addColumnIfNotExists("chat_messages", "run_id", "TEXT")
 addColumnIfNotExists("projects", "local_path", "TEXT")
 addColumnIfNotExists("projects", "github_repo", "TEXT")
+addColumnIfNotExists("projects", "work_loop_enabled", "INTEGER DEFAULT 0")
+addColumnIfNotExists("projects", "work_loop_schedule", "TEXT DEFAULT '*/5 * * * *'")
 
 // Now run schema.sql for new tables and indexes
 const schemaPath = path.join(__dirname, "../lib/db/schema.sql")
