@@ -5,12 +5,17 @@ import { MessageSquare } from "lucide-react"
 import { MessageBubble } from "./message-bubble"
 import type { ChatMessage } from "@/lib/db/types"
 
+interface TypingIndicator {
+  author: string
+  state: "thinking" | "typing"
+}
+
 interface ChatThreadProps {
   messages: ChatMessage[]
   loading?: boolean
   currentUser?: string
   onCreateTask?: (message: ChatMessage) => void
-  typingAuthors?: string[]
+  typingIndicators?: TypingIndicator[]
 }
 
 export function ChatThread({ 
@@ -18,7 +23,7 @@ export function ChatThread({
   loading = false, 
   currentUser = "dan",
   onCreateTask,
-  typingAuthors = [],
+  typingIndicators = [],
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -26,7 +31,7 @@ export function ChatThread({
   // Scroll to bottom on new messages or typing indicator
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages.length, typingAuthors.length])
+  }, [messages.length, typingIndicators.length])
 
   if (loading) {
     return (
@@ -76,7 +81,7 @@ export function ChatThread({
       ))}
       
       {/* Typing indicator */}
-      {typingAuthors.length > 0 && (
+      {typingIndicators.length > 0 && (
         <div className="flex items-center gap-2 px-4 py-2">
           <div className="flex gap-1">
             <span className="w-2 h-2 bg-[var(--text-muted)] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -84,7 +89,7 @@ export function ChatThread({
             <span className="w-2 h-2 bg-[var(--text-muted)] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
           </div>
           <span className="text-sm text-[var(--text-muted)]">
-            {typingAuthors.join(", ")} {typingAuthors.length === 1 ? "is" : "are"} typing...
+            {typingIndicators.map((t) => t.author).join(", ")} {typingIndicators.length === 1 ? "is" : "are"} {typingIndicators[0]?.state === "thinking" ? "thinking..." : "typing..."}
           </span>
         </div>
       )}

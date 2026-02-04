@@ -26,7 +26,7 @@ export default function ChatPage({ params }: PageProps) {
     activeChat, 
     messages, 
     loadingMessages,
-    typingAuthors,
+    typingIndicators,
     fetchChats, 
     sendMessage: sendMessageToDb,
     setActiveChat,
@@ -72,7 +72,7 @@ export default function ChatPage({ params }: PageProps) {
 
   const handleOpenClawTypingStart = useCallback(() => {
     if (activeChat) {
-      setTyping(activeChat.id, "ada", true)
+      setTyping(activeChat.id, "ada", "thinking")
     }
   }, [activeChat, setTyping])
 
@@ -82,9 +82,17 @@ export default function ChatPage({ params }: PageProps) {
     }
   }, [activeChat, setTyping])
 
+  const handleOpenClawDelta = useCallback(() => {
+    if (activeChat) {
+      // Switch from "thinking" to "typing" on first delta
+      setTyping(activeChat.id, "ada", "typing")
+    }
+  }, [activeChat, setTyping])
+
   const { connected: openClawConnected, sending: openClawSending, sendMessage: sendToOpenClaw } = useOpenClawChat({
     sessionKey: "main",
     onMessage: handleOpenClawMessage,
+    onDelta: handleOpenClawDelta,
     onTypingStart: handleOpenClawTypingStart,
     onTypingEnd: handleOpenClawTypingEnd,
   })
@@ -132,7 +140,7 @@ export default function ChatPage({ params }: PageProps) {
 
   const handleTyping = useCallback((author: string, typing: boolean) => {
     if (activeChat) {
-      setTyping(activeChat.id, author, typing)
+      setTyping(activeChat.id, author, typing ? "typing" : false)
     }
   }, [activeChat, setTyping])
 
@@ -250,7 +258,7 @@ export default function ChatPage({ params }: PageProps) {
                 messages={currentMessages} 
                 loading={loadingMessages}
                 onCreateTask={handleCreateTask}
-                typingAuthors={typingAuthors[activeChat.id] || []}
+                typingIndicators={typingIndicators[activeChat.id] || []}
               />
               
               {/* Input */}

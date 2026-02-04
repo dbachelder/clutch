@@ -17,7 +17,7 @@ interface ChatState {
   loadingMessages: boolean
   error: string | null
   currentProjectId: string | null
-  typingAuthors: Record<string, string[]> // chatId -> authors currently typing
+  typingIndicators: Record<string, { author: string; state: "thinking" | "typing" }[]> // chatId -> typing info
   
   // Actions
   fetchChats: (projectId: string) => Promise<void>
@@ -31,7 +31,7 @@ interface ChatState {
   
   // SSE event handlers
   receiveMessage: (chatId: string, message: ChatMessage) => void
-  setTyping: (chatId: string, author: string, typing: boolean) => void
+  setTyping: (chatId: string, author: string, state: "thinking" | "typing" | false) => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -42,7 +42,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadingMessages: false,
   error: null,
   currentProjectId: null,
-  typingAuthors: {},
+  typingIndicators: {},
 
   fetchChats: async (projectId) => {
     set({ loading: true, error: null, currentProjectId: projectId })
@@ -225,36 +225,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
             : c
         ),
         // Clear typing indicator for this author
-        typingAuthors: {
-          ...state.typingAuthors,
-          [chatId]: (state.typingAuthors[chatId] || []).filter((a) => a !== message.author),
+        typingIndicators: {
+          ...state.typingIndicators,
+          [chatId]: (state.typingIndicators[chatId] || []).filter((t) => t.author !== message.author),
         },
       }
     })
   },
 
   // Handle typing indicator from SSE
-  setTyping: (chatId, author, typing) => {
-    set((state) => {
-      const current = state.typingAuthors[chatId] || []
+  setTyping: (chatId, author, state) => {
+    set((store) => {
+      const current = store.typingIndicators[chatId] || []
+      const existing = current.find((t) => t.author === author)
       
-      if (typing && !current.includes(author)) {
+      if (state && !existing) {
+        // Add new typing indicator
         return {
-          typingAuthors: {
-            ...state.typingAuthors,
-            [chatId]: [...current, author],
+          typingIndicators: {
+            ...store.typingIndicators,
+            [chatId]: [...current, { author, state }],
           },
         }
-      } else if (!typing && current.includes(author)) {
+      } else if (state && existing && existing.state !== state) {
+        // Update state (thinking -> typing)
         return {
-          typingAuthors: {
-            ...state.typingAuthors,
-            [chatId]: current.filter((a) => a !== author),
+          typingIndicators: {
+            ...store.typingIndicators,
+            [chatId]: current.map((t) => t.author === author ? { author, state } : t),
+          },
+        }
+      } else if (!state && existing) {
+        // Remove typing indicator
+        return {
+          typingIndicators: {
+            ...store.typingIndicators,
+            [chatId]: current.filter((t) => t.author !== author),
           },
         }
       }
       
-      return state
+      return store
     })
   },
 }))

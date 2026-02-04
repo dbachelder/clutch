@@ -41,6 +41,7 @@ export function useOpenClawRpc() {
   const wsRef = useRef<WebSocket | null>(null)
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const connectingRef = useRef(false)
   const pendingRequests = useRef<Map<string, PendingRequest<unknown>>>(new Map())
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -66,10 +67,11 @@ export function useOpenClawRpc() {
       return
     }
 
-    if (connecting) {
+    if (connectingRef.current) {
       return
     }
 
+    connectingRef.current = true
     setConnecting(true)
     console.log("[OpenClawRPC] Connecting to", wsUrl)
     
@@ -86,6 +88,7 @@ export function useOpenClawRpc() {
         if (pendingRequests.current.has(connectId)) {
           pendingRequests.current.delete(connectId)
           ws.close()
+          connectingRef.current = false
           setConnecting(false)
         }
       }, 10000) // 10s timeout for handshake
@@ -94,6 +97,7 @@ export function useOpenClawRpc() {
         resolve: () => {
           console.log("[OpenClawRPC] Connected and authenticated")
           setConnected(true)
+          connectingRef.current = false
           setConnecting(false)
           // Clear any reconnect timeout
           if (reconnectTimeoutRef.current) {
@@ -103,6 +107,7 @@ export function useOpenClawRpc() {
         },
         reject: (e) => {
           console.error("[OpenClawRPC] Connect handshake failed:", e)
+          connectingRef.current = false
           setConnecting(false)
           ws.close()
         },
@@ -117,10 +122,10 @@ export function useOpenClawRpc() {
           minProtocol: 3,
           maxProtocol: 3,
           client: {
-            id: "trap-web",
+            id: "webchat",
             version: "1.0.0",
             platform: "web",
-            mode: "rpc",
+            mode: "webchat",
           },
           auth: {
             token: AUTH_TOKEN
@@ -156,6 +161,7 @@ export function useOpenClawRpc() {
     ws.onclose = (event) => {
       console.log("[OpenClawRPC] Disconnected", event.code, event.reason)
       setConnected(false)
+      connectingRef.current = false
       setConnecting(false)
       
       // Reject all pending requests
@@ -169,9 +175,10 @@ export function useOpenClawRpc() {
 
     ws.onerror = (error) => {
       console.error("[OpenClawRPC] WebSocket error:", error)
+      connectingRef.current = false
       setConnecting(false)
     }
-  }, [connecting, clearPendingRequests])
+  }, [clearPendingRequests])
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -188,6 +195,7 @@ export function useOpenClawRpc() {
     }
     
     setConnected(false)
+    connectingRef.current = false
     setConnecting(false)
   }, [clearPendingRequests])
 
