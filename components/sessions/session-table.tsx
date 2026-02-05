@@ -17,7 +17,7 @@ import {
 } from '@tanstack/react-table';
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { SessionStatus, SessionType } from '@/lib/types';
+import { SessionStatus, SessionType, Session } from '@/lib/types';
 import { useSessionStore } from '@/lib/stores/session-store';
 import {
   Table,
@@ -346,19 +346,23 @@ function EmptyState() {
 
 interface SessionTableProps {
   onRowClick?: (sessionId: string) => void;
+  filteredSessions?: Session[];
 }
 
-export function SessionTable({ onRowClick }: SessionTableProps) {
+export function SessionTable({ onRowClick, filteredSessions }: SessionTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'updatedAt', desc: true },
   ]);
   
-  const sessions = useSessionStore((state) => state.sessions);
+  const storeSessions = useSessionStore((state) => state.sessions);
   const isLoading = useSessionStore((state) => state.isLoading);
   const error = useSessionStore((state) => state.error);
+  
+  // Use filtered sessions if provided, otherwise use store sessions
+  const rawSessions = filteredSessions || storeSessions;
 
   // Transform sessions for table
-  const data: SessionRowData[] = sessions.map((session) => ({
+  const data: SessionRowData[] = (filteredSessions || rawSessions).map((session) => ({
     ...session,
     duration: formatDuration(session.createdAt, session.completedAt),
   }));
