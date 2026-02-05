@@ -80,10 +80,11 @@ class OpenClawClient {
             minProtocol: 3,
             maxProtocol: 3,
             client: {
-              id: 'trap-backend',
+              id: 'gateway-client',
+              displayName: 'Trap Backend',
               version: '1.0.0',
               platform: 'nodejs',
-              mode: 'control',
+              mode: 'backend',
             },
             auth: this.authToken ? { token: this.authToken } : undefined
           }
