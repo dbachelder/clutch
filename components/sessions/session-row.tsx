@@ -105,12 +105,17 @@ export function SessionRow({ session }: SessionRowProps) {
         <td className="px-4 py-3">
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="text-sm truncate max-w-[150px] inline-block">
-                {session.model}
+              <span
+                className={`text-sm truncate max-w-[150px] inline-block ${session.effectiveModel && session.effectiveModel !== session.model ? 'text-primary font-medium' : ''}`}
+              >
+                {session.effectiveModel || session.model}
               </span>
             </TooltipTrigger>
             <TooltipContent>
-              <p>{session.model}</p>
+              <p>{session.effectiveModel || session.model}</p>
+              {session.effectiveModel && session.effectiveModel !== session.model && (
+                <p className="text-xs text-muted-foreground">Override from {session.model}</p>
+              )}
             </TooltipContent>
           </Tooltip>
         </td>
