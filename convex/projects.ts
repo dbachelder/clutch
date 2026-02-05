@@ -190,17 +190,17 @@ export const create = mutation({
 
     const now = Date.now()
 
-    const projectData: Omit<ProjectInsert, 'id' | 'created_at' | 'updated_at'> = {
+    const projectData = {
       slug,
       name: args.name.trim(),
-      description: args.description?.trim() ?? null,
+      description: args.description?.trim() || undefined,
       color: args.color?.trim() || '#3b82f6',
-      repo_url: args.repo_url?.trim() ?? null,
-      context_path: args.context_path?.trim() ?? null,
-      local_path: args.local_path?.trim() ?? null,
-      github_repo: args.github_repo?.trim() ?? null,
+      repo_url: args.repo_url?.trim() || undefined,
+      context_path: args.context_path?.trim() || undefined,
+      local_path: args.local_path?.trim() || undefined,
+      github_repo: args.github_repo?.trim() || undefined,
       chat_layout: args.chat_layout || 'slack',
-      work_loop_enabled: args.work_loop_enabled ? 1 : 0,
+      work_loop_enabled: args.work_loop_enabled ?? false,
       work_loop_schedule: args.work_loop_schedule?.trim() || '*/5 * * * *',
     }
 

@@ -1,7 +1,7 @@
 import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
 import type { Task, Comment, TaskSummary, TaskDependencySummary } from '../lib/db/types'
-import type { Id } from './_generated/server'
+import type { Id } from './_generated/dataModel'
 
 // ============================================
 // Type Helpers
