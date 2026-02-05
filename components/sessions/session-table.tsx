@@ -42,6 +42,7 @@ interface SessionRowData {
   name: string;
   type: SessionType;
   model: string;
+  effectiveModel?: string;
   status: SessionStatus;
   tokens: {
     input: number;
@@ -134,13 +135,20 @@ const columns: ColumnDef<SessionRowData>[] = [
     ),
   },
   {
-    accessorKey: 'model',
+    accessorKey: 'effectiveModel',
     header: ({ column }) => <SortHeader column={column}>Model</SortHeader>,
-    cell: ({ row }) => (
-      <span className="text-sm truncate max-w-[180px] inline-block" title={row.original.model}>
-        {row.original.model}
-      </span>
-    ),
+    cell: ({ row }) => {
+      const effectiveModel = row.original.effectiveModel || row.original.model;
+      const hasOverride = row.original.effectiveModel && row.original.effectiveModel !== row.original.model;
+      return (
+        <span
+          className={`text-sm truncate max-w-[180px] inline-block ${hasOverride ? 'text-primary font-medium' : ''}`}
+          title={effectiveModel}
+        >
+          {effectiveModel}
+        </span>
+      );
+    },
   },
   {
     accessorKey: 'status',
@@ -250,8 +258,11 @@ function SessionCard({
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Model:</span>
-              <span className="text-right truncate ml-2" title={session.model}>
-                {session.model}
+              <span
+                className={`text-right truncate ml-2 ${session.effectiveModel && session.effectiveModel !== session.model ? 'text-primary font-medium' : ''}`}
+                title={session.effectiveModel || session.model}
+              >
+                {session.effectiveModel || session.model}
               </span>
             </div>
             <div className="flex justify-between">

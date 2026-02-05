@@ -28,6 +28,67 @@ export function useOpenClawRpc() {
     return { sessions, total: sessions.length };
   }, [rpc]);
 
+  // List sessions with effective model extracted from recent messages
+  // This fetches sessions.preview to get the actual model used for API calls,
+  // which may differ from session.model when model overrides are applied
+  const listSessionsWithEffectiveModel = useCallback(async (params?: SessionListParams): Promise<SessionListResponse> => {
+    const response = await rpc<{ sessions: Array<Record<string, unknown>> }>("sessions.list", (params || {}) as Record<string, unknown>);
+    const sessionRows = response.sessions || [];
+
+    // Get session keys for fetching previews
+    const sessionKeys = sessionRows.map((s) => s.key as string);
+
+    // Fetch previews to get actual model from messages
+    let previewData: { previews?: Array<{ key: string; items?: Array<{ role?: string; model?: string }> }> } = {};
+    if (sessionKeys.length > 0) {
+      try {
+        previewData = await rpc<{ previews: Array<{ key: string; items?: Array<{ role?: string; model?: string }> }> }>(
+          "sessions.preview",
+          { keys: sessionKeys, limit: 5 }
+        );
+      } catch (err) {
+        console.warn('[useOpenClawRpc] Failed to fetch session previews:', err);
+      }
+    }
+
+    // Build a map of session key to effective model from preview messages
+    const effectiveModelMap = new Map<string, string>();
+    for (const preview of previewData.previews || []) {
+      // Find the most recent message with a model field
+      for (const item of preview.items || []) {
+        if (item.model) {
+          effectiveModelMap.set(preview.key, item.model);
+          break;
+        }
+      }
+    }
+
+    // Map sessions with effective model
+    const sessions = sessionRows.map((s) => {
+      const key = s.key as string;
+      const effectiveModel = effectiveModelMap.get(key);
+      const sessionModel = s.model as string;
+
+      return {
+        id: key,
+        name: key?.split(':').pop() || 'unknown',
+        type: ((s.kind as string) || 'main') as SessionType,
+        model: sessionModel,
+        effectiveModel: effectiveModel || sessionModel, // Use effective model if available, fallback to session model
+        status: 'idle' as const,
+        updatedAt: s.updatedAt as string,
+        createdAt: s.updatedAt as string,
+        tokens: {
+          input: (s.inputTokens as number) || 0,
+          output: (s.outputTokens as number) || 0,
+          total: (s.totalTokens as number) || 0,
+        },
+      };
+    });
+
+    return { sessions, total: sessions.length };
+  }, [rpc]);
+
   // List agents via RPC
   const listAgents = useCallback(async (params?: AgentListParams): Promise<AgentListResponse> => {
     try {
@@ -252,11 +313,12 @@ export function useOpenClawRpc() {
       console.log('[useOpenClawRpc] Connection is managed by OpenClawWSProvider');
     },
     disconnect: () => {
-      // Disconnection is handled by the provider  
+      // Disconnection is handled by the provider
       console.log('[useOpenClawRpc] Disconnection is managed by OpenClawWSProvider');
     },
     rpc,
     listSessions,
+    listSessionsWithEffectiveModel,
     listAgents,
     getAgent,
     getSessionPreview,

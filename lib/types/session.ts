@@ -12,6 +12,11 @@ export interface Session {
   name: string;
   type: SessionType;
   model: string;
+  /**
+   * The actual model used for API calls, extracted from recent messages.
+   * This may differ from `model` when a model override is applied (e.g., via cron jobs).
+   */
+  effectiveModel?: string;
   status: SessionStatus;
   parentId?: string;
   createdAt: string;

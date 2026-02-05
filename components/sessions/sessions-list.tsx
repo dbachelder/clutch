@@ -115,7 +115,7 @@ export function SessionsList({
   description,
 }: SessionsListProps) {
   const router = useRouter();
-  const { connected, connecting, listSessions } = useOpenClawRpc();
+  const { connected, connecting, listSessionsWithEffectiveModel } = useOpenClawRpc();
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const {
@@ -133,16 +133,16 @@ export function SessionsList({
     ? filterProjectSessions(allSessions, projectSlug)
     : allSessions;
 
-  // Fetch sessions via WebSocket RPC
+  // Fetch sessions via WebSocket RPC with effective model
   const fetchSessions = useCallback(async (isInitialLoad = false) => {
     if (!connected) return;
-    
+
     if (isInitialLoad) {
       setLoading(true);
     }
-    
+
     try {
-      const response = await listSessions({ limit: 10 });
+      const response = await listSessionsWithEffectiveModel({ limit: 10 });
       setSessions(response.sessions);
       if (isInitialLoad) {
         setInitialized(true);
@@ -156,7 +156,7 @@ export function SessionsList({
         setLoading(false);
       }
     }
-  }, [connected, listSessions, setSessions, setLoading, setInitialized, setError]);
+  }, [connected, listSessionsWithEffectiveModel, setSessions, setLoading, setInitialized, setError]);
 
   // Reset initialization on mount to ensure fresh data
   useEffect(() => {
@@ -193,10 +193,10 @@ export function SessionsList({
 
   const handleRefresh = async () => {
     if (!connected) return;
-    
+
     setLoading(true);
     try {
-      const response = await listSessions({ limit: 10 });
+      const response = await listSessionsWithEffectiveModel({ limit: 10 });
       setSessions(response.sessions);
       setError(null);
     } catch (err) {
