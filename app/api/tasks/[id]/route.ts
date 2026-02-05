@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { wsManager } from "@/lib/websocket/server"
+import { getIncompleteDependencies } from "@/lib/db/dependencies"
 import type { Task, Comment } from "@/lib/db/types"
 
 type RouteParams = { params: Promise<{ id: string }> }
@@ -53,6 +54,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } = body
 
   const now = Date.now()
+
+  // Check for incomplete dependencies when moving forward from backlog
+  // Tasks with incomplete dependencies can only be in "backlog" status
+  if (status && status !== existing.status && status !== "backlog") {
+    const incompleteDeps = getIncompleteDependencies(id)
+    if (incompleteDeps.length > 0) {
+      return NextResponse.json(
+        { 
+          error: "Cannot change status: dependencies not complete", 
+          blocking: incompleteDeps 
+        },
+        { status: 400 }
+      )
+    }
+  }
   
   // Track if status changed to done
   const wasCompleted = existing.status !== "done" && status === "done"

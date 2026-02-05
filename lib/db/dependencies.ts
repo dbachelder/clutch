@@ -28,6 +28,21 @@ export function getTasksBlockedBy(taskId: string): TaskSummary[] {
   return rows
 }
 
+// Get incomplete dependencies for a task (tasks that must be done before this task can proceed)
+// Returns tasks that this task depends on which are NOT in "done" status
+export function getIncompleteDependencies(taskId: string): TaskSummary[] {
+  const rows = db.prepare(`
+    SELECT t.id, t.title, t.status
+    FROM tasks t
+    JOIN task_dependencies td ON t.id = td.depends_on_id
+    WHERE td.task_id = ?
+      AND t.status != 'done'
+    ORDER BY t.created_at DESC
+  `).all(taskId) as TaskSummary[]
+  
+  return rows
+}
+
 // Get a specific dependency by id
 export function getDependencyById(depId: string): TaskDependency | undefined {
   return db.prepare("SELECT * FROM task_dependencies WHERE id = ?").get(depId) as TaskDependency | undefined
