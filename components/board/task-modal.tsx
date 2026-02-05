@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Trash2, Clock, Calendar, MessageSquare, Send, Loader2 } from "lucide-react"
+import { X, Trash2, Clock, Calendar, MessageSquare, Send, Loader2, Link2, CheckCircle2, Circle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTaskStore } from "@/lib/stores/task-store"
 import { CommentThread } from "./comment-thread"
 import { CommentInput } from "./comment-input"
+import { useDependencies } from "@/lib/hooks/use-dependencies"
 import type { Task, TaskStatus, TaskPriority, TaskRole, Comment, DispatchStatus } from "@/lib/db/types"
 
 interface TaskModalProps {
@@ -69,6 +70,11 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
   
   const updateTask = useTaskStore((s) => s.updateTask)
   const deleteTask = useTaskStore((s) => s.deleteTask)
+
+  // Dependencies
+  const { dependencies } = useDependencies(task?.id || null)
+  const dependsOn = dependencies.depends_on
+  const blocks = dependencies.blocks
 
   // Load task data when modal opens
   useEffect(() => {
@@ -223,6 +229,15 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString()
+  }
+
+  const handleNavigateToTask = (taskId: string) => {
+    // Close current modal and navigate to the dependency task
+    // This will trigger a re-fetch via the URL param handler in board/page.tsx
+    window.history.pushState({}, '', `?task=${taskId}`)
+    onOpenChange(false)
+    // Trigger a navigation event so the board page can handle it
+    window.dispatchEvent(new PopStateEvent('popstate'))
   }
 
   if (!open || !task) return null
@@ -467,6 +482,86 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
                   Updated: {formatDate(task.updated_at)}
                 </div>
               </div>
+
+              {/* Dependencies Section */}
+              {(dependsOn.length > 0 || blocks.length > 0) && (
+                <div className="border-t border-[var(--border)] pt-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Link2 className="h-4 w-4 text-[var(--text-secondary)]" />
+                    <span className="text-sm font-medium text-[var(--text-secondary)]">
+                      Dependencies
+                    </span>
+                  </div>
+
+                  {/* Depends On */}
+                  {dependsOn.length > 0 && (
+                    <div className="mb-4">
+                      <span className="text-xs text-[var(--text-muted)] block mb-2">
+                        Depends on
+                      </span>
+                      <div className="space-y-1.5">
+                        {dependsOn.map((dep) => (
+                          <button
+                            key={dep.id}
+                            onClick={() => handleNavigateToTask(dep.id)}
+                            className="w-full flex items-center gap-2 p-2 rounded bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] transition-colors text-left"
+                          >
+                            {dep.status === 'done' ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                            ) : (
+                              <Circle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                            )}
+                            <span className="text-sm text-[var(--text-primary)] line-clamp-1 flex-1">
+                              {dep.title}
+                            </span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              dep.status === 'done' 
+                                ? 'bg-green-500/20 text-green-500' 
+                                : 'bg-amber-500/20 text-amber-500'
+                            }`}>
+                              {dep.status === 'done' ? '✓' : '⏳'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Blocks */}
+                  {blocks.length > 0 && (
+                    <div>
+                      <span className="text-xs text-[var(--text-muted)] block mb-2">
+                        Blocking
+                      </span>
+                      <div className="space-y-1.5">
+                        {blocks.map((blocked) => (
+                          <button
+                            key={blocked.id}
+                            onClick={() => handleNavigateToTask(blocked.id)}
+                            className="w-full flex items-center gap-2 p-2 rounded bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] transition-colors text-left"
+                          >
+                            <Link2 className="h-4 w-4 text-[var(--accent-blue)] flex-shrink-0 rotate-45" />
+                            <span className="text-sm text-[var(--text-primary)] line-clamp-1 flex-1">
+                              {blocked.title}
+                            </span>
+                            <span 
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ 
+                                backgroundColor: 
+                                  blocked.status === 'done' ? '#22c55e' :
+                                  blocked.status === 'in_progress' ? '#eab308' :
+                                  blocked.status === 'review' ? '#a855f7' :
+                                  '#3b82f6'
+                              }}
+                              title={blocked.status}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
