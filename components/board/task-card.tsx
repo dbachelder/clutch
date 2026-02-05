@@ -1,8 +1,10 @@
 "use client"
 
 import { Draggable } from "@hello-pangea/dnd"
+import { Link2, Lock } from "lucide-react"
 import type { Task } from "@/lib/db/types"
 import { useSingleSessionStatus, getSessionStatusIndicator } from "@/lib/hooks/use-session-status"
+import { useDependencies } from "@/lib/hooks/use-dependencies"
 
 interface TaskCardProps {
   task: Task
@@ -39,6 +41,13 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
   const shouldFetchSessionStatus = task.status === 'in_progress' && task.session_id
   const { sessionStatus } = useSingleSessionStatus(shouldFetchSessionStatus ? task.session_id || undefined : undefined)
   const sessionIndicator = getSessionStatusIndicator(sessionStatus || undefined)
+
+  // Get dependency info
+  const { dependencies } = useDependencies(task.id)
+  const dependsOnCount = dependencies.depends_on.length
+  const blocksCount = dependencies.blocks.length
+  const incompleteDeps = dependencies.depends_on.filter(d => d.status !== 'done')
+  const isBlocked = incompleteDeps.length > 0
 
   const tags = (() => {
     if (!task.tags) return []
@@ -91,7 +100,7 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
               style={{ backgroundColor: PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium }}
               title={`Priority: ${task.priority}`}
             />
-            <span className="text-sm text-[var(--text-primary)] line-clamp-2 flex-1">
+            <span className={`text-sm line-clamp-2 flex-1 ${isBlocked ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
               {task.title}
             </span>
             {/* Session status indicator for in-progress tasks */}
@@ -145,6 +154,36 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
               </div>
             )}
           </div>
+          
+          {/* Dependency indicators */}
+          {(dependsOnCount > 0 || blocksCount > 0) && (
+            <div className="mt-2 flex items-center gap-3">
+              {dependsOnCount > 0 && (
+                <div 
+                  className={`flex items-center gap-1 text-xs ${isBlocked ? 'text-amber-500' : 'text-[var(--text-muted)]'}`}
+                  title={isBlocked 
+                    ? `Blocked by ${incompleteDeps.length} of ${dependsOnCount} task${dependsOnCount > 1 ? 's' : ''}` 
+                    : `Depends on ${dependsOnCount} task${dependsOnCount > 1 ? 's' : ''} (all complete)`}
+                >
+                  {isBlocked ? <Lock className="h-3 w-3" /> : <Link2 className="h-3 w-3" />}
+                  <span>
+                    {isBlocked 
+                      ? `Blocked by ${incompleteDeps.length}` 
+                      : `${dependsOnCount} dep${dependsOnCount > 1 ? 's' : ''}`}
+                  </span>
+                </div>
+              )}
+              {blocksCount > 0 && (
+                <div 
+                  className="flex items-center gap-1 text-xs text-[var(--text-muted)]"
+                  title={`Blocks ${blocksCount} task${blocksCount > 1 ? 's' : ''}`}
+                >
+                  <Link2 className="h-3 w-3 rotate-45" />
+                  <span>Blocks {blocksCount}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </Draggable>
