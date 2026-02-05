@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { getConvexClient } from "@/lib/convex/server"
+import { api } from "@/convex/_generated/api"
 import type { Task, Project } from "@/lib/db/types"
 import { getAgent } from "@/lib/agents"
 import { buildTaskContext, buildTaskLabel } from "@/lib/dispatch/context"
@@ -17,56 +18,67 @@ interface PendingDispatch {
   label: string
 }
 
-// TODO: This route uses SQLite-specific helper functions (getAgent, buildTaskContext, buildTaskLabel)
-// that are not yet available in Convex. Once these are migrated to Convex, convert this route.
-// For now, keeping the SQLite implementation.
-
 // GET /api/dispatch/pending — List tasks pending dispatch
 export async function GET() {
-  const tasks = db.prepare(`
-    SELECT * FROM tasks 
-    WHERE dispatch_status = 'pending'
-    ORDER BY 
-      CASE priority
-        WHEN 'urgent' THEN 1
-        WHEN 'high' THEN 2
-        WHEN 'medium' THEN 3
-        WHEN 'low' THEN 4
-      END,
-      dispatch_requested_at ASC
-  `).all() as Task[]
-  
-  const pending: PendingDispatch[] = []
-  
-  for (const task of tasks) {
-    const project = db.prepare(
-      "SELECT * FROM projects WHERE id = ?"
-    ).get(task.project_id) as Project | undefined
-    
-    if (!project) continue
-    
-    const agentId = task.assignee
-    if (!agentId) continue
-    
-    const agent = getAgent(agentId)
-    if (!agent) continue
-    
-    pending.push({
-      task,
-      project,
-      agent: {
-        id: agent.id,
-        name: agent.name,
-        model: agent.model,
-        role: agent.role,
-      },
-      context: buildTaskContext(task, project, agentId),
-      label: buildTaskLabel(task),
+  try {
+    const convex = getConvexClient()
+
+    // Get all tasks with dispatch_status = 'pending'
+    // TODO: Add a dedicated Convex query for pending dispatches
+    const allTasks = await convex.query(api.tasks.getByProject, {
+      projectId: "da46e964-a6d1-498a-85a8-c4795e980657", // TODO: should query across all projects
     })
+
+    const tasks = allTasks.filter(
+      (t: Task) => t.dispatch_status === "pending"
+    )
+
+    // Sort by priority then dispatch time
+    const priorityOrder: Record<string, number> = { urgent: 1, high: 2, medium: 3, low: 4 }
+    tasks.sort((a: Task, b: Task) => {
+      const pa = priorityOrder[a.priority] || 3
+      const pb = priorityOrder[b.priority] || 3
+      if (pa !== pb) return pa - pb
+      return (a.dispatch_requested_at || 0) - (b.dispatch_requested_at || 0)
+    })
+
+    const pending: PendingDispatch[] = []
+
+    for (const task of tasks) {
+      // Get project
+      const projects = await convex.query(api.projects.getAll, {})
+      const project = projects.find((p: Project) => p.id === task.project_id)
+      if (!project) continue
+
+      const agentId = task.assignee
+      if (!agentId) continue
+
+      const agent = getAgent(agentId)
+      if (!agent) continue
+
+      pending.push({
+        task,
+        project,
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          model: agent.model,
+          role: agent.role,
+        },
+        context: buildTaskContext(task, project, agentId),
+        label: buildTaskLabel(task),
+      })
+    }
+
+    return NextResponse.json({
+      count: pending.length,
+      pending,
+    })
+  } catch (error) {
+    console.error("[Dispatch API] Error fetching pending:", error)
+    return NextResponse.json(
+      { error: "Failed to fetch pending dispatches" },
+      { status: 500 }
+    )
   }
-  
-  return NextResponse.json({
-    count: pending.length,
-    pending,
-  })
 }

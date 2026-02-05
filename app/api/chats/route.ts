@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const chats = await convex.query(api.chats.getByProject, { projectId })
 
     // Transform to include lastMessage object (already included from Convex)
-    const result = chats.map(chat => ({
+    const result = chats.map((chat: { lastMessage?: { content: string; author: string; created_at: number } | null }) => ({
       ...chat,
       lastMessage: chat.lastMessage || null,
     }))
