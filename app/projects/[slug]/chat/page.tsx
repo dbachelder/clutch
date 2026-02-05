@@ -78,6 +78,8 @@ export default function ChatPage({ params }: PageProps) {
   const sessionKey = activeChat ? `trap:${slug}:${activeChat.id}` : "main"
 
   // Handlers for OpenClaw WebSocket events
+  // Note: Message persistence is handled server-side by the trap-channel plugin
+  // WebSocket is used for typing indicators and streaming only
   const handleOpenClawMessage = useCallback(async (msg: { role: string; content: string | Array<{ type: string; text?: string }> }, runId: string) => {
     if (!activeChat) return
     
@@ -86,17 +88,9 @@ export default function ChatPage({ params }: PageProps) {
       clearStreamingMessage(activeChat.id)
     }
     
-    // Extract text from content
-    const text = typeof msg.content === "string" 
-      ? msg.content 
-      : msg.content.find(c => c.type === "text")?.text || ""
-    
-    // Save Ada's response to local DB (with deduplication via run_id)
-    fetch(`/api/chats/${activeChat.id}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text, author: "ada", run_id: runId }),
-    }).catch(console.error)
+    // Message persistence handled by trap-channel plugin (server-side)
+    // No need to save here - SSE will broadcast when server receives it
+    console.log("[Chat] WebSocket message received, server-side save via trap-channel")
   }, [activeChat, settings.streamingEnabled, streamingMessages, clearStreamingMessage])
 
   const handleOpenClawTypingStart = useCallback(() => {
@@ -185,6 +179,14 @@ export default function ChatPage({ params }: PageProps) {
     }
   }, [activeChat, setTyping, settings.streamingEnabled, streamingMessages, startStreamingMessage, appendToStreamingMessage])
 
+  // Refresh messages when tab becomes visible (fetch any we missed while away)
+  const handleRefreshNeeded = useCallback(() => {
+    if (activeChat) {
+      console.log('[Chat] Refreshing messages after tab switch')
+      refreshMessages(activeChat.id)
+    }
+  }, [activeChat, refreshMessages])
+
   // SSE subscription for current chat
   const { connected: sseConnected, isTyping: sseIsTyping } = useChatSSE({
     chatId: activeChat?.id || null,
@@ -192,6 +194,7 @@ export default function ChatPage({ params }: PageProps) {
     onTypingStart: handleSSETypingStart,
     onTypingEnd: handleSSETypingEnd,
     onDelta: handleSSEDelta,
+    onRefreshNeeded: handleRefreshNeeded,
   })
 
   // Sub-agent monitoring via RPC

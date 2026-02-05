@@ -30,6 +30,7 @@ interface UseChatSSEOptions {
   onDelta?: (delta: string, runId?: string) => void
   onConnected?: () => void
   onDisconnected?: () => void
+  onRefreshNeeded?: () => void  // Called when tab becomes visible - fetch missed messages
 }
 
 export function useChatSSE({
@@ -39,7 +40,8 @@ export function useChatSSE({
   onTypingEnd,
   onDelta,
   onConnected,
-  onDisconnected
+  onDisconnected,
+  onRefreshNeeded
 }: UseChatSSEOptions) {
   const [connected, setConnected] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
@@ -48,10 +50,10 @@ export function useChatSSE({
   const reconnectAttempts = useRef(0)
   
   // Store callbacks in refs to avoid re-subscribing on every render
-  const callbacksRef = useRef({ onMessage, onTypingStart, onTypingEnd, onDelta, onConnected, onDisconnected })
+  const callbacksRef = useRef({ onMessage, onTypingStart, onTypingEnd, onDelta, onConnected, onDisconnected, onRefreshNeeded })
   useEffect(() => {
-    callbacksRef.current = { onMessage, onTypingStart, onTypingEnd, onDelta, onConnected, onDisconnected }
-  }, [onMessage, onTypingStart, onTypingEnd, onDelta, onConnected, onDisconnected])
+    callbacksRef.current = { onMessage, onTypingStart, onTypingEnd, onDelta, onConnected, onDisconnected, onRefreshNeeded }
+  }, [onMessage, onTypingStart, onTypingEnd, onDelta, onConnected, onDisconnected, onRefreshNeeded])
   
   const connect = useCallback(() => {
     if (!chatId) return
@@ -147,13 +149,27 @@ export function useChatSSE({
     }
   }, [chatId, connect])
   
-  // Reconnect on page visibility change
+  // Reconnect and refresh on page visibility change
   useEffect(() => {
+    let wasHidden = false
+    
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && chatId && !connected) {
-        console.log('[ChatSSE] Page became visible, reconnecting...')
-        reconnectAttempts.current = 0
-        connect()
+      if (document.visibilityState === 'hidden') {
+        wasHidden = true
+      } else if (document.visibilityState === 'visible' && chatId) {
+        // Always refresh messages when coming back to fetch any we missed
+        if (wasHidden) {
+          console.log('[ChatSSE] Page became visible, refreshing messages...')
+          callbacksRef.current.onRefreshNeeded?.()
+          wasHidden = false
+        }
+        
+        // Reconnect SSE if disconnected
+        if (!connected) {
+          console.log('[ChatSSE] Reconnecting SSE...')
+          reconnectAttempts.current = 0
+          connect()
+        }
       }
     }
     
