@@ -68,15 +68,45 @@ class OpenClawClient {
       })
 
       this.ws.on('open', () => {
-        this.status = 'connected'
-        this.reconnectAttempts = 0
-        console.log('[OpenClaw] Connected successfully')
+        console.log('[OpenClaw] WebSocket open, sending connect handshake')
         
-        // Start heartbeat
-        this.startHeartbeat()
+        // Send proper OpenClaw connect handshake
+        const connectId = this.generateId()
+        this.ws!.send(JSON.stringify({
+          type: 'req',
+          id: connectId,
+          method: 'connect',
+          params: {
+            minProtocol: 3,
+            maxProtocol: 3,
+            client: {
+              id: 'trap-backend',
+              version: '1.0.0',
+              platform: 'nodejs',
+              mode: 'control',
+            },
+            auth: this.authToken ? { token: this.authToken } : undefined
+          }
+        }))
         
-        // Authenticate
-        this.authenticate()
+        // Wait for connect response before marking connected
+        this.pendingRequests.set(connectId, {
+          resolve: () => {
+            this.status = 'connected'
+            this.reconnectAttempts = 0
+            console.log('[OpenClaw] Connected successfully (handshake complete)')
+            this.startHeartbeat()
+          },
+          reject: (error) => {
+            console.error('[OpenClaw] Connect handshake failed:', error.message)
+            this.ws?.close()
+          },
+          timeout: setTimeout(() => {
+            this.pendingRequests.delete(connectId)
+            console.error('[OpenClaw] Connect handshake timeout')
+            this.ws?.close()
+          }, 10000)
+        })
       })
 
       this.ws.on('message', (data) => {
@@ -198,14 +228,7 @@ class OpenClawClient {
 
   // --- Private methods ---
 
-  private authenticate(): void {
-    if (!this.authToken || !this.ws) return
-    
-    // OpenClaw expects auth via the first message or headers
-    // The header approach is already handled in connect()
-    // If needed, send auth message here:
-    // this.ws.send(JSON.stringify({ type: 'auth', token: this.authToken }))
-  }
+  // Authentication is now handled in the connect handshake
 
   private startHeartbeat(): void {
     this.stopHeartbeat()
@@ -268,38 +291,43 @@ class OpenClawClient {
     try {
       const message = JSON.parse(data)
       
-      // Handle RPC responses
-      if (message.id && this.pendingRequests.has(message.id)) {
+      // Handle RPC responses (type: "res")
+      if (message.type === 'res' && message.id && this.pendingRequests.has(message.id)) {
         const pending = this.pendingRequests.get(message.id)!
         this.pendingRequests.delete(message.id)
         clearTimeout(pending.timeout)
         
-        if (message.error) {
-          pending.reject(new Error(message.error.message || 'RPC error'))
+        if (!message.ok || message.error) {
+          pending.reject(new Error(message.error?.message || 'RPC error'))
         } else {
-          pending.resolve(message.result)
+          pending.resolve(message.payload)
         }
         return
       }
       
-      // Handle chat events
-      if (message.method?.startsWith('chat.')) {
-        const event: ChatEvent = {
-          type: message.method as ChatEvent['type'],
-          sessionKey: message.params?.sessionKey || '',
-          runId: message.params?.runId,
-          delta: message.params?.delta,
-          message: message.params?.message,
-          errorMessage: message.params?.errorMessage
-        }
-        
-        this.eventCallbacks.forEach((callback) => {
-          try {
-            callback(event)
-          } catch (error) {
-            console.error('[OpenClaw] Event callback error:', error)
+      // Handle events (type: "event")
+      if (message.type === 'event') {
+        // Map event names to our ChatEvent types
+        if (message.event === 'chat') {
+          const payload = message.payload || {}
+          const event: ChatEvent = {
+            type: `chat.${payload.state || 'message'}` as ChatEvent['type'],
+            sessionKey: payload.sessionKey || '',
+            runId: payload.runId,
+            delta: payload.delta,
+            message: payload.message,
+            errorMessage: payload.error
           }
-        })
+          
+          this.eventCallbacks.forEach((callback) => {
+            try {
+              callback(event)
+            } catch (error) {
+              console.error('[OpenClaw] Event callback error:', error)
+            }
+          })
+        }
+        // Ignore other events like 'health', 'pong' etc.
       }
     } catch (error) {
       console.error('[OpenClaw] Failed to parse message:', error)
