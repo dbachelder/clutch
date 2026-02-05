@@ -39,7 +39,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, isMobile = false }: ChatSidebarProps) {
-  const { chats, activeChat, setActiveChat, createChat, deleteChat, loading } = useChatStore()
+  const { chats, activeChat, setActiveChat, createChat, deleteChat, loading, fetchChats, currentProjectId } = useChatStore()
   const [creating, setCreating] = useState(false)
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
   
@@ -109,6 +109,13 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     const interval = setInterval(fetchWorkQueue, 30000)
     return () => clearInterval(interval)
   }, [fetchWorkQueue])
+
+  // Refetch chats when project changes
+  useEffect(() => {
+    if (projectId && currentProjectId !== projectId) {
+      fetchChats(projectId)
+    }
+  }, [projectId, currentProjectId, fetchChats])
 
   const toggleSection = (status: string) => {
     setWorkQueueSections(prev => prev.map(section => 
