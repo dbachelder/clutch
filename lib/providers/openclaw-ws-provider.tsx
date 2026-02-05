@@ -222,7 +222,10 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
 
         // Handle events (type: "event")
         if (data.type === 'event') {
-          console.log('[OpenClawWS] Received event:', data.event, 'payload state:', data.payload?.state, 'runId:', data.payload?.runId);
+          // Only log details for chat events (health, pong, etc. are noisy)
+          if (data.event === 'chat') {
+            console.log('[OpenClawWS] Received chat event, state:', data.payload?.state, 'runId:', data.payload?.runId);
+          }
           
           // Handle chat events specially
           if (data.event === 'chat') {
