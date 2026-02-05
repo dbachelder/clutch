@@ -217,26 +217,18 @@ export function useOpenClawRpc() {
   // Get gateway status and uptime information
   const getGatewayStatus = useCallback(async () => {
     try {
-      // First try gateway.status if it exists
-      const result = await rpc<{ startedAt?: string; uptime?: number; version?: string; config?: object }>("gateway.status", {});
-      return result;
-    } catch (error) {
-      console.warn('[useOpenClawRpc] gateway.status failed, trying config.get:', error);
-      
-      // Fallback: use config.get to get lastTouchedAt as a proxy for restart time
-      try {
-        const configResult = await rpc<{ config?: { meta?: { lastTouchedAt?: string; lastTouchedVersion?: string } } }>("config.get", {});
-        if (configResult.config?.meta?.lastTouchedAt) {
-          return {
-            startedAt: configResult.config.meta.lastTouchedAt,
-            version: configResult.config.meta.lastTouchedVersion,
-            uptime: Date.now() - new Date(configResult.config.meta.lastTouchedAt).getTime()
-          };
-        }
-      } catch (configError) {
-        console.error('[useOpenClawRpc] config.get also failed:', configError);
+      // Use config.get to get lastTouchedAt as a proxy for restart time
+      const configResult = await rpc<{ config?: { meta?: { lastTouchedAt?: string; lastTouchedVersion?: string } } }>("config.get", {});
+      if (configResult.config?.meta?.lastTouchedAt) {
+        return {
+          startedAt: configResult.config.meta.lastTouchedAt,
+          version: configResult.config.meta.lastTouchedVersion,
+          uptime: Date.now() - new Date(configResult.config.meta.lastTouchedAt).getTime()
+        };
       }
-      
+      return null;
+    } catch (error) {
+      // Silently fail - gateway status is optional info
       return null;
     }
   }, [rpc]);
