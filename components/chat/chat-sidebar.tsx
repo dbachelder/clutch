@@ -32,7 +32,7 @@ const AUTHOR_COLORS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  review: "#a855f7",     // Purple for review
+  in_review: "#a855f7",   // Purple for in review
   in_progress: "#3b82f6", // Blue for in progress
   ready: "#22c55e",       // Green for ready/up next
 }
@@ -44,7 +44,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
   
   // Work queue state
   const [workQueueSections, setWorkQueueSections] = useState<WorkQueueSection[]>([
-    { label: "In Review", status: "review", tasks: [], expanded: true },
+    { label: "In Review", status: "in_review", tasks: [], expanded: true },
     { label: "In Progress", status: "in_progress", tasks: [], expanded: true },
     { label: "Up Next", status: "ready", tasks: [], expanded: true },
   ])
@@ -63,7 +63,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     try {
       // Fetch tasks for each status (including done for recently shipped)
       const [reviewRes, inProgressRes, readyRes, doneRes] = await Promise.all([
-        fetch(`/api/tasks?projectId=${projectId}&status=review`),
+        fetch(`/api/tasks?projectId=${projectId}&status=in_review`),
         fetch(`/api/tasks?projectId=${projectId}&status=in_progress`),
         fetch(`/api/tasks?projectId=${projectId}&status=ready`),
         fetch(`/api/tasks?projectId=${projectId}&status=done&limit=3`),
@@ -77,7 +77,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
       ])
 
       setWorkQueueSections(prev => prev.map(section => {
-        if (section.status === "review") {
+        if (section.status === "in_review") {
           return { ...section, tasks: reviewData.tasks || [] }
         }
         if (section.status === "in_progress") {
