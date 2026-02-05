@@ -1,40 +1,62 @@
 /**
  * Chat message database operations with deduplication
- * Uses Convex for data persistence
  */
 
-import { getConvexClient } from "@/lib/convex/server"
-import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
-import type { ChatMessage } from "./types"
+import Database from 'better-sqlite3'
+import path from 'path'
+import { randomUUID } from 'crypto'
+import type { ChatMessage, ChatMessageInsert } from './types'
+
+// Database path - same as used by API routes
+const DB_PATH = process.env.TRAP_DB_PATH || path.join(process.env.HOME || '', '.trap', 'trap.db')
+
+function getDb() {
+  return new Database(DB_PATH)
+}
 
 /**
  * Extract text content from OpenClaw message content (can be string or array)
  */
 function extractContent(content: string | Array<{ type: string; text?: string }>): string {
-  if (typeof content === "string") {
+  if (typeof content === 'string') {
     return content
   }
-
+  
   // Extract text from content array
   return content
-    .filter(block => block.type === "text" && block.text)
+    .filter(block => block.type === 'text' && block.text)
     .map(block => block.text!)
-    .join("\n")
+    .join('\n')
 }
 
 /**
  * Find chat ID by session key
  * Session keys have format: trap:{projectSlug}:{chatId}
  */
-export async function findChatBySessionKey(sessionKey: string): Promise<string | null> {
+export function findChatBySessionKey(sessionKey: string): string | null {
+  const db = getDb()
   try {
-    const convex = getConvexClient()
-    const chat = await convex.query(api.chats.findBySessionKey, { sessionKey })
-    return chat?.id ?? null
-  } catch (error) {
-    console.error("[Messages] Error finding chat by session key:", error)
+    // First, try to find a chat with this exact session_key
+    const chat = db.prepare('SELECT id FROM chats WHERE session_key = ?').get(sessionKey) as { id: string } | undefined
+    if (chat) {
+      return chat.id
+    }
+    
+    // Try to extract chat ID from session key format: trap:projectSlug:chatId
+    const match = sessionKey.match(/^trap:[^:]+:(.+)$/)
+    if (match) {
+      const chatId = match[1]
+      const exists = db.prepare('SELECT id FROM chats WHERE id = ?').get(chatId) as { id: string } | undefined
+      if (exists) {
+        // Update the chat's session_key
+        db.prepare('UPDATE chats SET session_key = ? WHERE id = ?').run(sessionKey, chatId)
+        return chatId
+      }
+    }
+    
     return null
+  } finally {
+    db.close()
   }
 }
 
@@ -42,7 +64,7 @@ export async function findChatBySessionKey(sessionKey: string): Promise<string |
  * Save a message with deduplication via run_id
  * Returns the message ID if saved, null if duplicate
  */
-export async function saveMessage(
+export function saveMessage(
   chatId: string,
   author: string,
   content: string | Array<{ type: string; text?: string }>,
@@ -51,41 +73,50 @@ export async function saveMessage(
     sessionKey?: string | null
     isAutomated?: boolean
   } = {}
-): Promise<string | null> {
+): string | null {
+  const db = getDb()
   try {
     const textContent = extractContent(content)
-
+    
     // Skip empty messages
     if (!textContent.trim()) {
       return null
     }
-
-    const convex = getConvexClient()
-
+    
     // Check for duplicate via run_id
     if (options.runId) {
-      const existing = await convex.query(api.chats.getMessageByRunId, { runId: options.runId })
+      const existing = db.prepare(
+        'SELECT id FROM chat_messages WHERE chat_id = ? AND run_id = ?'
+      ).get(chatId, options.runId) as { id: string } | undefined
+      
       if (existing) {
-        console.log("[Messages] Skipping duplicate message with run_id:", options.runId)
+        console.log('[Messages] Skipping duplicate message with run_id:', options.runId)
         return null
       }
     }
-
+    
     // Insert the message
-    const message = await convex.mutation(api.chats.createMessage, {
-      chat_id: chatId as Id<'chats'>,
+    const id = randomUUID()
+    const now = Date.now()
+    
+    db.prepare(`
+      INSERT INTO chat_messages (id, chat_id, author, content, run_id, session_key, is_automated, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      chatId,
       author,
-      content: textContent,
-      run_id: options.runId || undefined,
-      session_key: options.sessionKey || undefined,
-      is_automated: options.isAutomated,
-    })
-
-    console.log("[Messages] Saved message:", { id: message.id, chatId, author, runId: options.runId })
-    return message.id
-  } catch (error) {
-    console.error("[Messages] Error saving message:", error)
-    return null
+      textContent,
+      options.runId || null,
+      options.sessionKey || null,
+      options.isAutomated ? 1 : 0,
+      now
+    )
+    
+    console.log('[Messages] Saved message:', { id, chatId, author, runId: options.runId })
+    return id
+  } finally {
+    db.close()
   }
 }
 
@@ -93,45 +124,45 @@ export async function saveMessage(
  * Save an OpenClaw chat message event
  * Handles session key → chat ID mapping and deduplication
  */
-export async function saveOpenClawMessage(
+export function saveOpenClawMessage(
   sessionKey: string,
   message: {
     role: string
     content: string | Array<{ type: string; text?: string }>
   },
   runId?: string
-): Promise<string | null> {
+): string | null {
   // Find the chat for this session
-  const chatId = await findChatBySessionKey(sessionKey)
-
+  const chatId = findChatBySessionKey(sessionKey)
+  
   if (!chatId) {
-    console.log("[Messages] No chat found for session:", sessionKey)
+    console.log('[Messages] No chat found for session:', sessionKey)
     return null
   }
-
+  
   // Map OpenClaw role to author
-  const author = message.role === "assistant" ? "ada" : message.role
-
+  const author = message.role === 'assistant' ? 'ada' : message.role
+  
   return saveMessage(chatId, author, message.content, {
     runId,
     sessionKey,
-    isAutomated: false,
+    isAutomated: false
   })
 }
 
 /**
  * Get recent messages for a chat
  */
-export async function getMessages(chatId: string, limit: number = 50): Promise<ChatMessage[]> {
+export function getMessages(chatId: string, limit: number = 50): ChatMessage[] {
+  const db = getDb()
   try {
-    const convex = getConvexClient()
-    const result = await convex.query(api.chats.getMessages, {
-      chatId: chatId as Id<'chats'>,
-      limit,
-    })
-    return result.messages
-  } catch (error) {
-    console.error("[Messages] Error getting messages:", error)
-    return []
+    return db.prepare(`
+      SELECT * FROM chat_messages 
+      WHERE chat_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT ?
+    `).all(chatId, limit) as ChatMessage[]
+  } finally {
+    db.close()
   }
 }

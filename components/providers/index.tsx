@@ -5,8 +5,6 @@
  */
 
 import React from 'react';
-import { ConvexProvider } from 'convex/react';
-import { convex } from '@/lib/convex';
 import { WebSocketProvider } from './websocket-provider';
 import { OpenClawWSProvider } from '@/lib/providers/openclaw-ws-provider';
 
@@ -16,13 +14,11 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   return (
-    <ConvexProvider client={convex}>
-      <WebSocketProvider>
-        <OpenClawWSProvider>
-          {children}
-        </OpenClawWSProvider>
-      </WebSocketProvider>
-    </ConvexProvider>
+    <WebSocketProvider>
+      <OpenClawWSProvider>
+        {children}
+      </OpenClawWSProvider>
+    </WebSocketProvider>
   );
 }
 
