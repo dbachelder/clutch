@@ -31,14 +31,6 @@ interface MessageBubbleProps {
   projectSlug?: string
 }
 
-const AUTHOR_COLORS: Record<string, string> = {
-  ada: "#a855f7",
-  "kimi-coder": "#3b82f6",
-  "sonnet-reviewer": "#22c55e",
-  "haiku-triage": "#eab308",
-  dan: "#ef4444",
-}
-
 const AUTHOR_NAMES: Record<string, string> = {
   ada: "Ada",
   "kimi-coder": "Kimi",
@@ -56,7 +48,6 @@ export function MessageBubble({
   projectSlug,
 }: MessageBubbleProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const authorColor = AUTHOR_COLORS[message.author] || "#52525b"
   const authorName = AUTHOR_NAMES[message.author] || message.author
 
   // Check if this is an automated (cron/sub-agent) message
