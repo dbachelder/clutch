@@ -168,3 +168,22 @@ export type SignalInsert = Omit<Signal, "id" | "created_at"> & {
   id?: string
   created_at?: number
 }
+
+export interface TaskDependency {
+  id: string
+  task_id: string
+  depends_on_id: string
+  created_at: number
+}
+
+export type TaskDependencyInsert = Omit<TaskDependency, "id" | "created_at"> & {
+  id?: string
+  created_at?: number
+}
+
+// Task with minimal fields for dependency listings
+export interface TaskSummary {
+  id: string
+  title: string
+  status: TaskStatus
+}
