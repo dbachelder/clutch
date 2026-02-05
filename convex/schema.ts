@@ -18,7 +18,8 @@ export default defineSchema({
     created_at: v.number(),
     updated_at: v.number(),
   })
-    .index("by_slug", ["slug"]),
+    .index("by_slug", ["slug"])
+    .index("by_name", ["name"]),
 
   // Tasks
   tasks: defineTable({
@@ -66,8 +67,9 @@ export default defineSchema({
   })
     .index("by_project", ["project_id"])
     .index("by_status", ["status"])
+    .index("by_project_status", ["project_id", "status"])
     .index("by_assignee", ["assignee"])
-    .index("by_project_status_position", ["project_id", "status", "position"]),
+    .index("by_project_position", ["project_id", "status", "position"]),
 
   // Comments
   comments: defineTable({
