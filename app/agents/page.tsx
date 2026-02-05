@@ -13,19 +13,28 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useOpenClawRpc } from '@/lib/hooks/use-openclaw-rpc';
-import { Agent, AgentStatus } from '@/lib/types';
+import { Agent, AgentDetail } from '@/lib/types';
+import { AgentConfigModal } from '@/components/agents/agent-config-modal';
 
-function AgentCard({ agent, router }: { agent: Agent; router: AppRouterInstance }) {
+function AgentCard({ 
+  agent, 
+  router, 
+  onConfigure 
+}: { 
+  agent: Agent; 
+  router: AppRouterInstance;
+  onConfigure: (agent: Agent) => void;
+}) {
   const statusColors = {
     active: 'bg-green-500',
     idle: 'bg-yellow-500',
     offline: 'bg-red-500',
   };
 
-  const statusVariants = {
-    active: 'default' as const,
-    idle: 'secondary' as const,
-    offline: 'destructive' as const,
+  const statusVariants: Record<string, 'default' | 'secondary' | 'destructive'> = {
+    active: 'default',
+    idle: 'secondary',
+    offline: 'destructive',
   };
 
   const formatDate = (dateStr: string) => {
@@ -86,7 +95,12 @@ function AgentCard({ agent, router }: { agent: Agent; router: AppRouterInstance 
         >
           View Details
         </Button>
-        <Button variant="outline" size="sm" className="flex-1">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="flex-1"
+          onClick={() => onConfigure(agent)}
+        >
           Configure
         </Button>
       </div>
@@ -96,10 +110,12 @@ function AgentCard({ agent, router }: { agent: Agent; router: AppRouterInstance 
 
 export default function AgentsPage() {
   const router = useRouter();
-  const { listAgents, connected, connecting } = useOpenClawRpc();
+  const { listAgents, getAgent, updateAgentConfig, connected, connecting } = useOpenClawRpc();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [configAgent, setConfigAgent] = useState<AgentDetail | null>(null);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -114,6 +130,44 @@ export default function AgentsPage() {
       setLoading(false);
     }
   }, [listAgents]);
+
+  const handleConfigureAgent = useCallback(async (agent: Agent) => {
+    try {
+      setError(null);
+      
+      // Get detailed agent info for configuration
+      const response = await getAgent(agent.id);
+      setConfigAgent(response.agent);
+      setConfigModalOpen(true);
+    } catch (err) {
+      console.error('Failed to load agent details:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load agent details');
+    }
+  }, [getAgent]);
+
+  const handleSaveConfig = useCallback(async (config: {
+    model: string;
+    maxTokens?: number;
+    temperature?: number;
+    systemPrompt?: string;
+    enabled: boolean;
+  }) => {
+    if (!configAgent) return;
+
+    try {
+      await updateAgentConfig(configAgent.id, config);
+      
+      // Refresh agents list to show updated config
+      await fetchAgents();
+      
+      // Close modal
+      setConfigModalOpen(false);
+      setConfigAgent(null);
+    } catch (err) {
+      console.error('Failed to save agent configuration:', err);
+      throw err; // Re-throw so the modal can show the error
+    }
+  }, [configAgent, updateAgentConfig, fetchAgents]);
 
   useEffect(() => {
     if (connected) {
@@ -225,7 +279,12 @@ export default function AgentsPage() {
       {!loading && agents.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {agents.map((agent) => (
-            <AgentCard key={agent.id} agent={agent} router={router} />
+            <AgentCard 
+              key={agent.id} 
+              agent={agent} 
+              router={router} 
+              onConfigure={handleConfigureAgent}
+            />
           ))}
         </div>
       )}
@@ -254,6 +313,17 @@ export default function AgentsPage() {
           </div>
         </div>
       )}
+
+      {/* Configuration Modal */}
+      <AgentConfigModal
+        isOpen={configModalOpen}
+        onClose={() => {
+          setConfigModalOpen(false);
+          setConfigAgent(null);
+        }}
+        agent={configAgent}
+        onSave={handleSaveConfig}
+      />
     </div>
   );
 }

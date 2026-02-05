@@ -14,6 +14,7 @@ import { useOpenClawRpc } from '@/lib/hooks/use-openclaw-rpc';
 import { AgentDetail, AgentStatus } from '@/lib/types';
 import { MarkdownEditor } from '@/components/editors/markdown-editor';
 import { FileTree } from '@/components/editors/file-tree';
+import { AgentConfigModal } from '@/components/agents/agent-config-modal';
 
 export default function AgentDetailPage() {
   const params = useParams();
@@ -36,9 +37,11 @@ export default function AgentDetailPage() {
     message: string;
     type: 'success' | 'error';
   } | null>(null);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
 
   const { 
     getAgent, 
+    updateAgentConfig,
     getAgentSoul, 
     updateAgentSoul, 
     getAgentMemoryFiles,
@@ -52,6 +55,31 @@ export default function AgentDetailPage() {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 5000);
   }, []);
+
+  // Handle save agent configuration
+  const handleSaveConfig = useCallback(async (config: {
+    model: string;
+    maxTokens?: number;
+    temperature?: number;
+    systemPrompt?: string;
+    enabled: boolean;
+  }) => {
+    if (!agent) return;
+
+    try {
+      const response = await updateAgentConfig(agent.id, config);
+      
+      // Update local agent state with new config
+      setAgent(response.agent);
+      
+      // Close modal and show success
+      setConfigModalOpen(false);
+      showToast('Agent configuration updated successfully');
+    } catch (err) {
+      console.error('Failed to save agent configuration:', err);
+      throw err; // Re-throw so the modal can show the error
+    }
+  }, [agent, updateAgentConfig, showToast]);
 
   // Load soul content
   const loadSoulContent = useCallback(async () => {
@@ -306,7 +334,12 @@ export default function AgentDetailPage() {
           
           {/* Action Buttons */}
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setConfigModalOpen(true)}
+              disabled={!connected}
+            >
               <Settings className="h-4 w-4 mr-2" />
               Configure
             </Button>
@@ -729,6 +762,14 @@ export default function AgentDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Configuration Modal */}
+      <AgentConfigModal
+        isOpen={configModalOpen}
+        onClose={() => setConfigModalOpen(false)}
+        agent={agent}
+        onSave={handleSaveConfig}
+      />
     </div>
   );
 }

@@ -214,6 +214,17 @@ export function useOpenClawRpc() {
     return rpc<{ agent: AgentDetail }>("agents.create", params);
   }, [rpc]);
 
+  // Update agent configuration
+  const updateAgentConfig = useCallback(async (agentId: string, config: {
+    model?: string;
+    maxTokens?: number;
+    temperature?: number;
+    systemPrompt?: string;
+    enabled?: boolean;
+  }) => {
+    return rpc<{ agent: AgentDetail }>("agents.config.update", { id: agentId, config });
+  }, [rpc]);
+
   // Get gateway status and uptime information
   const getGatewayStatus = useCallback(async () => {
     try {
@@ -258,6 +269,7 @@ export function useOpenClawRpc() {
     getAgentMemoryFile,
     updateAgentMemoryFile,
     createAgent,
+    updateAgentConfig,
     getGatewayStatus,
   };
 }
