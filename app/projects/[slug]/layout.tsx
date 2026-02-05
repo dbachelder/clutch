@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ArrowLeft, LayoutGrid, MessageSquare, Mic, Activity, Settings } from "lucide-react"
+import { ArrowLeft, LayoutGrid, MessageSquare, Activity, Settings } from "lucide-react"
 import type { Project } from "@/lib/db/types"
 import { MobileProjectSwitcher } from "@/components/layout/mobile-project-switcher"
 import { useMobileDetection } from "@/components/board/use-mobile-detection"
@@ -14,9 +14,8 @@ type LayoutProps = {
 }
 
 const TABS = [
-  { id: "board", label: "Board", icon: LayoutGrid, href: "" },
   { id: "chat", label: "Chat", icon: MessageSquare, href: "/chat" },
-  { id: "voice", label: "Voice", icon: Mic, href: "/voice" },
+  { id: "board", label: "Board", icon: LayoutGrid, href: "/board" },
   { id: "sessions", label: "Sessions", icon: Activity, href: "/sessions" },
   { id: "settings", label: "Settings", icon: Settings, href: "/settings" },
 ]
@@ -57,12 +56,11 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
   // Determine active tab from pathname
   const getActiveTab = () => {
     const path = pathname.replace(`/projects/${slug}`, "")
-    if (path === "" || path === "/board") return "board"
-    if (path.startsWith("/chat")) return "chat"
-    if (path.startsWith("/voice")) return "voice"
+    if (path === "" || path.startsWith("/chat")) return "chat"
+    if (path.startsWith("/board")) return "board"
     if (path.startsWith("/sessions")) return "sessions"
     if (path.startsWith("/settings")) return "settings"
-    return "board"
+    return "chat"
   }
   const activeTab = getActiveTab()
 
@@ -102,7 +100,7 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                 {TABS.map((tab) => {
                   const Icon = tab.icon
                   const isActive = activeTab === tab.id
-                  const href = `/projects/${slug}${tab.href || "/board"}`
+                  const href = `/projects/${slug}${tab.href}`
                   
                   return (
                     <Link
@@ -149,7 +147,7 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                 {TABS.map((tab) => {
                   const Icon = tab.icon
                   const isActive = activeTab === tab.id
-                  const href = `/projects/${slug}${tab.href || "/board"}`
+                  const href = `/projects/${slug}${tab.href}`
                   
                   return (
                     <Link

@@ -6,5 +6,5 @@ type PageProps = {
 
 export default async function ProjectPage({ params }: PageProps) {
   const { slug } = await params
-  redirect(`/projects/${slug}/board`)
+  redirect(`/projects/${slug}/chat`)
 }
