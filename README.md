@@ -304,6 +304,96 @@ tail -f .next/trace
 
 API logging includes detailed processing steps for debugging audio pipeline issues.
 
+## Self-Hosted Convex Backend
+
+The Trap can use a self-hosted Convex backend instead of Convex Cloud. This is useful for:
+- Local development without internet
+- Data sovereignty requirements
+- Reducing external dependencies
+
+### Setup
+
+**1. Start Convex containers**
+
+The Convex backend is configured in `~/Docker/convex/`:
+
+```bash
+cd ~/Docker/convex
+
+# Copy and configure environment
+cp .env.example .env
+# Edit .env and set INSTANCE_SECRET (see file for instructions)
+
+# Start services
+docker compose up -d
+```
+
+**2. Generate admin key**
+
+```bash
+cd ~/Docker/convex
+docker compose exec backend ./generate_admin_key.sh
+```
+
+Save this key - you'll need it for the CLI.
+
+**3. Configure Trap to use self-hosted**
+
+Add to your Trap `.env.local`:
+
+```bash
+# Convex self-hosted configuration
+CONVEX_SELF_HOSTED_URL=http://byteforce:3220
+CONVEX_SELF_HOSTED_ADMIN_KEY=<admin-key-from-step-2>
+```
+
+**4. Deploy Convex code**
+
+```bash
+cd /path/to/your/convex-project
+npm install convex@latest
+npx convex dev  # Uses CONVEX_SELF_HOSTED_URL from env
+```
+
+### Service URLs
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| Dashboard | http://byteforce:6801 | Web UI for data/functions |
+| Backend API | http://byteforce:3220 | Convex API endpoint |
+| HTTP Actions | http://byteforce:3221 | HTTP action proxy |
+
+### Files
+
+- `~/Docker/convex/docker-compose.yml` - Container definitions
+- `~/Docker/convex/.env` - Environment variables
+- `~/Docker/convex/.env.example` - Configuration template
+
+### Data Storage
+
+By default, Convex uses SQLite with a Docker volume (`convex-data`). For production:
+- Use Postgres via `DATABASE_URL` or `POSTGRES_URL`
+- Configure S3 for exports/snapshots via `S3_*` variables
+- See `.env.example` for all options
+
+### Stopping/Restarting
+
+```bash
+cd ~/Docker/convex
+
+# Stop
+docker compose down
+
+# Stop and remove data (warning: deletes all data!)
+docker compose down -v
+
+# Restart
+docker compose restart
+
+# View logs
+docker compose logs -f
+```
+
 ## Development Notes
 
 ### Running Trap Server
