@@ -142,7 +142,7 @@ export default function ChatPage({ params }: PageProps) {
   })
 
   // Sub-agent monitoring via RPC
-  const { connected: rpcConnected, listSessions, getSessionPreview } = useOpenClawRpc()
+  const { connected: rpcConnected, listSessions, getSessionPreview, getGatewayStatus } = useOpenClawRpc()
   
   interface SubAgentDetails {
     key: string
@@ -159,6 +159,12 @@ export default function ChatPage({ params }: PageProps) {
   const [activeSubagents, setActiveSubagents] = useState<SubAgentDetails[]>([])
   const [activeCrons, setActiveCrons] = useState<SubAgentDetails[]>([])
   const [sessionInfo, setSessionInfo] = useState<{ model?: string; contextPercent?: number } | null>(null)
+  const [gatewayStatus, setGatewayStatus] = useState<{ 
+    startedAt?: string; 
+    uptime?: number; 
+    version?: string; 
+    uptimeString?: string;
+  } | null>(null)
 
   // Fetch session info when chat has session_key and RPC is connected
   useEffect(() => {
@@ -186,6 +192,68 @@ export default function ChatPage({ params }: PageProps) {
 
     fetchSessionInfo()
   }, [activeChat?.session_key, rpcConnected, getSessionPreview])
+
+  // Fetch gateway status and format uptime
+  useEffect(() => {
+    if (!rpcConnected) return
+    
+    const fetchGatewayStatus = async () => {
+      try {
+        const status = await getGatewayStatus()
+        if (status) {
+          let uptimeString: string | undefined
+          
+          if (status.uptime && status.uptime > 0) {
+            // Format uptime as relative time
+            const uptimeMs = status.uptime
+            const minutes = Math.floor(uptimeMs / 60000)
+            const hours = Math.floor(minutes / 60)
+            const days = Math.floor(hours / 24)
+            
+            if (days > 0) {
+              uptimeString = `up ${days}d ${hours % 24}h`
+            } else if (hours > 0) {
+              uptimeString = `up ${hours}h ${minutes % 60}m`
+            } else if (minutes > 0) {
+              uptimeString = `up ${minutes}m`
+            } else {
+              uptimeString = "up <1m"
+            }
+          } else if (status.startedAt) {
+            // Fallback to calculating from startedAt
+            const startTime = new Date(status.startedAt).getTime()
+            const now = Date.now()
+            const uptimeMs = now - startTime
+            const minutes = Math.floor(uptimeMs / 60000)
+            const hours = Math.floor(minutes / 60)
+            const days = Math.floor(hours / 24)
+            
+            if (days > 0) {
+              uptimeString = `restarted ${days}d ago`
+            } else if (hours > 0) {
+              uptimeString = `restarted ${hours}h ago`
+            } else if (minutes > 0) {
+              uptimeString = `restarted ${minutes}m ago`
+            } else {
+              uptimeString = "restarted <1m ago"
+            }
+          }
+          
+          setGatewayStatus({
+            ...status,
+            uptimeString
+          })
+        }
+      } catch (error) {
+        console.error('[Chat] Failed to fetch gateway status:', error)
+      }
+    }
+    
+    fetchGatewayStatus()
+    const statusInterval = setInterval(fetchGatewayStatus, 30000) // Poll every 30s
+    
+    return () => clearInterval(statusInterval)
+  }, [rpcConnected, getGatewayStatus])
 
   useEffect(() => {
     if (!rpcConnected) return
@@ -507,6 +575,7 @@ export default function ChatPage({ params }: PageProps) {
                         connected={openClawConnected}
                         activeSubagents={activeSubagents}
                         activeCrons={activeCrons}
+                        gatewayStatus={gatewayStatus || undefined}
                       />
                     </div>
                   </div>

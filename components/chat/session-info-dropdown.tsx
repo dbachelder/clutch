@@ -27,6 +27,12 @@ interface SessionInfoDropdownProps {
   connected: boolean
   activeSubagents: SubAgentDetails[]
   activeCrons: SubAgentDetails[]
+  gatewayStatus?: {
+    startedAt?: string
+    uptime?: number
+    version?: string
+    uptimeString?: string
+  }
   className?: string
 }
 
@@ -36,6 +42,7 @@ export function SessionInfoDropdown({
   connected,
   activeSubagents,
   activeCrons,
+  gatewayStatus,
   className = "",
 }: SessionInfoDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -208,6 +215,24 @@ export function SessionInfoDropdown({
                   <span className="text-sm text-[var(--text-muted)]">Context:</span>
                   <span className="text-sm text-[var(--text-primary)]">
                     {sessionInfo.contextPercent}%
+                  </span>
+                </div>
+              )}
+
+              {gatewayStatus?.uptimeString && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[var(--text-muted)]">OpenClaw:</span>
+                  <span className="text-sm text-green-400">
+                    {gatewayStatus.uptimeString}
+                  </span>
+                </div>
+              )}
+
+              {gatewayStatus?.version && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[var(--text-muted)]">Version:</span>
+                  <span className="text-sm text-blue-400">
+                    {gatewayStatus.version}
                   </span>
                 </div>
               )}
