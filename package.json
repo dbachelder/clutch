@@ -11,7 +11,6 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "db:migrate": "tsx scripts/migrate.ts",
-    "convex:migrate": "tsx scripts/migrate-to-convex.ts",
     "ws:start": "tsx scripts/start-websocket-server.ts",
     "ws:dev": "tsx --watch scripts/start-websocket-server.ts",
     "prepare": "husky",

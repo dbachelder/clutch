@@ -12,9 +12,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useCreateTask, type CreateTaskData } from "@/lib/stores/task-store"
+import { useTaskStore, type CreateTaskData } from "@/lib/stores/task-store"
 import type { TaskStatus, TaskRole } from "@/lib/db/types"
-import type { Id } from "@/convex/_generated/server"
 
 interface CreateTaskModalProps {
   open: boolean
@@ -52,7 +51,7 @@ export function CreateTaskModal({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   
-  const createTask = useCreateTask()
+  const createTask = useTaskStore((s) => s.createTask)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,7 +59,7 @@ export function CreateTaskModal({
     setLoading(true)
 
     const data: CreateTaskData = {
-      project_id: projectId as Id<"projects">,
+      project_id: projectId,
       title: title.trim(),
       description: description.trim() || undefined,
       status: initialStatus,
