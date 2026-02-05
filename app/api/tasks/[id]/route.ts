@@ -47,6 +47,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     description, 
     status, 
     priority,
+    role,
     assignee,
     requires_human_review,
     tags,
@@ -79,6 +80,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     description: description !== undefined ? description : existing.description,
     status: status ?? existing.status,
     priority: priority ?? existing.priority,
+    role: role !== undefined ? role : existing.role,
     assignee: assignee !== undefined ? assignee : existing.assignee,
     requires_human_review: requires_human_review !== undefined 
       ? (requires_human_review ? 1 : 0) 
@@ -92,7 +94,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   db.prepare(`
     UPDATE tasks 
     SET title = @title, description = @description, status = @status,
-        priority = @priority, assignee = @assignee, 
+        priority = @priority, role = @role, assignee = @assignee, 
         requires_human_review = @requires_human_review, tags = @tags,
         session_id = @session_id, updated_at = @updated_at, completed_at = @completed_at
     WHERE id = @id
