@@ -164,6 +164,25 @@
     font-feature-settings: "liga", "kern", "calt";
     letter-spacing: 0.01em;
   }
+
+  /* Ensure chat content doesn't break layout with wide content */
+  .markdown-content {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    min-width: 0;
+  }
+  
+  /* Ensure code blocks are properly contained */
+  .markdown-content pre {
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    max-width: 100%;
+  }
+  
+  /* Handle long URLs and text that might not break naturally */
+  .markdown-content a {
+    word-break: break-all;
+  }
 }
 
 /* Hide scrollbars for mobile column navigation */

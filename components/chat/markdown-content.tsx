@@ -11,7 +11,7 @@ interface MarkdownContentProps {
 
 export function MarkdownContent({ content, className = "" }: MarkdownContentProps) {
   return (
-    <div className={`markdown-content chat-text ${className}`}>
+    <div className={`markdown-content chat-text overflow-hidden ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
@@ -78,7 +78,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
             if (match) {
               // Block code (fenced)
               return (
-                <pre className="bg-[var(--bg-primary)] border border-[var(--border)] rounded p-3 my-2 overflow-x-auto text-xs">
+                <pre className="bg-[var(--bg-primary)] border border-[var(--border)] rounded p-3 my-2 overflow-x-auto text-xs max-w-full">
                   <code className={className} {...props}>
                     {children}
                   </code>
@@ -88,7 +88,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
               // Inline code
               return (
                 <code 
-                  className="bg-[var(--bg-primary)] border border-[var(--border)] rounded px-1.5 py-0.5 text-xs font-mono"
+                  className="bg-[var(--bg-primary)] border border-[var(--border)] rounded px-1.5 py-0.5 text-xs font-mono break-all"
                   {...props}
                 >
                   {children}
@@ -135,8 +135,8 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
 
           // Tables
           table: ({ children }) => (
-            <div className="my-2 overflow-x-auto">
-              <table className="min-w-full border border-[var(--border)] text-xs">
+            <div className="my-2 overflow-x-auto max-w-full">
+              <table className="w-full border border-[var(--border)] text-xs">
                 {children}
               </table>
             </div>

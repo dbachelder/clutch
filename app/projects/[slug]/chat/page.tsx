@@ -586,8 +586,8 @@ export default function ChatPage({ params }: PageProps) {
           />
         )}
         
-        {/* Main chat area */}
-        <div className="flex-1 flex flex-col">
+        {/* Main chat area - constrained to prevent wide content from pushing sidebar */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {activeChat ? (
             <>
               {/* Chat header */}
