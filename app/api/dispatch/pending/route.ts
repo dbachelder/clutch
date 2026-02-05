@@ -17,6 +17,10 @@ interface PendingDispatch {
   label: string
 }
 
+// TODO: This route uses SQLite-specific helper functions (getAgent, buildTaskContext, buildTaskLabel)
+// that are not yet available in Convex. Once these are migrated to Convex, convert this route.
+// For now, keeping the SQLite implementation.
+
 // GET /api/dispatch/pending — List tasks pending dispatch
 export async function GET() {
   const tasks = db.prepare(`

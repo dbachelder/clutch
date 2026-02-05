@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { getConvexClient } from "@/lib/convex/server"
+import { api } from "@/convex/_generated/api"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -13,18 +14,32 @@ export async function PATCH(
   const { id } = await context.params
   const body = await request.json()
   
-  const existing = db.prepare("SELECT id FROM notifications WHERE id = ?").get(id)
-  if (!existing) {
-    return NextResponse.json({ error: "Notification not found" }, { status: 404 })
+  try {
+    const convex = getConvexClient()
+
+    if (body.read !== undefined) {
+      const notification = await convex.mutation(api.notifications.markRead, {
+        id,
+        read: body.read ? true : false,
+      })
+      return NextResponse.json({ notification })
+    }
+
+    // If no read field, just fetch the notification
+    const notification = await convex.query(api.notifications.getById, { id })
+    if (!notification) {
+      return NextResponse.json({ error: "Notification not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ notification })
+  } catch (error) {
+    console.error("[Notifications API] Error updating notification:", error)
+    const message = error instanceof Error ? error.message : "Failed to update notification"
+    if (message.includes("not found")) {
+      return NextResponse.json({ error: "Notification not found" }, { status: 404 })
+    }
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-  
-  if (body.read !== undefined) {
-    db.prepare("UPDATE notifications SET read = ? WHERE id = ?").run(body.read ? 1 : 0, id)
-  }
-  
-  const notification = db.prepare("SELECT * FROM notifications WHERE id = ?").get(id)
-  
-  return NextResponse.json({ notification })
 }
 
 // DELETE /api/notifications/:id — Delete notification
@@ -34,11 +49,21 @@ export async function DELETE(
 ) {
   const { id } = await context.params
   
-  const result = db.prepare("DELETE FROM notifications WHERE id = ?").run(id)
-  
-  if (result.changes === 0) {
-    return NextResponse.json({ error: "Notification not found" }, { status: 404 })
+  try {
+    const convex = getConvexClient()
+    const result = await convex.mutation(api.notifications.deleteNotification, { id })
+    
+    if (!result.success) {
+      return NextResponse.json({ error: "Notification not found" }, { status: 404 })
+    }
+    
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("[Notifications API] Error deleting notification:", error)
+    const message = error instanceof Error ? error.message : "Failed to delete notification"
+    if (message.includes("not found")) {
+      return NextResponse.json({ error: "Notification not found" }, { status: 404 })
+    }
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-  
-  return NextResponse.json({ success: true })
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
-import type { Signal } from "@/lib/db/types"
+import { getConvexClient } from "@/lib/convex/server"
+import { api } from "@/convex/_generated/api"
 
 // POST /api/signal/[id]/respond — Respond to signal
 export async function POST(
@@ -19,42 +19,43 @@ export async function POST(
     )
   }
   
-  // Check if signal exists
-  const signal = db.prepare("SELECT * FROM signals WHERE id = ?").get(id) as Signal | undefined
-  
-  if (!signal) {
+  try {
+    const convex = getConvexClient()
+
+    const signal = await convex.mutation(api.signals.respond, {
+      id,
+      response,
+    })
+
+    // TODO: Integrate with OpenClaw sessions_send to notify the agent
+    // This will be wired later when OpenClaw session integration is ready
+    
+    return NextResponse.json({
+      success: true,
+      signal,
+      // TODO: Add session notification status once OpenClaw integration is ready
+    })
+  } catch (error) {
+    console.error("[Signal API] Error responding to signal:", error)
+    const message = error instanceof Error ? error.message : "Failed to respond to signal"
+    
+    if (message.includes("not found")) {
+      return NextResponse.json(
+        { error: "Signal not found" },
+        { status: 404 }
+      )
+    }
+    
+    if (message.includes("already been responded")) {
+      return NextResponse.json(
+        { error: "Signal has already been responded to" },
+        { status: 409 }
+      )
+    }
+    
     return NextResponse.json(
-      { error: "Signal not found" },
-      { status: 404 }
+      { error: message },
+      { status: 500 }
     )
   }
-  
-  // Check if already responded
-  if (signal.responded_at !== null) {
-    return NextResponse.json(
-      { error: "Signal has already been responded to" },
-      { status: 409 }
-    )
-  }
-  
-  const now = Date.now()
-  
-  // Update the signal with response
-  db.prepare(`
-    UPDATE signals 
-    SET response = ?, responded_at = ?
-    WHERE id = ?
-  `).run(response, now, id)
-  
-  // TODO: Integrate with OpenClaw sessions_send to notify the agent
-  // This will be wired later when OpenClaw session integration is ready
-  
-  // Get the updated signal
-  const updatedSignal = db.prepare("SELECT * FROM signals WHERE id = ?").get(id) as Signal
-  
-  return NextResponse.json({
-    success: true,
-    signal: updatedSignal,
-    // TODO: Add session notification status once OpenClaw integration is ready
-  })
 }

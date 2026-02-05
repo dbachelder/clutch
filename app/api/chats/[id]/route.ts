@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
-import type { Chat } from "@/lib/db/types"
+import { getConvexClient } from "@/lib/convex/server"
+import { api } from "@/convex/_generated/api"
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -8,16 +8,25 @@ type RouteParams = { params: Promise<{ id: string }> }
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
   
-  const chat = db.prepare("SELECT * FROM chats WHERE id = ?").get(id) as Chat | undefined
-  
-  if (!chat) {
+  try {
+    const convex = getConvexClient()
+    const chat = await convex.query(api.chats.getById, { id })
+    
+    if (!chat) {
+      return NextResponse.json(
+        { error: "Chat not found" },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({ chat })
+  } catch (error) {
+    console.error("[Chats API] Error fetching chat:", error)
     return NextResponse.json(
-      { error: "Chat not found" },
-      { status: 404 }
+      { error: "Failed to fetch chat" },
+      { status: 500 }
     )
   }
-
-  return NextResponse.json({ chat })
 }
 
 // PATCH /api/chats/[id] — Update chat
@@ -27,69 +36,60 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   
   const { title, session_key } = body
   
-  // Verify chat exists
-  const chat = db.prepare("SELECT id FROM chats WHERE id = ?").get(id)
-  if (!chat) {
-    return NextResponse.json(
-      { error: "Chat not found" },
-      { status: 404 }
-    )
-  }
-
-  const now = Date.now()
-  
-  // Build dynamic update query based on provided fields
-  const updateFields = []
-  const values = []
-  
-  if (title?.trim()) {
-    updateFields.push("title = ?")
-    values.push(title.trim())
-  }
-  
-  if (session_key !== undefined) {
-    updateFields.push("session_key = ?")
-    values.push(session_key)
-  }
-  
-  if (updateFields.length === 0) {
+  if (!title?.trim() && session_key === undefined) {
     return NextResponse.json(
       { error: "No fields to update" },
       { status: 400 }
     )
   }
-  
-  updateFields.push("updated_at = ?")
-  values.push(now)
-  values.push(id) // for WHERE clause
-  
-  db.prepare(`
-    UPDATE chats 
-    SET ${updateFields.join(", ")}
-    WHERE id = ?
-  `).run(...values)
 
-  // Fetch the updated chat
-  const updatedChat = db.prepare("SELECT * FROM chats WHERE id = ?").get(id) as Chat
+  try {
+    const convex = getConvexClient()
 
-  return NextResponse.json({ chat: updatedChat })
+    const chat = await convex.mutation(api.chats.update, {
+      id,
+      ...(title?.trim() && { title: title.trim() }),
+      ...(session_key !== undefined && { session_key }),
+    })
+
+    return NextResponse.json({ chat })
+  } catch (error) {
+    console.error("[Chats API] Error updating chat:", error)
+    const message = error instanceof Error ? error.message : "Failed to update chat"
+    if (message.includes("not found")) {
+      return NextResponse.json(
+        { error: "Chat not found" },
+        { status: 404 }
+      )
+    }
+    return NextResponse.json(
+      { error: message },
+      { status: 500 }
+    )
+  }
 }
 
 // DELETE /api/chats/[id] — Delete chat
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
   
-  // Verify chat exists
-  const chat = db.prepare("SELECT id FROM chats WHERE id = ?").get(id)
-  if (!chat) {
+  try {
+    const convex = getConvexClient()
+    const success = await convex.mutation(api.chats.deleteChat, { id })
+
+    if (!success) {
+      return NextResponse.json(
+        { error: "Chat not found" },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("[Chats API] Error deleting chat:", error)
     return NextResponse.json(
-      { error: "Chat not found" },
-      { status: 404 }
+      { error: "Failed to delete chat" },
+      { status: 500 }
     )
   }
-
-  // Delete the chat (cascade will delete messages)
-  db.prepare("DELETE FROM chats WHERE id = ?").run(id)
-
-  return NextResponse.json({ success: true })
 }

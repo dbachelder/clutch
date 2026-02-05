@@ -1,145 +1,181 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
-import type { Project } from "@/lib/db/types"
+import { getConvexClient } from "@/lib/convex/server"
+import { api } from "@/convex/_generated/api"
 
 type RouteParams = { params: Promise<{ id: string }> }
 
 // GET /api/projects/[id] — Get project by ID or slug
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  
-  const project = db.prepare(`
-    SELECT 
-      p.*,
-      (SELECT COUNT(*) FROM tasks WHERE project_id = p.id) as task_count
-    FROM projects p
-    WHERE p.id = ? OR p.slug = ?
-  `).get(id, id) as (Project & { task_count: number }) | undefined
 
-  if (!project) {
+  try {
+    const convex = getConvexClient()
+
+    // Try to get by ID first, then by slug
+    let project = await convex.query(api.projects.getById, { id })
+
+    if (!project) {
+      project = await convex.query(api.projects.getBySlug, { slug: id })
+    }
+
+    if (!project) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      )
+    }
+
+    // Get task count separately
+    const tasks = await convex.query(api.tasks.getByProject, {
+      projectId: project.id,
+    })
+
+    return NextResponse.json({
+      project: {
+        ...project,
+        task_count: tasks.length,
+      },
+    })
+  } catch (error) {
+    console.error("[Projects API] Error fetching project:", error)
     return NextResponse.json(
-      { error: "Project not found" },
-      { status: 404 }
+      { error: "Failed to fetch project" },
+      { status: 500 }
     )
   }
-
-  return NextResponse.json({ project })
 }
 
 // PATCH /api/projects/[id] — Update project
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
   const body = await request.json()
-  
-  const existing = db.prepare(
-    "SELECT * FROM projects WHERE id = ? OR slug = ?"
-  ).get(id, id) as Project | undefined
-  
-  if (!existing) {
-    return NextResponse.json(
-      { error: "Project not found" },
-      { status: 404 }
-    )
-  }
 
-  const { name, slug, description, color, repo_url, context_path, chat_layout, local_path, github_repo, work_loop_enabled, work_loop_schedule } = body
-  
-  // Validate local_path if provided
-  if (local_path !== undefined && local_path !== null && typeof local_path !== 'string') {
-    return NextResponse.json(
-      { error: "local_path must be a string" },
-      { status: 400 }
-    )
-  }
+  try {
+    const convex = getConvexClient()
 
-  // Validate github_repo format if provided
-  if (github_repo !== undefined && github_repo !== null) {
-    if (typeof github_repo !== 'string' || !/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(github_repo)) {
+    // Try to get by ID first, then by slug to find the project
+    let existing = await convex.query(api.projects.getById, { id })
+
+    if (!existing) {
+      existing = await convex.query(api.projects.getBySlug, { slug: id })
+    }
+
+    if (!existing) {
       return NextResponse.json(
-        { error: "github_repo must be in owner/repo format" },
+        { error: "Project not found" },
+        { status: 404 }
+      )
+    }
+
+    const { name, slug, description, color, repo_url, context_path, chat_layout, local_path, github_repo, work_loop_enabled, work_loop_schedule } = body
+
+    // Validate local_path if provided
+    if (local_path !== undefined && local_path !== null && typeof local_path !== 'string') {
+      return NextResponse.json(
+        { error: "local_path must be a string" },
         { status: 400 }
       )
     }
-  }
 
-  // Validate work_loop_enabled if provided
-  if (work_loop_enabled !== undefined && typeof work_loop_enabled !== 'boolean') {
-    return NextResponse.json(
-      { error: "work_loop_enabled must be a boolean" },
-      { status: 400 }
-    )
-  }
+    // Validate github_repo format if provided
+    if (github_repo !== undefined && github_repo !== null) {
+      if (typeof github_repo !== 'string' || !/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(github_repo)) {
+        return NextResponse.json(
+          { error: "github_repo must be in owner/repo format" },
+          { status: 400 }
+        )
+      }
+    }
 
-  // Validate work_loop_schedule if provided
-  if (work_loop_schedule !== undefined && work_loop_schedule !== null) {
-    if (typeof work_loop_schedule !== 'string') {
+    // Validate work_loop_enabled if provided
+    if (work_loop_enabled !== undefined && typeof work_loop_enabled !== 'boolean') {
       return NextResponse.json(
-        { error: "work_loop_schedule must be a string" },
+        { error: "work_loop_enabled must be a boolean" },
         { status: 400 }
       )
     }
-    // TODO: Add cron validation if needed
-  }
-  
-  // If changing slug, check uniqueness
-  if (slug && slug !== existing.slug) {
-    const slugExists = db.prepare(
-      "SELECT id FROM projects WHERE slug = ? AND id != ?"
-    ).get(slug, existing.id)
-    
-    if (slugExists) {
+
+    // Validate work_loop_schedule if provided
+    if (work_loop_schedule !== undefined && work_loop_schedule !== null) {
+      if (typeof work_loop_schedule !== 'string') {
+        return NextResponse.json(
+          { error: "work_loop_schedule must be a string" },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Build updates object - only include fields that were explicitly provided
+    const updates: Record<string, unknown> = {}
+    if (name !== undefined) updates.name = name
+    if (slug !== undefined) updates.slug = slug
+    if (description !== undefined) updates.description = description
+    if (color !== undefined) updates.color = color
+    if (repo_url !== undefined) updates.repo_url = repo_url
+    if (context_path !== undefined) updates.context_path = context_path
+    if (local_path !== undefined) updates.local_path = local_path
+    if (github_repo !== undefined) updates.github_repo = github_repo
+    if (chat_layout !== undefined) updates.chat_layout = chat_layout
+    if (work_loop_enabled !== undefined) updates.work_loop_enabled = work_loop_enabled
+    if (work_loop_schedule !== undefined) updates.work_loop_schedule = work_loop_schedule
+
+    const project = await convex.mutation(api.projects.update, {
+      id: existing.id,
+      ...updates,
+    })
+
+    return NextResponse.json({ project })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+
+    // Handle slug uniqueness error
+    if (message.includes("unique") || message.includes("slug")) {
       return NextResponse.json(
         { error: "A project with this slug already exists" },
         { status: 409 }
       )
     }
+
+    console.error("[Projects API] Error updating project:", error)
+    return NextResponse.json(
+      { error: "Failed to update project" },
+      { status: 500 }
+    )
   }
-
-  const updated: Project = {
-    ...existing,
-    name: name ?? existing.name,
-    slug: slug ?? existing.slug,
-    description: description !== undefined ? description : existing.description,
-    color: color ?? existing.color,
-    repo_url: repo_url !== undefined ? repo_url : existing.repo_url,
-    context_path: context_path !== undefined ? context_path : existing.context_path,
-    local_path: local_path !== undefined ? local_path : existing.local_path,
-    github_repo: github_repo !== undefined ? github_repo : existing.github_repo,
-    chat_layout: chat_layout ?? existing.chat_layout,
-    work_loop_enabled: work_loop_enabled !== undefined ? (work_loop_enabled ? 1 : 0) : existing.work_loop_enabled,
-    work_loop_schedule: work_loop_schedule !== undefined ? work_loop_schedule : existing.work_loop_schedule,
-    updated_at: Date.now(),
-  }
-
-  db.prepare(`
-    UPDATE projects 
-    SET name = @name, slug = @slug, description = @description, 
-        color = @color, repo_url = @repo_url, context_path = @context_path,
-        local_path = @local_path, github_repo = @github_repo,
-        chat_layout = @chat_layout, work_loop_enabled = @work_loop_enabled,
-        work_loop_schedule = @work_loop_schedule, updated_at = @updated_at
-    WHERE id = @id
-  `).run(updated)
-
-  return NextResponse.json({ project: updated })
 }
 
 // DELETE /api/projects/[id] — Delete project
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  
-  const existing = db.prepare(
-    "SELECT id FROM projects WHERE id = ? OR slug = ?"
-  ).get(id, id)
-  
-  if (!existing) {
+
+  try {
+    const convex = getConvexClient()
+
+    // Try to get by ID first, then by slug to find the project
+    let existing = await convex.query(api.projects.getById, { id })
+
+    if (!existing) {
+      existing = await convex.query(api.projects.getBySlug, { slug: id })
+    }
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      )
+    }
+
+    await convex.mutation(api.projects.deleteProject, {
+      id: existing.id,
+      force: true,
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("[Projects API] Error deleting project:", error)
     return NextResponse.json(
-      { error: "Project not found" },
-      { status: 404 }
+      { error: "Failed to delete project" },
+      { status: 500 }
     )
   }
-
-  db.prepare("DELETE FROM projects WHERE id = ?").run((existing as { id: string }).id)
-
-  return NextResponse.json({ success: true })
 }
