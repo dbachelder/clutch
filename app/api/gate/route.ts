@@ -31,9 +31,18 @@ export async function GET() {
   const twoHoursAgo = now - (2 * 60 * 60 * 1000)
   
   // Get counts for all conditions
+  // ready_tasks excludes tasks with incomplete dependencies (blocked tasks)
   const counts = db.prepare(`
     SELECT 
-      (SELECT COUNT(*) FROM tasks WHERE status = 'ready' AND assignee IS NULL) as ready_tasks,
+      (SELECT COUNT(*) FROM tasks t 
+       WHERE t.status = 'ready' 
+         AND t.assignee IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM task_dependencies td 
+           JOIN tasks dep ON td.depends_on_id = dep.id 
+           WHERE td.task_id = t.id AND dep.status != 'done'
+         )
+      ) as ready_tasks,
       (SELECT COUNT(*) FROM comments WHERE type = 'request_input' AND responded_at IS NULL) as pending_inputs,
       (SELECT COUNT(*) FROM tasks WHERE status = 'in_progress' AND updated_at < ?) as stuck_tasks,
       (SELECT COUNT(*) FROM tasks WHERE status = 'review') as review_tasks,
@@ -98,10 +107,15 @@ export async function GET() {
     // Fetch task details
     const tasks: NonNullable<GateStatus["tasks"]> = {
       ready: db.prepare(`
-        SELECT id, title, priority FROM tasks 
-        WHERE status = 'ready' AND assignee IS NULL
+        SELECT t.id, t.title, t.priority FROM tasks t
+        WHERE t.status = 'ready' AND t.assignee IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM task_dependencies td 
+            JOIN tasks dep ON td.depends_on_id = dep.id 
+            WHERE td.task_id = t.id AND dep.status != 'done'
+          )
         ORDER BY 
-          CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
+          CASE t.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
         LIMIT 10
       `).all() as Array<{ id: string; title: string; priority: string }>,
       
