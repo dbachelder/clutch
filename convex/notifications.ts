@@ -1,5 +1,6 @@
 import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
+import { generateId } from './_helpers'
 import type { Notification } from '../lib/db/types'
 
 // ============================================
@@ -11,8 +12,7 @@ type NotificationSeverity = "info" | "warning" | "critical"
 
 // Convert Convex document to Notification type
 function toNotification(doc: {
-  _id: string
-  _creationTime: number
+  id: string
   task_id?: string
   project_id?: string
   type: NotificationType
@@ -24,7 +24,7 @@ function toNotification(doc: {
   created_at: number
 }): Notification {
   return {
-    id: doc._id,
+    id: doc.id,
     task_id: doc.task_id ?? null,
     project_id: doc.project_id ?? null,
     type: doc.type,
@@ -64,7 +64,6 @@ export const getAll = query({
         .collect()
     }
 
-    // Sort by severity (critical first) then by created_at
     const sorted = notifications
       .sort((a, b) => {
         const severityOrder: Record<NotificationSeverity, number> = {
@@ -72,15 +71,12 @@ export const getAll = query({
           warning: 1,
           info: 2,
         }
-        const aDoc = a as { severity: NotificationSeverity; created_at: number }
-        const bDoc = b as { severity: NotificationSeverity; created_at: number }
-        const sevDiff = severityOrder[aDoc.severity] - severityOrder[bDoc.severity]
+        const sevDiff = severityOrder[a.severity as NotificationSeverity] - severityOrder[b.severity as NotificationSeverity]
         if (sevDiff !== 0) return sevDiff
-        return bDoc.created_at - aDoc.created_at
+        return b.created_at - a.created_at
       })
       .slice(0, args.limit ?? 50)
 
-    // Get total unread count
     const allUnread = await ctx.db
       .query('notifications')
       .withIndex('by_read', (q) => q.eq('read', false))
@@ -94,12 +90,15 @@ export const getAll = query({
 })
 
 /**
- * Get a single notification by ID
+ * Get a single notification by UUID
  */
 export const getById = query({
-  args: { id: v.id('notifications') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<Notification | null> => {
-    const notification = await ctx.db.get(args.id)
+    const notification = await ctx.db
+      .query('notifications')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!notification) {
       return null
@@ -120,9 +119,7 @@ export const getUnreadEscalationsCount = query({
       .withIndex('by_read', (q) => q.eq('read', false))
       .collect()
 
-    return notifications.filter(
-      (n) => (n as { type: NotificationType }).type === 'escalation'
-    ).length
+    return notifications.filter((n) => n.type === 'escalation').length
   },
 })
 
@@ -138,18 +135,16 @@ export const getUnreadEscalations = query({
       .collect()
 
     return notifications
-      .filter((n) => (n as { type: NotificationType }).type === 'escalation')
+      .filter((n) => n.type === 'escalation')
       .sort((a, b) => {
         const severityOrder: Record<NotificationSeverity, number> = {
           critical: 0,
           warning: 1,
           info: 2,
         }
-        const aDoc = a as { severity: NotificationSeverity; created_at: number }
-        const bDoc = b as { severity: NotificationSeverity; created_at: number }
-        const sevDiff = severityOrder[aDoc.severity] - severityOrder[bDoc.severity]
+        const sevDiff = severityOrder[a.severity as NotificationSeverity] - severityOrder[b.severity as NotificationSeverity]
         if (sevDiff !== 0) return sevDiff
-        return bDoc.created_at - aDoc.created_at
+        return b.created_at - a.created_at
       })
       .slice(0, args.limit ?? 10)
       .map((n) => toNotification(n as Parameters<typeof toNotification>[0]))
@@ -165,8 +160,8 @@ export const getUnreadEscalations = query({
  */
 export const create = mutation({
   args: {
-    taskId: v.optional(v.id('tasks')),
-    projectId: v.optional(v.id('projects')),
+    taskId: v.optional(v.string()),
+    projectId: v.optional(v.string()),
     type: v.optional(v.union(
       v.literal('escalation'),
       v.literal('request_input'),
@@ -194,9 +189,12 @@ export const create = mutation({
     // Resolve project_id from task if not provided
     let resolvedProjectId = args.projectId
     if (!resolvedProjectId && args.taskId) {
-      const task = await ctx.db.get(args.taskId)
+      const task = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', args.taskId!))
+        .unique()
       if (task) {
-        resolvedProjectId = (task as { project_id: string }).project_id as unknown as typeof resolvedProjectId
+        resolvedProjectId = task.project_id
       }
     }
 
@@ -210,17 +208,10 @@ export const create = mutation({
       }
     })()
 
-    const notificationData: {
-      task_id?: typeof args.taskId
-      project_id?: typeof resolvedProjectId
-      type: typeof type
-      severity: typeof severity
-      title: string
-      message: string
-      agent?: string
-      read: boolean
-      created_at: number
-    } = {
+    const id = generateId()
+
+    const notificationData: Record<string, unknown> = {
+      id,
       type,
       severity,
       title: notificationTitle,
@@ -233,9 +224,20 @@ export const create = mutation({
     if (resolvedProjectId) notificationData.project_id = resolvedProjectId
     if (args.agent) notificationData.agent = args.agent
 
-    const notificationId = await ctx.db.insert('notifications', notificationData)
+    const internalId = await ctx.db.insert('notifications', notificationData as {
+      id: string
+      type: "escalation" | "request_input" | "completion" | "system"
+      severity: "info" | "warning" | "critical"
+      title: string
+      message: string
+      read: boolean
+      created_at: number
+      task_id?: string
+      project_id?: string
+      agent?: string
+    })
 
-    const notification = await ctx.db.get(notificationId)
+    const notification = await ctx.db.get(internalId)
     if (!notification) {
       throw new Error('Failed to create notification')
     }
@@ -249,19 +251,22 @@ export const create = mutation({
  */
 export const markRead = mutation({
   args: {
-    id: v.id('notifications'),
+    id: v.string(),
     read: v.boolean(),
   },
   handler: async (ctx, args): Promise<Notification> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('notifications')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Notification not found: ${args.id}`)
     }
 
-    await ctx.db.patch(args.id, { read: args.read })
+    await ctx.db.patch(existing._id, { read: args.read })
 
-    const updated = await ctx.db.get(args.id)
+    const updated = await ctx.db.get(existing._id)
     if (!updated) {
       throw new Error('Failed to update notification')
     }
@@ -274,15 +279,18 @@ export const markRead = mutation({
  * Delete a notification
  */
 export const deleteNotification = mutation({
-  args: { id: v.id('notifications') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('notifications')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Notification not found: ${args.id}`)
     }
 
-    await ctx.db.delete(args.id)
+    await ctx.db.delete(existing._id)
 
     return { success: true }
   },

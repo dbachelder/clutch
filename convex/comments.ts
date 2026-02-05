@@ -1,7 +1,7 @@
 import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
+import { generateId } from './_helpers'
 import type { Comment } from '../lib/db/types'
-import type { Id } from './_generated/dataModel'
 
 // ============================================
 // Type Helpers
@@ -12,8 +12,7 @@ type CommentType = "message" | "status_change" | "request_input" | "completion"
 
 // Convert Convex document to Comment type
 function toComment(doc: {
-  _id: string
-  _creationTime: number
+  id: string
   task_id: string
   author: string
   author_type: AuthorType
@@ -23,7 +22,7 @@ function toComment(doc: {
   created_at: number
 }): Comment {
   return {
-    id: doc._id,
+    id: doc.id,
     task_id: doc.task_id,
     author: doc.author,
     author_type: doc.author_type,
@@ -39,11 +38,11 @@ function toComment(doc: {
 // ============================================
 
 /**
- * Get comments for a task
+ * Get comments for a task (by task UUID)
  */
 export const getByTask = query({
   args: {
-    taskId: v.id('tasks'),
+    taskId: v.string(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<Comment[]> => {
@@ -53,9 +52,7 @@ export const getByTask = query({
       .collect()
 
     // Sort by created_at ascending (oldest first)
-    comments = comments.sort(
-      (a, b) => (a as { created_at: number }).created_at - (b as { created_at: number }).created_at
-    )
+    comments = comments.sort((a, b) => a.created_at - b.created_at)
 
     if (args.limit) {
       comments = comments.slice(0, args.limit)
@@ -66,12 +63,15 @@ export const getByTask = query({
 })
 
 /**
- * Get a single comment by ID
+ * Get a single comment by UUID
  */
 export const getById = query({
-  args: { id: v.id('comments') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<Comment | null> => {
-    const comment = await ctx.db.get(args.id)
+    const comment = await ctx.db
+      .query('comments')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!comment) {
       return null
@@ -92,16 +92,19 @@ export const getPendingInputs = query({
       .withIndex('by_type', (q) => q.eq('type', 'request_input'))
       .collect()
 
-    const pending = comments.filter((c) => !(c as { responded_at?: number }).responded_at)
+    const pending = comments.filter((c) => !c.responded_at)
 
     // Get task titles
     const result: Array<Comment & { taskTitle?: string }> = []
     for (const comment of pending.slice(0, args.limit ?? 10)) {
-      const task = await ctx.db.get((comment as { task_id: string }).task_id as unknown as Id<'tasks'>)
+      const task = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', comment.task_id))
+        .unique()
       const commentData = toComment(comment as Parameters<typeof toComment>[0])
       result.push({
         ...commentData,
-        taskTitle: task ? (task as { title: string }).title : undefined,
+        taskTitle: task ? task.title : undefined,
       })
     }
 
@@ -120,7 +123,7 @@ export const getPendingInputCount = query({
       .withIndex('by_type', (q) => q.eq('type', 'request_input'))
       .collect()
 
-    return comments.filter((c) => !(c as { responded_at?: number }).responded_at).length
+    return comments.filter((c) => !c.responded_at).length
   },
 })
 
@@ -133,7 +136,7 @@ export const getPendingInputCount = query({
  */
 export const create = mutation({
   args: {
-    taskId: v.id('tasks'),
+    taskId: v.string(),
     author: v.string(),
     authorType: v.union(
       v.literal('coordinator'),
@@ -154,14 +157,19 @@ export const create = mutation({
     }
 
     // Verify task exists
-    const task = await ctx.db.get(args.taskId)
+    const task = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.taskId))
+      .unique()
     if (!task) {
       throw new Error(`Task not found: ${args.taskId}`)
     }
 
     const now = Date.now()
+    const id = generateId()
 
-    const commentId = await ctx.db.insert('comments', {
+    const internalId = await ctx.db.insert('comments', {
+      id,
       task_id: args.taskId,
       author: args.author,
       author_type: args.authorType,
@@ -170,7 +178,7 @@ export const create = mutation({
       created_at: now,
     })
 
-    const comment = await ctx.db.get(commentId)
+    const comment = await ctx.db.get(internalId)
     if (!comment) {
       throw new Error('Failed to create comment')
     }
@@ -183,9 +191,12 @@ export const create = mutation({
  * Mark a request_input comment as responded
  */
 export const markResponded = mutation({
-  args: { id: v.id('comments') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<Comment> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('comments')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Comment not found: ${args.id}`)
@@ -193,9 +204,9 @@ export const markResponded = mutation({
 
     const now = Date.now()
 
-    await ctx.db.patch(args.id, { responded_at: now })
+    await ctx.db.patch(existing._id, { responded_at: now })
 
-    const updated = await ctx.db.get(args.id)
+    const updated = await ctx.db.get(existing._id)
     if (!updated) {
       throw new Error('Failed to update comment')
     }
@@ -208,15 +219,18 @@ export const markResponded = mutation({
  * Delete a comment
  */
 export const deleteComment = mutation({
-  args: { id: v.id('comments') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('comments')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Comment not found: ${args.id}`)
     }
 
-    await ctx.db.delete(args.id)
+    await ctx.db.delete(existing._id)
 
     return { success: true }
   },

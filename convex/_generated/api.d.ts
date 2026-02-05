@@ -8,11 +8,13 @@
  * @module
  */
 
+import type * as _helpers from "../_helpers.js";
 import type * as chats from "../chats.js";
 import type * as comments from "../comments.js";
 import type * as gate from "../gate.js";
 import type * as notifications from "../notifications.js";
 import type * as projects from "../projects.js";
+import type * as seed from "../seed.js";
 import type * as signals from "../signals.js";
 import type * as tasks from "../tasks.js";
 
@@ -23,11 +25,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  _helpers: typeof _helpers;
   chats: typeof chats;
   comments: typeof comments;
   gate: typeof gate;
   notifications: typeof notifications;
   projects: typeof projects;
+  seed: typeof seed;
   signals: typeof signals;
   tasks: typeof tasks;
 }>;

@@ -1,6 +1,4 @@
 import { query } from './_generated/server'
-// Types imported for potential future use
-import type { Id } from './_generated/dataModel'
 
 // ============================================
 // Gate Status Query
@@ -47,66 +45,59 @@ export const getStatus = query({
     // Count ready tasks (excluding blocked ones)
     const readyTasks = []
     for (const task of allTasks) {
-      const taskDoc = task as { _id: string; status: string; assignee?: string; title: string; priority: string }
-      if (taskDoc.status === 'ready' && !taskDoc.assignee) {
+      if (task.status === 'ready' && !task.assignee) {
         // Check for incomplete dependencies
         const deps = await ctx.db
           .query('taskDependencies')
-          .withIndex('by_task', (q) => q.eq('task_id', taskDoc._id as unknown as Id<'tasks'>))
+          .withIndex('by_task', (q) => q.eq('task_id', task.id))
           .collect()
-        
+
         let hasIncompleteDeps = false
         for (const dep of deps) {
-          const depTask = await ctx.db.get((dep as { depends_on_id: string }).depends_on_id as unknown as Id<'tasks'>)
-          if (depTask && (depTask as { status: string }).status !== 'done') {
+          const depTask = await ctx.db
+            .query('tasks')
+            .withIndex('by_uuid', (q) => q.eq('id', dep.depends_on_id))
+            .unique()
+          if (depTask && depTask.status !== 'done') {
             hasIncompleteDeps = true
             break
           }
         }
 
         if (!hasIncompleteDeps) {
-          readyTasks.push(taskDoc)
+          readyTasks.push(task)
         }
       }
     }
 
     // Count stuck tasks (in_progress for > 2 hours)
     const stuckTasks = allTasks.filter(
-      (t) => (t as { status: string; updated_at: number }).status === 'in_progress' &&
-             (t as { updated_at: number }).updated_at < twoHoursAgo
+      (t) => t.status === 'in_progress' && t.updated_at < twoHoursAgo
     )
 
     // Count review tasks
-    const reviewTasks = allTasks.filter(
-      (t) => (t as { status: string }).status === 'review'
-    )
+    const reviewTasks = allTasks.filter((t) => t.status === 'review')
 
     // Count pending dispatch tasks
-    const pendingDispatchTasks = allTasks.filter(
-      (t) => (t as { dispatch_status?: string }).dispatch_status === 'pending'
-    )
+    const pendingDispatchTasks = allTasks.filter((t) => t.dispatch_status === 'pending')
 
     // Count pending input requests
     const comments = await ctx.db
       .query('comments')
       .withIndex('by_type', (q) => q.eq('type', 'request_input'))
       .collect()
-    const pendingInputs = comments.filter((c) => !(c as { responded_at?: number }).responded_at)
+    const pendingInputs = comments.filter((c) => !c.responded_at)
 
     // Count unread escalations
     const notifications = await ctx.db
       .query('notifications')
       .withIndex('by_read', (q) => q.eq('read', false))
       .collect()
-    const unreadEscalations = notifications.filter(
-      (n) => (n as { type: string }).type === 'escalation'
-    )
+    const unreadEscalations = notifications.filter((n) => n.type === 'escalation')
 
     // Count pending signals (blocking and unresponded)
     const allSignals = await ctx.db.query('signals').collect()
-    const pendingSignals = allSignals.filter(
-      (s) => (s as { blocking: boolean }).blocking && !(s as { responded_at?: number }).responded_at
-    )
+    const pendingSignals = allSignals.filter((s) => s.blocking && !s.responded_at)
 
     // Build details
     const details: GateStatusDetails = {
@@ -140,71 +131,55 @@ export const getStatus = query({
 
     // If attention needed, fetch detailed data
     if (needsAttention) {
-      // Ready tasks (sorted by priority)
       const priorityOrder: Record<string, number> = { urgent: 1, high: 2, medium: 3, low: 4 }
       response.tasks = {
         ready: readyTasks
           .sort((a, b) => (priorityOrder[a.priority] || 5) - (priorityOrder[b.priority] || 5))
           .slice(0, 10)
-          .map((t) => ({ id: t._id, title: t.title, priority: t.priority })),
+          .map((t) => ({ id: t.id, title: t.title, priority: t.priority })),
 
-        // Pending inputs with task titles
         pendingInput: await Promise.all(
           pendingInputs.slice(0, 10).map(async (c) => {
-            const cDoc = c as { _id: string; task_id: string; author: string; content: string }
-            const task = await ctx.db.get(cDoc.task_id as unknown as Id<'tasks'>)
+            const task = await ctx.db
+              .query('tasks')
+              .withIndex('by_uuid', (q) => q.eq('id', c.task_id))
+              .unique()
             return {
-              taskId: cDoc.task_id,
-              taskTitle: task ? (task as { title: string }).title : 'Unknown',
-              author: cDoc.author,
-              content: cDoc.content,
+              taskId: c.task_id,
+              taskTitle: task ? task.title : 'Unknown',
+              author: c.author,
+              content: c.content,
             }
           })
         ),
 
-        // Stuck tasks
         stuck: stuckTasks
-          .sort((a, b) => (a as { updated_at: number }).updated_at - (b as { updated_at: number }).updated_at)
+          .sort((a, b) => a.updated_at - b.updated_at)
           .slice(0, 10)
-          .map((t) => {
-            const tDoc = t as { _id: string; title: string; assignee?: string; updated_at: number }
-            return {
-              id: tDoc._id,
-              title: tDoc.title,
-              assignee: tDoc.assignee || 'unassigned',
-              hours: Math.floor((now - tDoc.updated_at) / (60 * 60 * 1000)),
-            }
-          }),
+          .map((t) => ({
+            id: t.id,
+            title: t.title,
+            assignee: t.assignee || 'unassigned',
+            hours: Math.floor((now - t.updated_at) / (60 * 60 * 1000)),
+          })),
 
-        // Review tasks
         review: reviewTasks
-          .sort((a, b) => (b as { updated_at: number }).updated_at - (a as { updated_at: number }).updated_at)
+          .sort((a, b) => b.updated_at - a.updated_at)
           .slice(0, 10)
-          .map((t) => {
-            const tDoc = t as { _id: string; title: string; assignee?: string }
-            return {
-              id: tDoc._id,
-              title: tDoc.title,
-              assignee: tDoc.assignee || 'unassigned',
-            }
-          }),
+          .map((t) => ({
+            id: t.id,
+            title: t.title,
+            assignee: t.assignee || 'unassigned',
+          })),
 
-        // Pending dispatch
         pendingDispatch: pendingDispatchTasks
-          .sort((a, b) => {
-            const aTime = (a as { dispatch_requested_at?: number }).dispatch_requested_at || 0
-            const bTime = (b as { dispatch_requested_at?: number }).dispatch_requested_at || 0
-            return aTime - bTime
-          })
+          .sort((a, b) => (a.dispatch_requested_at || 0) - (b.dispatch_requested_at || 0))
           .slice(0, 10)
-          .map((t) => {
-            const tDoc = t as { _id: string; title: string; assignee?: string }
-            return {
-              id: tDoc._id,
-              title: tDoc.title,
-              assignee: tDoc.assignee || 'unassigned',
-            }
-          }),
+          .map((t) => ({
+            id: t.id,
+            title: t.title,
+            assignee: t.assignee || 'unassigned',
+          })),
       }
 
       // Escalations
@@ -212,22 +187,17 @@ export const getStatus = query({
         response.escalations = unreadEscalations
           .sort((a, b) => {
             const severityOrder: Record<string, number> = { critical: 1, warning: 2, info: 3 }
-            const aDoc = a as { severity: string; created_at: number; _id: string; message: string; agent?: string }
-            const bDoc = b as { severity: string; created_at: number }
-            const sevDiff = (severityOrder[aDoc.severity] || 4) - (severityOrder[bDoc.severity] || 4)
+            const sevDiff = (severityOrder[a.severity] || 4) - (severityOrder[b.severity] || 4)
             if (sevDiff !== 0) return sevDiff
-            return bDoc.created_at - aDoc.created_at
+            return b.created_at - a.created_at
           })
           .slice(0, 10)
-          .map((n) => {
-            const nDoc = n as { _id: string; severity: string; message: string; agent?: string }
-            return {
-              id: nDoc._id,
-              severity: nDoc.severity,
-              message: nDoc.message,
-              agent: nDoc.agent || 'unknown',
-            }
-          })
+          .map((n) => ({
+            id: n.id,
+            severity: n.severity,
+            message: n.message,
+            agent: n.agent || 'unknown',
+          }))
       }
 
       // Pending signals
@@ -235,24 +205,19 @@ export const getStatus = query({
         response.signals = pendingSignals
           .sort((a, b) => {
             const severityOrder: Record<string, number> = { critical: 1, high: 2, normal: 3 }
-            const aDoc = a as { severity: string; created_at: number; _id: string; kind: string; message: string; agent_id: string; task_id: string }
-            const bDoc = b as { severity: string; created_at: number }
-            const sevDiff = (severityOrder[aDoc.severity] || 4) - (severityOrder[bDoc.severity] || 4)
+            const sevDiff = (severityOrder[a.severity] || 4) - (severityOrder[b.severity] || 4)
             if (sevDiff !== 0) return sevDiff
-            return bDoc.created_at - aDoc.created_at
+            return b.created_at - a.created_at
           })
           .slice(0, 10)
-          .map((s) => {
-            const sDoc = s as { _id: string; kind: string; severity: string; message: string; agent_id: string; task_id: string }
-            return {
-              id: sDoc._id,
-              kind: sDoc.kind,
-              severity: sDoc.severity,
-              message: sDoc.message,
-              agent_id: sDoc.agent_id,
-              task_id: sDoc.task_id,
-            }
-          })
+          .map((s) => ({
+            id: s.id,
+            kind: s.kind,
+            severity: s.severity,
+            message: s.message,
+            agent_id: s.agent_id,
+            task_id: s.task_id,
+          }))
       }
     }
 
@@ -269,24 +234,24 @@ export const getCounts = query({
     const now = Date.now()
     const twoHoursAgo = now - (2 * 60 * 60 * 1000)
 
-    // Get all tasks
     const allTasks = await ctx.db.query('tasks').collect()
 
     // Count ready tasks (excluding blocked ones)
     let readyTasks = 0
     for (const task of allTasks) {
-      const taskDoc = task as { _id: string; status: string; assignee?: string }
-      if (taskDoc.status === 'ready' && !taskDoc.assignee) {
-        // Check for incomplete dependencies
+      if (task.status === 'ready' && !task.assignee) {
         const deps = await ctx.db
           .query('taskDependencies')
-          .withIndex('by_task', (q) => q.eq('task_id', taskDoc._id as unknown as Id<'tasks'>))
+          .withIndex('by_task', (q) => q.eq('task_id', task.id))
           .collect()
-        
+
         let hasIncompleteDeps = false
         for (const dep of deps) {
-          const depTask = await ctx.db.get((dep as { depends_on_id: string }).depends_on_id as unknown as Id<'tasks'>)
-          if (depTask && (depTask as { status: string }).status !== 'done') {
+          const depTask = await ctx.db
+            .query('tasks')
+            .withIndex('by_uuid', (q) => q.eq('id', dep.depends_on_id))
+            .unique()
+          if (depTask && depTask.status !== 'done') {
             hasIncompleteDeps = true
             break
           }
@@ -298,43 +263,28 @@ export const getCounts = query({
       }
     }
 
-    // Count stuck tasks (in_progress for > 2 hours)
     const stuckTasks = allTasks.filter(
-      (t) => (t as { status: string; updated_at: number }).status === 'in_progress' &&
-             (t as { updated_at: number }).updated_at < twoHoursAgo
+      (t) => t.status === 'in_progress' && t.updated_at < twoHoursAgo
     ).length
 
-    // Count review tasks
-    const reviewTasks = allTasks.filter(
-      (t) => (t as { status: string }).status === 'review'
-    ).length
+    const reviewTasks = allTasks.filter((t) => t.status === 'review').length
 
-    // Count pending dispatch tasks
-    const pendingDispatch = allTasks.filter(
-      (t) => (t as { dispatch_status?: string }).dispatch_status === 'pending'
-    ).length
+    const pendingDispatch = allTasks.filter((t) => t.dispatch_status === 'pending').length
 
-    // Count pending input requests
     const comments = await ctx.db
       .query('comments')
       .withIndex('by_type', (q) => q.eq('type', 'request_input'))
       .collect()
-    const pendingInputs = comments.filter((c) => !(c as { responded_at?: number }).responded_at).length
+    const pendingInputs = comments.filter((c) => !c.responded_at).length
 
-    // Count unread escalations
     const notifications = await ctx.db
       .query('notifications')
       .withIndex('by_read', (q) => q.eq('read', false))
       .collect()
-    const unreadEscalations = notifications.filter(
-      (n) => (n as { type: string }).type === 'escalation'
-    ).length
+    const unreadEscalations = notifications.filter((n) => n.type === 'escalation').length
 
-    // Count pending signals (blocking and unresponded)
     const allSignals = await ctx.db.query('signals').collect()
-    const pendingSignals = allSignals.filter(
-      (s) => (s as { blocking: boolean }).blocking && !(s as { responded_at?: number }).responded_at
-    ).length
+    const pendingSignals = allSignals.filter((s) => s.blocking && !s.responded_at).length
 
     return {
       readyTasks,

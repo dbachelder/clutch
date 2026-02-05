@@ -1,5 +1,6 @@
 import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
+import { generateId } from './_helpers'
 import type { Signal } from '../lib/db/types'
 
 // ============================================
@@ -11,8 +12,7 @@ type SignalSeverity = "normal" | "high" | "critical"
 
 // Convert Convex document to Signal type
 function toSignal(doc: {
-  _id: string
-  _creationTime: number
+  id: string
   task_id: string
   session_key: string
   agent_id: string
@@ -25,7 +25,7 @@ function toSignal(doc: {
   created_at: number
 }): Signal {
   return {
-    id: doc._id,
+    id: doc.id,
     task_id: doc.task_id,
     session_key: doc.session_key,
     agent_id: doc.agent_id,
@@ -48,7 +48,7 @@ function toSignal(doc: {
  */
 export const getAll = query({
   args: {
-    taskId: v.optional(v.id('tasks')),
+    taskId: v.optional(v.string()),
     kind: v.optional(v.union(
       v.literal('question'),
       v.literal('blocker'),
@@ -65,24 +65,22 @@ export const getAll = query({
       .order('desc')
       .collect()
 
-    // Apply filters
     if (args.taskId) {
-      signals = signals.filter((s) => (s as { task_id: string }).task_id === args.taskId)
+      signals = signals.filter((s) => s.task_id === args.taskId)
     }
 
     if (args.kind) {
-      signals = signals.filter((s) => (s as { kind: SignalKind }).kind === args.kind)
+      signals = signals.filter((s) => s.kind === args.kind)
     }
 
     if (args.onlyBlocking) {
-      signals = signals.filter((s) => (s as { blocking: boolean }).blocking)
+      signals = signals.filter((s) => s.blocking)
     }
 
     if (args.onlyUnresponded) {
-      signals = signals.filter((s) => !(s as { responded_at?: number }).responded_at)
+      signals = signals.filter((s) => !s.responded_at)
     }
 
-    // Sort by severity (critical first) then by created_at
     const sorted = signals
       .sort((a, b) => {
         const severityOrder: Record<SignalSeverity, number> = {
@@ -90,19 +88,15 @@ export const getAll = query({
           high: 1,
           normal: 2,
         }
-        const aDoc = a as { severity: SignalSeverity; created_at: number }
-        const bDoc = b as { severity: SignalSeverity; created_at: number }
-        const sevDiff = severityOrder[aDoc.severity] - severityOrder[bDoc.severity]
+        const sevDiff = severityOrder[a.severity as SignalSeverity] - severityOrder[b.severity as SignalSeverity]
         if (sevDiff !== 0) return sevDiff
-        return bDoc.created_at - aDoc.created_at
+        return b.created_at - a.created_at
       })
       .slice(0, args.limit ?? 50)
 
     // Get pending count (blocking and unresponded)
     const allSignals = await ctx.db.query('signals').collect()
-    const pendingCount = allSignals.filter(
-      (s) => (s as { blocking: boolean }).blocking && !(s as { responded_at?: number }).responded_at
-    ).length
+    const pendingCount = allSignals.filter((s) => s.blocking && !s.responded_at).length
 
     return {
       signals: sorted.map((s) => toSignal(s as Parameters<typeof toSignal>[0])),
@@ -112,12 +106,15 @@ export const getAll = query({
 })
 
 /**
- * Get a single signal by ID
+ * Get a single signal by UUID
  */
 export const getById = query({
-  args: { id: v.id('signals') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<Signal | null> => {
-    const signal = await ctx.db.get(args.id)
+    const signal = await ctx.db
+      .query('signals')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!signal) {
       return null
@@ -138,7 +135,7 @@ export const getPendingCount = query({
       .withIndex('by_blocking', (q) => q.eq('blocking', true))
       .collect()
 
-    return signals.filter((s) => !(s as { responded_at?: number }).responded_at).length
+    return signals.filter((s) => !s.responded_at).length
   },
 })
 
@@ -154,18 +151,16 @@ export const getPending = query({
       .collect()
 
     return signals
-      .filter((s) => !(s as { responded_at?: number }).responded_at)
+      .filter((s) => !s.responded_at)
       .sort((a, b) => {
         const severityOrder: Record<SignalSeverity, number> = {
           critical: 0,
           high: 1,
           normal: 2,
         }
-        const aDoc = a as { severity: SignalSeverity; created_at: number }
-        const bDoc = b as { severity: SignalSeverity; created_at: number }
-        const sevDiff = severityOrder[aDoc.severity] - severityOrder[bDoc.severity]
+        const sevDiff = severityOrder[a.severity as SignalSeverity] - severityOrder[b.severity as SignalSeverity]
         if (sevDiff !== 0) return sevDiff
-        return bDoc.created_at - aDoc.created_at
+        return b.created_at - a.created_at
       })
       .slice(0, args.limit ?? 10)
       .map((s) => toSignal(s as Parameters<typeof toSignal>[0]))
@@ -181,7 +176,7 @@ export const getPending = query({
  */
 export const create = mutation({
   args: {
-    taskId: v.id('tasks'),
+    taskId: v.string(),
     sessionKey: v.string(),
     agentId: v.string(),
     kind: v.union(
@@ -198,7 +193,6 @@ export const create = mutation({
     message: v.string(),
   },
   handler: async (ctx, args): Promise<Signal> => {
-    // Validate required fields
     if (!args.message || args.message.trim().length === 0) {
       throw new Error('Message is required')
     }
@@ -212,18 +206,21 @@ export const create = mutation({
     }
 
     // Verify task exists
-    const task = await ctx.db.get(args.taskId)
+    const task = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.taskId))
+      .unique()
     if (!task) {
       throw new Error(`Task not found: ${args.taskId}`)
     }
 
     const now = Date.now()
     const severity = args.severity ?? 'normal'
-    
-    // Set blocking based on kind (all kinds except "fyi" are blocking)
     const blocking = args.kind !== 'fyi'
+    const id = generateId()
 
-    const signalId = await ctx.db.insert('signals', {
+    const internalId = await ctx.db.insert('signals', {
+      id,
       task_id: args.taskId,
       session_key: args.sessionKey,
       agent_id: args.agentId,
@@ -234,7 +231,7 @@ export const create = mutation({
       created_at: now,
     })
 
-    const signal = await ctx.db.get(signalId)
+    const signal = await ctx.db.get(internalId)
     if (!signal) {
       throw new Error('Failed to create signal')
     }
@@ -248,29 +245,31 @@ export const create = mutation({
  */
 export const respond = mutation({
   args: {
-    id: v.id('signals'),
+    id: v.string(),
     response: v.string(),
   },
   handler: async (ctx, args): Promise<Signal> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('signals')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Signal not found: ${args.id}`)
     }
 
-    // Check if already responded
-    if ((existing as { responded_at?: number }).responded_at) {
+    if (existing.responded_at) {
       throw new Error('Signal has already been responded to')
     }
 
     const now = Date.now()
 
-    await ctx.db.patch(args.id, {
+    await ctx.db.patch(existing._id, {
       response: args.response,
       responded_at: now,
     })
 
-    const updated = await ctx.db.get(args.id)
+    const updated = await ctx.db.get(existing._id)
     if (!updated) {
       throw new Error('Failed to update signal')
     }
@@ -283,15 +282,18 @@ export const respond = mutation({
  * Delete a signal
  */
 export const deleteSignal = mutation({
-  args: { id: v.id('signals') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('signals')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Signal not found: ${args.id}`)
     }
 
-    await ctx.db.delete(args.id)
+    await ctx.db.delete(existing._id)
 
     return { success: true }
   },

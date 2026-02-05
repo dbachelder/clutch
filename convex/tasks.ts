@@ -1,7 +1,7 @@
 import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
+import { generateId } from './_helpers'
 import type { Task, Comment, TaskSummary, TaskDependencySummary } from '../lib/db/types'
-import type { Id } from './_generated/dataModel'
 
 // ============================================
 // Type Helpers
@@ -14,8 +14,7 @@ type DispatchStatus = "pending" | "spawning" | "active" | "completed" | "failed"
 
 // Convert Convex document to Task type
 function toTask(doc: {
-  _id: string
-  _creationTime: number
+  id: string
   project_id: string
   title: string
   description?: string
@@ -24,7 +23,7 @@ function toTask(doc: {
   role?: TaskRole
   assignee?: string
   requires_human_review: boolean
-  tags?: string[]
+  tags?: string
   session_id?: string
   dispatch_status?: DispatchStatus
   dispatch_requested_at?: number
@@ -35,7 +34,7 @@ function toTask(doc: {
   completed_at?: number
 }): Task {
   return {
-    id: doc._id,
+    id: doc.id,
     project_id: doc.project_id,
     title: doc.title,
     description: doc.description ?? null,
@@ -44,7 +43,7 @@ function toTask(doc: {
     role: doc.role ?? null,
     assignee: doc.assignee ?? null,
     requires_human_review: doc.requires_human_review ? 1 : 0,
-    tags: doc.tags ? JSON.stringify(doc.tags) : null,
+    tags: doc.tags ?? null,
     session_id: doc.session_id ?? null,
     dispatch_status: doc.dispatch_status ?? null,
     dispatch_requested_at: doc.dispatch_requested_at ?? null,
@@ -58,8 +57,7 @@ function toTask(doc: {
 
 // Convert Convex comment document to Comment type
 function toComment(doc: {
-  _id: string
-  _creationTime: number
+  id: string
   task_id: string
   author: string
   author_type: "coordinator" | "agent" | "human"
@@ -69,7 +67,7 @@ function toComment(doc: {
   created_at: number
 }): Comment {
   return {
-    id: doc._id,
+    id: doc.id,
     task_id: doc.task_id,
     author: doc.author,
     author_type: doc.author_type,
@@ -82,12 +80,12 @@ function toComment(doc: {
 
 // Convert Convex task doc to TaskSummary
 function toTaskSummary(doc: {
-  _id: string
+  id: string
   title: string
   status: TaskStatus
 }): TaskSummary {
   return {
-    id: doc._id,
+    id: doc.id,
     title: doc.title,
     status: doc.status,
   }
@@ -116,9 +114,8 @@ export const getByStatus = query({
       .withIndex('by_status', (q) => q.eq('status', args.status))
       .collect()
 
-    // Sort by position
     return tasks
-      .sort((a, b) => (a as { position: number }).position - (b as { position: number }).position)
+      .sort((a, b) => a.position - b.position)
       .map((t) => toTask(t as Parameters<typeof toTask>[0]))
   },
 })
@@ -128,7 +125,7 @@ export const getByStatus = query({
  */
 export const getByProject = query({
   args: {
-    projectId: v.id('projects'),
+    projectId: v.string(),
     status: v.optional(v.union(
       v.literal('backlog'),
       v.literal('ready'),
@@ -141,23 +138,19 @@ export const getByProject = query({
     let tasks
 
     if (args.status) {
-      // Use compound index for project + status
       tasks = await ctx.db
         .query('tasks')
-        .withIndex('by_project_status', (q) => {
-          const qq = (q as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('project_id', args.projectId)
-          return (qq as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('status', args.status)
-        })
+        .withIndex('by_project_status', (q) =>
+          q.eq('project_id', args.projectId).eq('status', args.status!)
+        )
         .collect()
     } else {
-      // Use project index only
       tasks = await ctx.db
         .query('tasks')
         .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
         .collect()
     }
 
-    // Sort by position for non-done tasks, by completed_at for done tasks
     const sortedTasks = tasks.sort((a, b) => {
       if (a.status === 'done' && b.status === 'done') {
         return (b.completed_at ?? 0) - (a.completed_at ?? 0)
@@ -170,18 +163,20 @@ export const getByProject = query({
 })
 
 /**
- * Get a single task by ID with its comments
+ * Get a single task by UUID with its comments
  */
 export const getById = query({
-  args: { id: v.id('tasks') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<{ task: Task; comments: Comment[] } | null> => {
-    const task = await ctx.db.get(args.id)
+    const task = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!task) {
       return null
     }
 
-    // Fetch comments for this task
     const comments = await ctx.db
       .query('comments')
       .withIndex('by_task', (q) => q.eq('task_id', args.id))
@@ -205,7 +200,6 @@ export const getByAssignee = query({
       .withIndex('by_assignee', (q) => q.eq('assignee', args.assignee))
       .collect()
 
-    // Sort: incomplete first (by status order), then by position
     const statusOrder: Record<TaskStatus, number> = {
       in_progress: 0,
       review: 1,
@@ -216,11 +210,9 @@ export const getByAssignee = query({
 
     return tasks
       .sort((a, b) => {
-        const aStatus = (a as { status: TaskStatus }).status
-        const bStatus = (b as { status: TaskStatus }).status
-        const statusDiff = statusOrder[aStatus] - statusOrder[bStatus]
+        const statusDiff = statusOrder[a.status as TaskStatus] - statusOrder[b.status as TaskStatus]
         if (statusDiff !== 0) return statusDiff
-        return (a as { position: number }).position - (b as { position: number }).position
+        return a.position - b.position
       })
       .map((t) => toTask(t as Parameters<typeof toTask>[0]))
   },
@@ -230,19 +222,22 @@ export const getByAssignee = query({
  * Get task with its dependency information
  */
 export const getWithDependencies = query({
-  args: { id: v.id('tasks') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<{
     task: Task
     dependencies: TaskDependencySummary[]
     blockedBy: TaskSummary[]
   } | null> => {
-    const task = await ctx.db.get(args.id)
+    const task = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!task) {
       return null
     }
 
-    // Get tasks this task depends on (dependencies)
+    // Get tasks this task depends on
     const dependencyLinks = await ctx.db
       .query('taskDependencies')
       .withIndex('by_task', (q) => q.eq('task_id', args.id))
@@ -250,16 +245,19 @@ export const getWithDependencies = query({
 
     const dependencies: TaskDependencySummary[] = []
     for (const link of dependencyLinks) {
-      const depTask = await ctx.db.get((link as { depends_on_id: string }).depends_on_id as unknown as Id<'tasks'>)
+      const depTask = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', link.depends_on_id))
+        .unique()
       if (depTask) {
         dependencies.push({
           ...toTaskSummary(depTask as Parameters<typeof toTaskSummary>[0]),
-          dependency_id: (link as { _id: string })._id,
+          dependency_id: link.id,
         })
       }
     }
 
-    // Get tasks that depend on this task (blocked by this task)
+    // Get tasks that depend on this task
     const blockedLinks = await ctx.db
       .query('taskDependencies')
       .withIndex('by_depends_on', (q) => q.eq('depends_on_id', args.id))
@@ -267,7 +265,10 @@ export const getWithDependencies = query({
 
     const blockedBy: TaskSummary[] = []
     for (const link of blockedLinks) {
-      const blockedTask = await ctx.db.get((link as { task_id: string }).task_id as unknown as Id<'tasks'>)
+      const blockedTask = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', link.task_id))
+        .unique()
       if (blockedTask) {
         blockedBy.push(toTaskSummary(blockedTask as Parameters<typeof toTaskSummary>[0]))
       }
@@ -290,7 +291,7 @@ export const getWithDependencies = query({
  */
 export const create = mutation({
   args: {
-    project_id: v.id('projects'),
+    project_id: v.string(),
     title: v.string(),
     description: v.optional(v.string()),
     status: v.optional(v.union(
@@ -316,10 +317,9 @@ export const create = mutation({
     )),
     assignee: v.optional(v.string()),
     requires_human_review: v.optional(v.boolean()),
-    tags: v.optional(v.array(v.string())),
+    tags: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Task> => {
-    // Validate required fields
     if (!args.title || args.title.trim().length === 0) {
       throw new Error('Task title is required')
     }
@@ -329,7 +329,10 @@ export const create = mutation({
     }
 
     // Verify project exists
-    const project = await ctx.db.get(args.project_id)
+    const project = await ctx.db
+      .query('projects')
+      .withIndex('by_uuid', (q) => q.eq('id', args.project_id))
+      .unique()
     if (!project) {
       throw new Error(`Project not found: ${args.project_id}`)
     }
@@ -337,22 +340,23 @@ export const create = mutation({
     const status = args.status ?? 'backlog'
     const now = Date.now()
 
-    // Get the highest position in this column to append new task at the end
+    // Get the highest position in this column
     const existingTasks = await ctx.db
       .query('tasks')
-      .withIndex('by_project_status', (q) => {
-        const qq = (q as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('project_id', args.project_id)
-        return (qq as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('status', status)
-      })
+      .withIndex('by_project_status', (q) =>
+        q.eq('project_id', args.project_id).eq('status', status)
+      )
       .collect()
 
     const maxPosition = existingTasks.length > 0
-      ? Math.max(...existingTasks.map((t) => (t as { position: number }).position))
+      ? Math.max(...existingTasks.map((t) => t.position))
       : -1
 
     const position = maxPosition + 1
+    const id = generateId()
 
-    const taskId = await ctx.db.insert('tasks', {
+    const internalId = await ctx.db.insert('tasks', {
+      id,
       project_id: args.project_id,
       title: args.title.trim(),
       description: args.description?.trim(),
@@ -368,7 +372,7 @@ export const create = mutation({
       completed_at: status === 'done' ? now : undefined,
     })
 
-    const task = await ctx.db.get(taskId)
+    const task = await ctx.db.get(internalId)
     if (!task) {
       throw new Error('Failed to create task')
     }
@@ -382,7 +386,7 @@ export const create = mutation({
  */
 export const update = mutation({
   args: {
-    id: v.id('tasks'),
+    id: v.string(),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     priority: v.optional(v.union(
@@ -401,17 +405,19 @@ export const update = mutation({
     )),
     assignee: v.optional(v.string()),
     requires_human_review: v.optional(v.boolean()),
-    tags: v.optional(v.array(v.string())),
+    tags: v.optional(v.string()),
     session_id: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Task> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Task not found: ${args.id}`)
     }
 
-    // Validate title if provided
     if (args.title !== undefined) {
       if (args.title.trim().length === 0) {
         throw new Error('Task title cannot be empty')
@@ -435,9 +441,9 @@ export const update = mutation({
     if (args.tags !== undefined) updates.tags = args.tags
     if (args.session_id !== undefined) updates.session_id = args.session_id
 
-    await ctx.db.patch(args.id, updates)
+    await ctx.db.patch(existing._id, updates)
 
-    const updated = await ctx.db.get(args.id)
+    const updated = await ctx.db.get(existing._id)
     if (!updated) {
       throw new Error('Failed to update task')
     }
@@ -451,7 +457,7 @@ export const update = mutation({
  */
 export const move = mutation({
   args: {
-    id: v.id('tasks'),
+    id: v.string(),
     status: v.union(
       v.literal('backlog'),
       v.literal('ready'),
@@ -459,37 +465,26 @@ export const move = mutation({
       v.literal('review'),
       v.literal('done')
     ),
-    position: v.optional(v.number()), // Optional: specific position in new column
+    position: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<Task> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Task not found: ${args.id}`)
     }
 
-    const existingStatus = (existing as { status: TaskStatus }).status
-    const existingProjectId = (existing as { project_id: string }).project_id
-    const existingCompletedAt = (existing as { completed_at?: number }).completed_at
-
     // If status isn't changing, this is just a reorder
-    if (existingStatus === args.status) {
-      // Delegate to reorder logic
-      return reorderTask(
-        ctx as unknown as Parameters<typeof reorderTask>[0], 
-        args.id, 
-        args.status, 
-        args.position
-      )
+    if (existing.status === args.status) {
+      return reorderTask(ctx, existing._id, args.status, args.position)
     }
 
     // Check for incomplete dependencies when moving forward from backlog
-    // Tasks with incomplete dependencies can only be in "backlog" status
-    if (args.status !== 'backlog' && existingStatus === 'backlog') {
-      const incompleteDeps = await getIncompleteDependencies(
-        ctx as unknown as Parameters<typeof getIncompleteDependencies>[0], 
-        args.id
-      )
+    if (args.status !== 'backlog' && existing.status === 'backlog') {
+      const incompleteDeps = await getIncompleteDependencies(ctx, args.id)
       if (incompleteDeps.length > 0) {
         throw new Error(
           `Cannot change status: ${incompleteDeps.length} incomplete dependencies. ` +
@@ -505,42 +500,34 @@ export const move = mutation({
     if (args.position !== undefined) {
       newPosition = args.position
     } else {
-      // Get the highest position in the target column
       const targetTasks = await ctx.db
         .query('tasks')
-        .withIndex('by_project_status', (q) => {
-          const qq = (q as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('project_id', existingProjectId)
-          return (qq as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('status', args.status)
-        })
+        .withIndex('by_project_status', (q) =>
+          q.eq('project_id', existing.project_id).eq('status', args.status)
+        )
         .collect()
-      
+
       const maxPosition = targetTasks.length > 0
-        ? Math.max(...targetTasks.map((t) => (t as { position: number }).position))
+        ? Math.max(...targetTasks.map((t) => t.position))
         : -1
       newPosition = maxPosition + 1
     }
 
-    // If position was specified, we need to shift existing tasks
+    // If position was specified, shift existing tasks
     if (args.position !== undefined) {
-      await shiftTasksInColumn(
-        ctx as unknown as Parameters<typeof shiftTasksInColumn>[0],
-        existingProjectId,
-        args.status,
-        args.position,
-        1
-      )
+      await shiftTasksInColumn(ctx, existing.project_id, args.status, args.position, 1)
     }
 
-    const wasCompleted = existingStatus !== 'done' && args.status === 'done'
+    const wasCompleted = existing.status !== 'done' && args.status === 'done'
 
-    await ctx.db.patch(args.id, {
+    await ctx.db.patch(existing._id, {
       status: args.status,
       position: newPosition,
       updated_at: now,
-      completed_at: wasCompleted ? now : existingCompletedAt,
+      completed_at: wasCompleted ? now : existing.completed_at,
     })
 
-    const updated = await ctx.db.get(args.id)
+    const updated = await ctx.db.get(existing._id)
     if (!updated) {
       throw new Error('Failed to move task')
     }
@@ -554,24 +541,20 @@ export const move = mutation({
  */
 export const reorder = mutation({
   args: {
-    id: v.id('tasks'),
+    id: v.string(),
     newPosition: v.number(),
   },
   handler: async (ctx, args): Promise<Task> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Task not found: ${args.id}`)
     }
 
-    const existingStatus = (existing as { status: TaskStatus }).status
-
-    return reorderTask(
-      ctx as unknown as Parameters<typeof reorderTask>[0], 
-      args.id, 
-      existingStatus, 
-      args.newPosition
-    )
+    return reorderTask(ctx, existing._id, existing.status as TaskStatus, args.newPosition)
   },
 })
 
@@ -580,10 +563,13 @@ export const reorder = mutation({
  */
 export const deleteTask = mutation({
   args: {
-    id: v.id('tasks'),
+    id: v.string(),
   },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Task not found: ${args.id}`)
@@ -594,18 +580,18 @@ export const deleteTask = mutation({
       .query('taskDependencies')
       .withIndex('by_task', (q) => q.eq('task_id', args.id))
       .collect()
-    
+
     for (const dep of dependencies) {
-      await ctx.db.delete((dep as { _id: string })._id as unknown as Id<'tasks'>)
+      await ctx.db.delete(dep._id)
     }
 
     const blockedBy = await ctx.db
       .query('taskDependencies')
       .withIndex('by_depends_on', (q) => q.eq('depends_on_id', args.id))
       .collect()
-    
+
     for (const dep of blockedBy) {
-      await ctx.db.delete((dep as { _id: string })._id as unknown as Id<'tasks'>)
+      await ctx.db.delete(dep._id)
     }
 
     // Delete all comments for this task
@@ -613,13 +599,13 @@ export const deleteTask = mutation({
       .query('comments')
       .withIndex('by_task', (q) => q.eq('task_id', args.id))
       .collect()
-    
+
     for (const comment of comments) {
-      await ctx.db.delete((comment as { _id: string })._id as unknown as Id<'tasks'>)
+      await ctx.db.delete(comment._id)
     }
 
     // Delete the task
-    await ctx.db.delete(args.id)
+    await ctx.db.delete(existing._id)
 
     return { success: true }
   },
@@ -630,25 +616,28 @@ export const deleteTask = mutation({
 // ============================================
 
 /**
- * Get incomplete dependencies for a task
+ * Get incomplete dependencies for a task (by UUID)
  */
 async function getIncompleteDependencies(
-  ctx: { db: { query: (table: string) => { withIndex: (index: string, fn: (q: { eq: (field: string, value: string) => unknown }) => unknown) => { collect: () => Promise<unknown[]> } }; get: (id: string) => Promise<unknown> } },
-  taskId: string
+  ctx: { db: typeof import('./_generated/server')['query'] extends (args: infer _A) => infer _R ? never : { query: (table: string) => unknown; get: (id: unknown) => Promise<unknown> } },
+  taskUuid: string
 ): Promise<TaskSummary[]> {
-  const dependencyLinks = await ctx.db
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (ctx as any).db
+  const dependencyLinks = await db
     .query('taskDependencies')
-    .withIndex('by_task', (q) => q.eq('task_id', taskId))
+    .withIndex('by_task', (q: { eq: (f: string, v: string) => unknown }) => q.eq('task_id', taskUuid))
     .collect()
 
   const incomplete: TaskSummary[] = []
 
   for (const link of dependencyLinks) {
-    const linkDoc = link as { depends_on_id: string }
-    const depTask = await ctx.db.get(linkDoc.depends_on_id)
-    const depTaskDoc = depTask as { status: TaskStatus; _id: string; title: string } | null
-    if (depTaskDoc && depTaskDoc.status !== 'done') {
-      incomplete.push(toTaskSummary(depTaskDoc))
+    const depTask = await db
+      .query('tasks')
+      .withIndex('by_uuid', (q: { eq: (f: string, v: string) => unknown }) => q.eq('id', link.depends_on_id))
+      .unique()
+    if (depTask && depTask.status !== 'done') {
+      incomplete.push(toTaskSummary(depTask))
     }
   }
 
@@ -656,63 +645,56 @@ async function getIncompleteDependencies(
 }
 
 /**
- * Reorder a task within a column
+ * Reorder a task within a column (uses Convex internal _id)
  */
 async function reorderTask(
-  ctx: { db: { query: (table: string) => { withIndex: (index: string, fn: (q: { eq: (field: string, value: string) => unknown }) => unknown) => { collect: () => Promise<unknown[]> } }; get: (id: string) => Promise<unknown>; patch: (id: string, updates: Record<string, unknown>) => Promise<void> } },
-  taskId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
+  internalId: unknown,
   status: TaskStatus,
   newPosition?: number
 ): Promise<Task> {
-  const task = await ctx.db.get(taskId) as { _id: string; project_id: string; status: TaskStatus; position: number } | null
+  const task = await ctx.db.get(internalId)
   if (!task) {
-    throw new Error(`Task not found: ${taskId}`)
+    throw new Error('Task not found')
   }
 
   // Get all tasks in this column ordered by position
   const tasksInColumn = await ctx.db
     .query('tasks')
-    .withIndex('by_project_status', (q) => {
-      const qq = (q as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('project_id', task.project_id)
-      return (qq as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('status', status)
-    })
+    .withIndex('by_project_status', (q: { eq: (f: string, v: unknown) => { eq: (f: string, v: unknown) => unknown } }) =>
+      q.eq('project_id', task.project_id).eq('status', status)
+    )
     .collect()
 
-  const sortedTasks = tasksInColumn
-    .map((t) => t as { _id: string; position: number })
-    .sort((a, b) => a.position - b.position)
-  
-  const taskIndex = sortedTasks.findIndex((t) => t._id === taskId)
+  const sortedTasks = [...tasksInColumn].sort(
+    (a: { position: number }, b: { position: number }) => a.position - b.position
+  )
+
+  const taskIndex = sortedTasks.findIndex((t: { _id: unknown }) => t._id === internalId)
 
   if (taskIndex === -1) {
     throw new Error('Task not found in column')
   }
 
-  // Determine target position
   const targetPosition = newPosition !== undefined ? newPosition : sortedTasks.length - 1
 
-  // If position hasn't changed, return early
   if (taskIndex === targetPosition) {
-    const fullTask = await ctx.db.get(taskId)
-    return toTask(fullTask as Parameters<typeof toTask>[0])
+    return toTask(task as Parameters<typeof toTask>[0])
   }
 
-  // Remove task from current position
   const [movedTask] = sortedTasks.splice(taskIndex, 1)
-  
-  // Insert at new position
   sortedTasks.splice(targetPosition, 0, movedTask)
 
-  // Update positions for all tasks in the column
   const now = Date.now()
   for (let i = 0; i < sortedTasks.length; i++) {
-    await ctx.db.patch(sortedTasks[i]._id as unknown as Id<'tasks'>, {
+    await ctx.db.patch(sortedTasks[i]._id, {
       position: i,
       updated_at: now,
     })
   }
 
-  const updated = await ctx.db.get(taskId)
+  const updated = await ctx.db.get(internalId)
   if (!updated) {
     throw new Error('Failed to reorder task')
   }
@@ -724,7 +706,8 @@ async function reorderTask(
  * Shift tasks in a column to make room for insertion
  */
 async function shiftTasksInColumn(
-  ctx: { db: { query: (table: string) => { withIndex: (index: string, fn: (q: { eq: (field: string, value: string) => unknown }) => unknown) => { collect: () => Promise<unknown[]> } }; patch: (id: string, updates: Record<string, unknown>) => Promise<void> } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
   projectId: string,
   status: TaskStatus,
   fromPosition: number,
@@ -732,19 +715,17 @@ async function shiftTasksInColumn(
 ): Promise<void> {
   const tasks = await ctx.db
     .query('tasks')
-    .withIndex('by_project_status', (q) => {
-      const qq = (q as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('project_id', projectId)
-      return (qq as unknown as { eq: (field: string, value: unknown) => typeof q }).eq('status', status)
-    })
+    .withIndex('by_project_status', (q: { eq: (f: string, v: unknown) => { eq: (f: string, v: unknown) => unknown } }) =>
+      q.eq('project_id', projectId).eq('status', status)
+    )
     .collect()
 
   const now = Date.now()
 
   for (const task of tasks) {
-    const taskDoc = task as { _id: string; position: number }
-    if (taskDoc.position >= fromPosition) {
-      await ctx.db.patch(taskDoc._id as unknown as Id<'tasks'>, {
-        position: taskDoc.position + shiftAmount,
+    if (task.position >= fromPosition) {
+      await ctx.db.patch(task._id, {
+        position: task.position + shiftAmount,
         updated_at: now,
       })
     }

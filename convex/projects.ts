@@ -1,6 +1,7 @@
 import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
-import type { Project, ProjectInsert } from '../lib/db/types'
+import { generateId } from './_helpers'
+import type { Project } from '../lib/db/types'
 
 // Helper to generate a unique slug from a name
 function generateSlug(name: string): string {
@@ -15,7 +16,7 @@ function generateSlug(name: string): string {
 async function ensureUniqueSlug(
   ctx: { db: { query: (table: string) => { withIndex: (index: string, fn: (q: { eq: (field: string, value: string) => unknown }) => unknown) => { unique: () => Promise<unknown> } } } },
   baseSlug: string,
-  excludeId?: string
+  excludeUuid?: string
 ): Promise<string> {
   let slug = baseSlug
   let counter = 1
@@ -26,14 +27,13 @@ async function ensureUniqueSlug(
       .withIndex('by_slug', (q) => q.eq('slug', slug))
       .unique()
 
-    if (!existing || (excludeId && (existing as { _id: string })._id === excludeId)) {
+    if (!existing || (excludeUuid && (existing as { id: string }).id === excludeUuid)) {
       return slug
     }
 
     slug = `${baseSlug}-${counter}`
     counter++
 
-    // Prevent infinite loops for edge cases
     if (counter > 1000) {
       throw new Error('Unable to generate unique slug')
     }
@@ -42,8 +42,7 @@ async function ensureUniqueSlug(
 
 // Convert Convex document to Project type
 function toProject(doc: {
-  _id: string
-  _creationTime: number
+  id: string
   slug: string
   name: string
   description?: string
@@ -59,7 +58,7 @@ function toProject(doc: {
   updated_at: number
 }): Project {
   return {
-    id: doc._id,
+    id: doc.id,
     slug: doc.slug,
     name: doc.name,
     description: doc.description ?? null,
@@ -88,12 +87,11 @@ export const getAll = query({
   handler: async (ctx): Promise<Array<Project & { task_count: number }>> => {
     const projects = await ctx.db.query('projects').collect()
 
-    // Get task counts for all projects in parallel
     const projectsWithCounts = await Promise.all(
       projects.map(async (project) => {
         const tasks = await ctx.db
           .query('tasks')
-          .withIndex('by_project', (q) => q.eq('project_id', project._id))
+          .withIndex('by_project', (q) => q.eq('project_id', project.id))
           .collect()
 
         return {
@@ -103,18 +101,20 @@ export const getAll = query({
       })
     )
 
-    // Sort by name
     return projectsWithCounts.sort((a, b) => a.name.localeCompare(b.name))
   },
 })
 
 /**
- * Get a single project by ID
+ * Get a single project by UUID
  */
 export const getById = query({
-  args: { id: v.id('projects') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<Project | null> => {
-    const project = await ctx.db.get(args.id)
+    const project = await ctx.db
+      .query('projects')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!project) {
       return null
@@ -165,7 +165,6 @@ export const create = mutation({
     slug: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Project> => {
-    // Validate required fields
     if (!args.name || args.name.trim().length === 0) {
       throw new Error('Project name is required')
     }
@@ -174,7 +173,6 @@ export const create = mutation({
       throw new Error('Project name must be 100 characters or less')
     }
 
-    // Generate or validate slug
     const baseSlug = args.slug?.trim() || generateSlug(args.name)
 
     if (!baseSlug) {
@@ -185,12 +183,13 @@ export const create = mutation({
       throw new Error('Slug must be 50 characters or less')
     }
 
-    // Check for slug uniqueness
     const slug = await ensureUniqueSlug(ctx as unknown as Parameters<typeof ensureUniqueSlug>[0], baseSlug)
 
     const now = Date.now()
+    const id = generateId()
 
-    const projectData = {
+    const internalId = await ctx.db.insert('projects', {
+      id,
       slug,
       name: args.name.trim(),
       description: args.description?.trim() || undefined,
@@ -202,16 +201,11 @@ export const create = mutation({
       chat_layout: args.chat_layout || 'slack',
       work_loop_enabled: args.work_loop_enabled ?? false,
       work_loop_schedule: args.work_loop_schedule?.trim() || '*/5 * * * *',
-    }
-
-    const projectId = await ctx.db.insert('projects', {
-      ...projectData,
-      work_loop_enabled: args.work_loop_enabled ?? false,
       created_at: now,
       updated_at: now,
     })
 
-    const project = await ctx.db.get(projectId)
+    const project = await ctx.db.get(internalId)
 
     if (!project) {
       throw new Error('Failed to create project')
@@ -226,7 +220,7 @@ export const create = mutation({
  */
 export const update = mutation({
   args: {
-    id: v.id('projects'),
+    id: v.string(),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     color: v.optional(v.string()),
@@ -240,13 +234,15 @@ export const update = mutation({
     slug: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Project> => {
-    const existing = await ctx.db.get(args.id)
+    const existing = await ctx.db
+      .query('projects')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!existing) {
       throw new Error(`Project not found: ${args.id}`)
     }
 
-    // Validate name if provided
     if (args.name !== undefined) {
       if (args.name.trim().length === 0) {
         throw new Error('Project name cannot be empty')
@@ -256,9 +252,8 @@ export const update = mutation({
       }
     }
 
-    // Handle slug update with uniqueness check
-    let newSlug = (existing as { slug: string }).slug
-    if (args.slug !== undefined && args.slug !== (existing as { slug: string }).slug) {
+    let newSlug = existing.slug
+    if (args.slug !== undefined && args.slug !== existing.slug) {
       const baseSlug = args.slug.trim()
 
       if (!baseSlug) {
@@ -279,19 +274,19 @@ export const update = mutation({
 
     if (args.name !== undefined) updates.name = args.name.trim()
     if (args.slug !== undefined) updates.slug = newSlug
-    if (args.description !== undefined) updates.description = args.description?.trim() ?? null
+    if (args.description !== undefined) updates.description = args.description?.trim() ?? undefined
     if (args.color !== undefined) updates.color = args.color.trim()
-    if (args.repo_url !== undefined) updates.repo_url = args.repo_url?.trim() ?? null
-    if (args.context_path !== undefined) updates.context_path = args.context_path?.trim() ?? null
-    if (args.local_path !== undefined) updates.local_path = args.local_path?.trim() ?? null
-    if (args.github_repo !== undefined) updates.github_repo = args.github_repo?.trim() ?? null
+    if (args.repo_url !== undefined) updates.repo_url = args.repo_url?.trim() ?? undefined
+    if (args.context_path !== undefined) updates.context_path = args.context_path?.trim() ?? undefined
+    if (args.local_path !== undefined) updates.local_path = args.local_path?.trim() ?? undefined
+    if (args.github_repo !== undefined) updates.github_repo = args.github_repo?.trim() ?? undefined
     if (args.chat_layout !== undefined) updates.chat_layout = args.chat_layout
     if (args.work_loop_enabled !== undefined) updates.work_loop_enabled = args.work_loop_enabled
     if (args.work_loop_schedule !== undefined) updates.work_loop_schedule = args.work_loop_schedule.trim()
 
-    await ctx.db.patch(args.id, updates)
+    await ctx.db.patch(existing._id, updates)
 
-    const updated = await ctx.db.get(args.id)
+    const updated = await ctx.db.get(existing._id)
 
     if (!updated) {
       throw new Error('Failed to update project')
@@ -306,23 +301,24 @@ export const update = mutation({
  */
 export const deleteProject = mutation({
   args: {
-    id: v.id('projects'),
-    force: v.optional(v.boolean()), // If true, delete even if tasks exist
+    id: v.string(),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ success: boolean; deleted_task_count: number }> => {
-    const project = await ctx.db.get(args.id)
+    const project = await ctx.db
+      .query('projects')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
 
     if (!project) {
       throw new Error(`Project not found: ${args.id}`)
     }
 
-    // Check for associated tasks
     const tasks = await ctx.db
       .query('tasks')
       .withIndex('by_project', (q) => q.eq('project_id', args.id))
       .collect()
 
-    // If tasks exist and force is not true, prevent deletion
     if (tasks.length > 0 && !args.force) {
       throw new Error(
         `Cannot delete project: ${tasks.length} task(s) exist. ` +
@@ -330,13 +326,11 @@ export const deleteProject = mutation({
       )
     }
 
-    // Delete all associated tasks
     for (const task of tasks) {
       await ctx.db.delete(task._id)
     }
 
-    // Delete the project
-    await ctx.db.delete(args.id)
+    await ctx.db.delete(project._id)
 
     return {
       success: true,
@@ -351,7 +345,7 @@ export const deleteProject = mutation({
 export const isSlugAvailable = query({
   args: {
     slug: v.string(),
-    excludeId: v.optional(v.id('projects')),
+    excludeId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<boolean> => {
     const existing = await ctx.db
@@ -363,7 +357,7 @@ export const isSlugAvailable = query({
       return true
     }
 
-    if (args.excludeId && (existing as { _id: string })._id === args.excludeId) {
+    if (args.excludeId && existing.id === args.excludeId) {
       return true
     }
 
