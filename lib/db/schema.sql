@@ -138,3 +138,16 @@ CREATE INDEX IF NOT EXISTS idx_signals_kind ON signals(kind);
 CREATE INDEX IF NOT EXISTS idx_signals_blocking ON signals(blocking);
 CREATE INDEX IF NOT EXISTS idx_signals_responded ON signals(responded_at);
 CREATE INDEX IF NOT EXISTS idx_signals_created ON signals(created_at DESC);
+
+-- Task Dependencies
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  depends_on_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  UNIQUE(task_id, depends_on_id),
+  CHECK(task_id != depends_on_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends ON task_dependencies(depends_on_id);
