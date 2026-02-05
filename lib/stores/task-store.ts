@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Task, TaskStatus, TaskRole } from "@/lib/db/types"
 import type { WebSocketMessage } from "@/lib/websocket/server"
-import type { Id } from "@/convex/_generated/server";
+import type { Id } from "@/convex/_generated/dataModel";
 
 interface TaskState {
   tasks: Task[]
@@ -171,7 +171,7 @@ export function useCreateTask() {
 export function useUpdateTask() {
   const updateMutation = useMutation(api.tasks.update);
 
-  return async (id: string, updates: Partial<Task>) => {
+  return async (id: string, updates: Omit<Partial<Task>, "id">) => {
     const result = await updateMutation({
       id: id as Id<"tasks">,
       ...updates,

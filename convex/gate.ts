@@ -1,6 +1,6 @@
 import { query } from './_generated/server'
 // Types imported for potential future use
-import type { Id } from './_generated/server'
+import type { Id } from './_generated/dataModel'
 
 // ============================================
 // Gate Status Query

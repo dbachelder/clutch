@@ -2,7 +2,7 @@ import { create } from "zustand"
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Project } from "@/lib/db/types"
-import type { Id } from "@/convex/_generated/server";
+import type { Id } from "@/convex/_generated/dataModel";
 
 export type ProjectWithCount = Project & { task_count: number }
 
