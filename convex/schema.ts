@@ -4,6 +4,7 @@ import { v } from "convex/values"
 export default defineSchema({
   // Projects
   projects: defineTable({
+    id: v.string(), // UUID primary key
     slug: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
@@ -18,12 +19,14 @@ export default defineSchema({
     created_at: v.number(),
     updated_at: v.number(),
   })
+    .index("by_uuid", ["id"])
     .index("by_slug", ["slug"])
     .index("by_name", ["name"]),
 
   // Tasks
   tasks: defineTable({
-    project_id: v.id("projects"),
+    id: v.string(), // UUID primary key
+    project_id: v.string(), // UUID ref to projects
     title: v.string(),
     description: v.optional(v.string()),
     status: v.union(
@@ -49,7 +52,7 @@ export default defineSchema({
     )),
     assignee: v.optional(v.string()),
     requires_human_review: v.boolean(),
-    tags: v.optional(v.array(v.string())),
+    tags: v.optional(v.string()), // JSON string from SQLite
     session_id: v.optional(v.string()),
     dispatch_status: v.optional(v.union(
       v.literal("pending"),
@@ -65,6 +68,7 @@ export default defineSchema({
     updated_at: v.number(),
     completed_at: v.optional(v.number()),
   })
+    .index("by_uuid", ["id"])
     .index("by_project", ["project_id"])
     .index("by_status", ["status"])
     .index("by_project_status", ["project_id", "status"])
@@ -73,7 +77,8 @@ export default defineSchema({
 
   // Comments
   comments: defineTable({
-    task_id: v.id("tasks"),
+    id: v.string(), // UUID primary key
+    task_id: v.string(), // UUID ref to tasks
     author: v.string(),
     author_type: v.union(
       v.literal("coordinator"),
@@ -90,23 +95,28 @@ export default defineSchema({
     responded_at: v.optional(v.number()),
     created_at: v.number(),
   })
+    .index("by_uuid", ["id"])
     .index("by_task", ["task_id"])
     .index("by_type", ["type"]),
 
   // Chats
   chats: defineTable({
-    project_id: v.string(),
+    id: v.string(), // UUID primary key
+    project_id: v.string(), // UUID ref to projects
     title: v.string(),
-    participants: v.optional(v.array(v.string())),
+    participants: v.optional(v.string()), // JSON string from SQLite
     session_key: v.optional(v.string()),
     created_at: v.number(),
     updated_at: v.number(),
   })
-    .index("by_project", ["project_id"]),
+    .index("by_uuid", ["id"])
+    .index("by_project", ["project_id"])
+    .index("by_session_key", ["session_key"]),
 
   // Chat Messages
   chatMessages: defineTable({
-    chat_id: v.string(),
+    id: v.string(), // UUID primary key
+    chat_id: v.string(), // UUID ref to chats
     author: v.string(),
     content: v.string(),
     run_id: v.optional(v.string()),
@@ -114,12 +124,14 @@ export default defineSchema({
     is_automated: v.optional(v.boolean()),
     created_at: v.number(),
   })
+    .index("by_uuid", ["id"])
     .index("by_chat", ["chat_id"]),
 
   // Notifications
   notifications: defineTable({
-    task_id: v.optional(v.id("tasks")),
-    project_id: v.optional(v.id("projects")),
+    id: v.string(), // UUID primary key
+    task_id: v.optional(v.string()), // UUID ref to tasks
+    project_id: v.optional(v.string()), // UUID ref to projects
     type: v.union(
       v.literal("escalation"),
       v.literal("request_input"),
@@ -137,14 +149,16 @@ export default defineSchema({
     read: v.boolean(),
     created_at: v.number(),
   })
+    .index("by_uuid", ["id"])
     .index("by_read", ["read"])
     .index("by_severity", ["severity"])
     .index("by_created", ["created_at"]),
 
   // Events (audit trail)
   events: defineTable({
-    project_id: v.optional(v.id("projects")),
-    task_id: v.optional(v.id("tasks")),
+    id: v.string(), // UUID primary key
+    project_id: v.optional(v.string()), // UUID ref to projects
+    task_id: v.optional(v.string()), // UUID ref to tasks
     type: v.union(
       v.literal("task_created"),
       v.literal("task_moved"),
@@ -160,6 +174,7 @@ export default defineSchema({
     data: v.optional(v.string()), // JSON stored as string
     created_at: v.number(),
   })
+    .index("by_uuid", ["id"])
     .index("by_project", ["project_id"])
     .index("by_task", ["task_id"])
     .index("by_type", ["type"])
@@ -167,7 +182,8 @@ export default defineSchema({
 
   // Signals (unified agent communication)
   signals: defineTable({
-    task_id: v.id("tasks"),
+    id: v.string(), // UUID primary key
+    task_id: v.string(), // UUID ref to tasks
     session_key: v.string(),
     agent_id: v.string(),
     kind: v.union(
@@ -187,6 +203,7 @@ export default defineSchema({
     response: v.optional(v.string()),
     created_at: v.number(),
   })
+    .index("by_uuid", ["id"])
     .index("by_task", ["task_id"])
     .index("by_kind", ["kind"])
     .index("by_blocking", ["blocking"])
@@ -195,10 +212,12 @@ export default defineSchema({
 
   // Task Dependencies
   taskDependencies: defineTable({
-    task_id: v.id("tasks"),
-    depends_on_id: v.id("tasks"),
+    id: v.string(), // UUID primary key
+    task_id: v.string(), // UUID ref to tasks
+    depends_on_id: v.string(), // UUID ref to tasks
     created_at: v.number(),
   })
+    .index("by_uuid", ["id"])
     .index("by_task", ["task_id"])
     .index("by_depends_on", ["depends_on_id"])
     .index("by_task_depends_on", ["task_id", "depends_on_id"]),

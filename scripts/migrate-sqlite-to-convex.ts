@@ -21,7 +21,7 @@ const db = new Database(DB_PATH, { readonly: true })
 const convex = new ConvexHttpClient(CONVEX_URL, { skipConvexDeploymentUrlCheck: true })
 
 // Helper: convert SQLite boolean (0/1) to JS boolean
-function toBool(val: number | null | undefined): boolean {
+function toBool(val: number | boolean | null | undefined): boolean {
   return val === 1 || val === true
 }
 

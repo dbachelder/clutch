@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Seed mutations for data migration from SQLite.
  * These are simple insert-only mutations used by the migration script.
@@ -50,7 +51,7 @@ export const insertTask = mutation({
     completed_at: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("tasks", args as Parameters<typeof ctx.db.insert>[1])
+    await ctx.db.insert("tasks", args as any)
   },
 })
 
@@ -66,7 +67,7 @@ export const insertComment = mutation({
     created_at: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("comments", args as Parameters<typeof ctx.db.insert>[1])
+    await ctx.db.insert("comments", args as any)
   },
 })
 
@@ -115,7 +116,7 @@ export const insertNotification = mutation({
     created_at: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("notifications", args as Parameters<typeof ctx.db.insert>[1])
+    await ctx.db.insert("notifications", args as any)
   },
 })
 
@@ -130,7 +131,7 @@ export const insertEvent = mutation({
     created_at: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("events", args as Parameters<typeof ctx.db.insert>[1])
+    await ctx.db.insert("events", args as any)
   },
 })
 
@@ -149,7 +150,7 @@ export const insertSignal = mutation({
     created_at: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("signals", args as Parameters<typeof ctx.db.insert>[1])
+    await ctx.db.insert("signals", args as any)
   },
 })
 

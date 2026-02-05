@@ -619,11 +619,11 @@ export const deleteTask = mutation({
  * Get incomplete dependencies for a task (by UUID)
  */
 async function getIncompleteDependencies(
-  ctx: { db: typeof import('./_generated/server')['query'] extends (args: infer _A) => infer _R ? never : { query: (table: string) => unknown; get: (id: unknown) => Promise<unknown> } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
   taskUuid: string
 ): Promise<TaskSummary[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = (ctx as any).db
+  const db = ctx.db
   const dependencyLinks = await db
     .query('taskDependencies')
     .withIndex('by_task', (q: { eq: (f: string, v: string) => unknown }) => q.eq('task_id', taskUuid))
