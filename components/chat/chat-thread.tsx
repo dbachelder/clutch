@@ -167,7 +167,7 @@ export function ChatThread({
   })
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4 space-y-3 md:space-y-4">
+    <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4 space-y-3 md:space-y-4 min-w-0 max-w-full">
       {groupedMessages.map((group, groupIndex) => (
         <div key={groupIndex} className="space-y-1">
           {group.messages.map((message, msgIndex) => {

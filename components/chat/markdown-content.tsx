@@ -78,7 +78,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
             if (match) {
               // Block code (fenced)
               return (
-                <pre className="bg-[var(--bg-primary)] border border-[var(--border)] rounded p-3 my-2 overflow-x-auto text-xs max-w-full">
+                <pre className="bg-[var(--bg-primary)] border border-[var(--border)] rounded p-3 my-2 overflow-x-auto text-xs max-w-full min-w-0">
                   <code className={className} {...props}>
                     {children}
                   </code>
@@ -135,8 +135,8 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
 
           // Tables
           table: ({ children }) => (
-            <div className="my-2 overflow-x-auto max-w-full">
-              <table className="w-full border border-[var(--border)] text-xs">
+            <div className="my-2 overflow-x-auto max-w-full min-w-0">
+              <table className="min-w-full border border-[var(--border)] text-xs">
                 {children}
               </table>
             </div>

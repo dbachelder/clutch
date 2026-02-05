@@ -574,7 +574,7 @@ export default function ChatPage({ params }: PageProps) {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-140px)] bg-[var(--bg-primary)] rounded-lg border border-[var(--border)] overflow-hidden">
+      <div className="flex h-[calc(100vh-140px)] bg-[var(--bg-primary)] rounded-lg border border-[var(--border)] overflow-hidden min-w-0 max-w-full">
         {/* Sidebar - Desktop: always visible, Mobile: drawer */}
         {projectId && (
           <ChatSidebar 
@@ -587,7 +587,7 @@ export default function ChatPage({ params }: PageProps) {
         )}
         
         {/* Main chat area - constrained to prevent wide content from pushing sidebar */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-hidden">
           {activeChat ? (
             <>
               {/* Chat header */}
