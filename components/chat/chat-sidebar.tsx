@@ -50,6 +50,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     { label: "Up Next", status: "ready", tasks: [], expanded: true },
   ])
   const [loadingTasks, setLoadingTasks] = useState(true)
+  const [readyCount, setReadyCount] = useState(0)
   
   // Recently shipped state
   const [recentlyShipped, setRecentlyShipped] = useState<Task[]>([])
@@ -80,6 +81,10 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
         doneRes.json(),
       ])
 
+      // Track full ready count for header display
+      const fullReadyTasks = readyData.tasks || []
+      setReadyCount(fullReadyTasks.length)
+
       setWorkQueueSections(prev => prev.map(section => {
         if (section.status === "in_review") {
           return { ...section, tasks: reviewData.tasks || [] }
@@ -89,7 +94,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
         }
         if (section.status === "ready") {
           // Only show top 2 ready tasks as "Up Next"
-          return { ...section, tasks: (readyData.tasks || []).slice(0, 2) }
+          return { ...section, tasks: fullReadyTasks.slice(0, 2) }
         }
         return section
       }))
@@ -386,6 +391,11 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
             {totalWorkItems > 0 && (
               <span className="text-xs bg-[var(--accent-blue)]/20 text-[var(--accent-blue)] px-1.5 py-0.5 rounded">
                 {totalWorkItems}
+              </span>
+            )}
+            {readyCount > 0 && (
+              <span className="text-xs bg-green-500/20 text-green-600 px-1.5 py-0.5 rounded font-medium">
+                {readyCount} ready
               </span>
             )}
           </div>
