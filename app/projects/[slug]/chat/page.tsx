@@ -77,15 +77,61 @@ export default function ChatPage({ params }: PageProps) {
   // Format: trap:{projectSlug}:{chatId} - includes project for context
   const sessionKey = activeChat ? `trap:${slug}:${activeChat.id}` : "main"
 
-  // OpenClaw WebSocket - used for SENDING messages only
-  // Receiving is handled via SSE from Trap backend (more reliable)
+  // Handlers for OpenClaw WebSocket events
+  const handleOpenClawMessage = useCallback(async (msg: { role: string; content: string | Array<{ type: string; text?: string }> }, runId: string) => {
+    if (!activeChat) return
+    
+    // Clear streaming message if we were streaming
+    if (settings.streamingEnabled && streamingMessages[activeChat.id]?.runId === runId) {
+      clearStreamingMessage(activeChat.id)
+    }
+    
+    // Extract text from content
+    const text = typeof msg.content === "string" 
+      ? msg.content 
+      : msg.content.find(c => c.type === "text")?.text || ""
+    
+    // Save Ada's response to local DB (with deduplication via run_id)
+    fetch(`/api/chats/${activeChat.id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: text, author: "ada", run_id: runId }),
+    }).catch(console.error)
+  }, [activeChat, settings.streamingEnabled, streamingMessages, clearStreamingMessage])
+
+  const handleOpenClawTypingStart = useCallback(() => {
+    if (activeChat) {
+      setTyping(activeChat.id, "ada", "thinking")
+    }
+  }, [activeChat, setTyping])
+
+  const handleOpenClawTypingEnd = useCallback(() => {
+    if (activeChat) {
+      setTyping(activeChat.id, "ada", false)
+    }
+  }, [activeChat, setTyping])
+
+  const handleOpenClawDelta = useCallback((delta: string, runId: string) => {
+    if (!activeChat) return
+    
+    setTyping(activeChat.id, "ada", "typing")
+    
+    if (settings.streamingEnabled) {
+      if (!streamingMessages[activeChat.id] || streamingMessages[activeChat.id].runId !== runId) {
+        startStreamingMessage(activeChat.id, runId, "ada")
+      }
+      appendToStreamingMessage(activeChat.id, delta)
+    }
+  }, [activeChat, setTyping, settings.streamingEnabled, streamingMessages, startStreamingMessage, appendToStreamingMessage])
+
+  // OpenClaw WebSocket - PRIMARY for both sending AND receiving
+  // SSE is BACKUP for tab switch recovery
   const { connected: openClawConnected, sendMessage: sendToOpenClaw, abortChat } = useOpenClawChat({
     sessionKey,
-    // Don't handle receives here - SSE handles them
-    onMessage: undefined,
-    onDelta: undefined,
-    onTypingStart: undefined,
-    onTypingEnd: undefined,
+    onMessage: handleOpenClawMessage,
+    onDelta: handleOpenClawDelta,
+    onTypingStart: handleOpenClawTypingStart,
+    onTypingEnd: handleOpenClawTypingEnd,
   })
 
   // SSE connection for RECEIVING messages from Trap backend
