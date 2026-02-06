@@ -98,6 +98,11 @@ export default function ChatPage({ params }: PageProps) {
     updatedAt?: number
     runtime?: string
     isCron?: boolean
+    totalTokens?: number
+    contextTokens?: number
+    taskTitle?: string
+    taskId?: string
+    projectSlug?: string
   }
 
   const [activeSubagents, setActiveSubagents] = useState<SubAgentDetails[]>([])
@@ -162,54 +167,120 @@ export default function ChatPage({ params }: PageProps) {
         const sessions = response.sessions as any[]
         const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
 
-        const subagents = (sessions || [])
+        // Helper to format runtime
+        const formatRuntime = (createdAt?: number): string | undefined => {
+          if (!createdAt) return undefined
+          const runtimeMs = Date.now() - createdAt
+          const minutes = Math.floor(runtimeMs / 60000)
+          const hours = Math.floor(runtimeMs / (60000 * 60))
+          if (hours > 0) {
+            const remainingMinutes = minutes % 60
+            return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`
+          }
+          return minutes > 0 ? `${minutes}m` : `${Math.floor(runtimeMs / 1000)}s`
+        }
+
+        // Helper to extract task ID from session label
+        const extractTaskId = (label?: string): string | undefined => {
+          if (!label) return undefined
+          // Match patterns like "trap-5e411423" or just "5e411423"
+          const match = label.match(/(?:trap-)?([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})/i)
+          return match ? match[1] : undefined
+        }
+
+        // Fetch task titles for sub-agents
+        const taskCache = new Map<string, { title: string; projectSlug?: string }>()
+        const fetchTaskTitle = async (taskId: string): Promise<{ title: string; projectSlug?: string } | null> => {
+          if (taskCache.has(taskId)) return taskCache.get(taskId)!
+          try {
+            const res = await fetch(`/api/tasks/${taskId}`)
+            if (res.ok) {
+              const data = await res.json()
+              const result = { title: data.task?.title || data.title, projectSlug: data.task?.project_slug }
+              taskCache.set(taskId, result)
+              return result
+            }
+          } catch {
+            // Ignore fetch errors
+          }
+          return null
+        }
+
+        // Process sub-agents
+        const subagentPromises = (sessions || [])
           .filter((s) =>
             s.spawnedBy === "agent:main:main" &&
             s.updatedAt && s.updatedAt > fiveMinutesAgo &&
             !s.key?.includes(":cron:")
           )
-          .map((s) => {
-            let runtime: string | undefined
-            if (s.createdAt) {
-              const runtimeMs = Date.now() - s.createdAt
-              const minutes = Math.floor(runtimeMs / 60000)
-              const seconds = Math.floor((runtimeMs % 60000) / 1000)
-              runtime = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+          .map(async (s) => {
+            const runtime = formatRuntime(s.createdAt)
+            const taskId = extractTaskId(s.label)
+            let taskTitle: string | undefined
+            let taskProjectSlug: string | undefined
+            
+            if (taskId) {
+              const taskInfo = await fetchTaskTitle(taskId)
+              if (taskInfo) {
+                taskTitle = taskInfo.title
+                taskProjectSlug = taskInfo.projectSlug
+              }
             }
+            
             return {
-              key: s.key as string, label: s.label as string | undefined,
-              model: s.model as string | undefined, status: s.status as string | undefined,
-              agentId: s.agentId as string | undefined, createdAt: s.createdAt as number | undefined,
-              updatedAt: s.updatedAt as number | undefined, runtime, isCron: false,
+              key: s.key as string,
+              label: s.label as string | undefined,
+              model: s.model as string | undefined,
+              status: s.status as string | undefined,
+              agentId: s.agentId as string | undefined,
+              createdAt: s.createdAt as number | undefined,
+              updatedAt: s.updatedAt as number | undefined,
+              runtime,
+              isCron: false,
+              totalTokens: s.totalTokens as number | undefined,
+              contextTokens: s.contextTokens as number | undefined,
+              taskTitle,
+              taskId,
+              projectSlug: taskProjectSlug || slug,
             }
           })
 
-        const crons = (sessions || [])
+        // Process cron jobs
+        const cronPromises = (sessions || [])
           .filter((s) => s.updatedAt && s.updatedAt > fiveMinutesAgo && s.key?.includes(":cron:"))
-          .map((s) => {
-            let runtime: string | undefined
-            if (s.createdAt) {
-              const runtimeMs = Date.now() - s.createdAt
-              const minutes = Math.floor(runtimeMs / 60000)
-              const seconds = Math.floor((runtimeMs % 60000) / 1000)
-              runtime = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
-            }
+          .map(async (s) => {
+            const runtime = formatRuntime(s.createdAt)
             let cronLabel = s.label
             if (!cronLabel && s.key) {
               const trapTaskMatch = s.key.match(/:trap-(.+)$/)
-              if (trapTaskMatch) cronLabel = `Trap: ${trapTaskMatch[1]}`
-              else {
+              if (trapTaskMatch) {
+                const taskId = trapTaskMatch[1]
+                const taskInfo = await fetchTaskTitle(taskId)
+                cronLabel = taskInfo?.title || `Trap: ${taskId.substring(0, 8)}`
+              } else {
                 const cronIdMatch = s.key.match(/:cron:([^:]+)/)
                 cronLabel = cronIdMatch ? `Cron Job ${cronIdMatch[1].substring(0, 8)}...` : "Cron Job"
               }
             }
             return {
-              key: s.key as string, label: cronLabel as string | undefined,
-              model: s.model as string | undefined, status: s.status as string | undefined,
-              agentId: s.agentId as string | undefined, createdAt: s.createdAt as number | undefined,
-              updatedAt: s.updatedAt as number | undefined, runtime, isCron: true,
+              key: s.key as string,
+              label: cronLabel as string | undefined,
+              model: s.model as string | undefined,
+              status: s.status as string | undefined,
+              agentId: s.agentId as string | undefined,
+              createdAt: s.createdAt as number | undefined,
+              updatedAt: s.updatedAt as number | undefined,
+              runtime,
+              isCron: true,
+              totalTokens: s.totalTokens as number | undefined,
+              contextTokens: s.contextTokens as number | undefined,
             }
           })
+
+        const [subagents, crons] = await Promise.all([
+          Promise.all(subagentPromises),
+          Promise.all(cronPromises),
+        ])
 
         setActiveSubagents(subagents)
         setActiveCrons(crons)
@@ -221,7 +292,7 @@ export default function ChatPage({ params }: PageProps) {
     pollSubagents()
     const interval = setInterval(pollSubagents, 10000)
     return () => clearInterval(interval)
-  }, [listSessions])
+  }, [listSessions, slug])
 
   // ==========================================================================
   // Project init & chat selection
