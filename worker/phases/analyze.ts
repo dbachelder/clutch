@@ -7,14 +7,14 @@
 
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
-import type { ChildManager } from "../children"
+import type { AgentManager } from "../agent-manager"
 import type { WorkLoopConfig } from "../config"
 import type { LogRunParams } from "../logger"
 import type { Task } from "../../lib/types"
 
 interface AnalyzeContext {
   convex: ConvexHttpClient
-  children: ChildManager
+  agents: AgentManager
   config: WorkLoopConfig
   cycle: number
   projectId: string
@@ -42,7 +42,7 @@ interface AnalyzeResult {
  * a structured analysis.
  */
 export async function runAnalyze(ctx: AnalyzeContext): Promise<AnalyzeResult> {
-  const { convex, children, config, cycle, projectId, log } = ctx
+  const { convex, agents, config, cycle, projectId, log } = ctx
 
   let spawnedCount = 0
   let skippedCount = 0
@@ -60,7 +60,7 @@ export async function runAnalyze(ctx: AnalyzeContext): Promise<AnalyzeResult> {
 
   for (const task of tasks) {
     // Check capacity before each spawn
-    const globalActive = children.activeCount()
+    const globalActive = agents.activeCount()
     if (globalActive >= config.maxAgentsGlobal) {
       await log({
         projectId,
@@ -72,7 +72,7 @@ export async function runAnalyze(ctx: AnalyzeContext): Promise<AnalyzeResult> {
       break
     }
 
-    const projectActive = children.activeCount(projectId)
+    const projectActive = agents.activeCount(projectId)
     if (projectActive >= config.maxAgentsPerProject) {
       await log({
         projectId,
@@ -115,17 +115,17 @@ interface TaskProcessResult {
 }
 
 async function processTask(ctx: AnalyzeContext, task: Task): Promise<TaskProcessResult> {
-  const { children, projectId } = ctx
+  const { agents, projectId } = ctx
 
   // Check if analyzer already running for this task
-  const existingChild = children.get(task.id)
-  if (existingChild && existingChild.exitCode === null && existingChild.role === "analyzer") {
+  if (agents.has(task.id)) {
+    const existing = agents.get(task.id)
     return {
       spawned: false,
       details: {
         reason: "analyzer_already_running",
         taskId: task.id,
-        sessionKey: existingChild.sessionKey,
+        sessionKey: existing?.sessionKey,
       },
     }
   }
@@ -161,24 +161,36 @@ async function processTask(ctx: AnalyzeContext, task: Task): Promise<TaskProcess
     role: task.role ?? "dev",
   })
 
-  // Spawn analyzer agent
-  const child = children.spawn({
-    taskId: task.id,
-    projectId,
-    role: "analyzer",
-    message: prompt,
-    model: "sonnet", // Analyzers need strong reasoning
-    label: `analyzer:${task.id.slice(0, 8)}`,
-  })
-
-  return {
-    spawned: true,
-    details: {
+  // Spawn analyzer agent via gateway RPC
+  try {
+    const handle = await agents.spawn({
       taskId: task.id,
-      outcome,
-      sessionKey: child.sessionKey,
-      promptVersionId,
-    },
+      projectId,
+      role: "analyzer",
+      message: prompt,
+      model: "sonnet",
+      timeoutSeconds: 600,
+    })
+
+    return {
+      spawned: true,
+      details: {
+        taskId: task.id,
+        outcome,
+        sessionKey: handle.sessionKey,
+        promptVersionId,
+      },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      spawned: false,
+      details: {
+        reason: "spawn_failed",
+        taskId: task.id,
+        error: message,
+      },
+    }
   }
 }
 

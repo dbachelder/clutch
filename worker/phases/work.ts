@@ -7,7 +7,7 @@
 
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
-import type { ChildManager } from "../children"
+import type { AgentManager } from "../agent-manager"
 import type { WorkLoopConfig } from "../config"
 import type { LogRunParams } from "../logger"
 import type { Task, TaskPriority } from "../../lib/types"
@@ -25,7 +25,7 @@ export interface WorkPhaseResult {
 
 interface WorkContext {
   convex: ConvexHttpClient
-  children: ChildManager
+  agents: AgentManager
   config: WorkLoopConfig
   cycle: number
   projectId: string
@@ -170,11 +170,11 @@ async function loadSoulTemplate(role: string): Promise<string> {
  * 6. Log claim and spawn to Convex
  */
 export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
-  const { convex, children, config, cycle, projectId, log } = ctx
+  const { convex, agents, config, cycle, projectId, log } = ctx
 
   // --- 1. Check capacity ---
-  const globalCount = children.activeCount()
-  const projectCount = children.activeCount(projectId)
+  const globalCount = agents.activeCount()
+  const projectCount = agents.activeCount(projectId)
 
   if (globalCount >= config.maxAgentsGlobal) {
     await log({
@@ -298,18 +298,18 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
       worktreeDir,
     })
 
-    // --- 5. Spawn sub-agent ---
+    // --- 5. Spawn agent via gateway RPC ---
     const model = getModelForRole(role)
-    const label = `trap-${role}-${task.id.slice(0, 8)}`
 
     try {
-      const child = children.spawn({
+      const handle = await agents.spawn({
         taskId: task.id,
         projectId,
         role,
         message: prompt,
         model,
-        label,
+        thinking: "off",
+        timeoutSeconds: 600,
       })
 
       await log({
@@ -318,19 +318,27 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
         phase: "work",
         action: "agent_spawned",
         taskId: task.id,
-        sessionKey: child.sessionKey,
-        details: { pid: child.pid, role, model: model ?? "default" },
+        sessionKey: handle.sessionKey,
+        details: { role, model: model ?? "default", sessionKey: handle.sessionKey },
       })
 
-      // Update task with session ID
+      // Update task with session key and initial agent info
       try {
         await convex.mutation(api.tasks.update, {
           id: task.id,
-          session_id: child.sessionKey,
+          session_id: handle.sessionKey,
+        })
+        await convex.mutation(api.tasks.updateAgentActivity, {
+          updates: [{
+            task_id: task.id,
+            agent_session_key: handle.sessionKey,
+            agent_model: model,
+            agent_started_at: handle.spawnedAt,
+            agent_last_active_at: handle.spawnedAt,
+          }],
         })
       } catch (updateError) {
-        // Non-fatal: session tracking is nice-to-have
-        console.error(`[WorkPhase] Failed to update task session_id:`, updateError)
+        console.error(`[WorkPhase] Failed to update task agent info:`, updateError)
       }
 
       // --- 6. Return success (only one task per cycle) ---
