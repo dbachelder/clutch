@@ -40,7 +40,7 @@ interface ChatState {
   sendMessage: (chatId: string, content: string, author?: string) => Promise<ChatMessage>
   loadMoreMessages: (chatId: string) => Promise<boolean>
   
-  // SSE event handlers
+  // Convex reactivity handlers
   receiveMessage: (chatId: string, message: ChatMessage) => void
   setTyping: (chatId: string, author: string, state: "thinking" | "typing" | false) => void
   
@@ -208,7 +208,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => {
       const existing = state.messages[chatId] || []
       
-      // Check if message already exists (SSE might have added it first)
+      // Check if message already exists (Convex reactivity might have added it first)
       if (existing.some((m) => m.id === data.message.id)) {
         return state
       }
@@ -264,7 +264,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return data.hasMore
   },
 
-  // Receive a message from SSE (avoid duplicates)
+  // Receive a message from Convex (avoid duplicates)
   receiveMessage: (chatId, message) => {
     set((state) => {
       const existing = state.messages[chatId] || []
@@ -302,7 +302,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
   },
 
-  // Handle typing indicator from SSE
+  // Handle typing indicator from Convex
   setTyping: (chatId, author, state) => {
     set((store) => {
       const current = store.typingIndicators[chatId] || []
