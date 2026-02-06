@@ -57,6 +57,9 @@ function getInitialVisibility(projectId: string): Record<TaskStatus, boolean> {
   return DEFAULT_VISIBILITY
 }
 
+// Pending optimistic move: taskId → target status
+type PendingMoves = Map<string, TaskStatus>
+
 export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
   // Use Convex for reactive task data (real-time updates)
   const { tasksByStatus, isLoading } = useConvexBoardTasks(projectId)
@@ -65,6 +68,24 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
   const { moveTask } = useTaskStore()
   
   const isMobile = useMobileDetection(768)
+
+  // Optimistic move overrides — applied on top of Convex data so cards
+  // don't snap back while the mutation is in flight.
+  const [pendingMoves, setPendingMoves] = useState<PendingMoves>(new Map())
+
+  // Derive active pending moves: only those not yet reflected in Convex.
+  // This is a pure derivation — no effect/setState needed for cleanup.
+  const activePendingMoves = useMemo(() => {
+    if (pendingMoves.size === 0) return pendingMoves
+    const active = new Map<string, TaskStatus>()
+    for (const [taskId, targetStatus] of pendingMoves) {
+      const alreadyInTarget = tasksByStatus[targetStatus]?.some(t => t.id === taskId)
+      if (!alreadyInTarget) {
+        active.set(taskId, targetStatus)
+      }
+    }
+    return active
+  }, [pendingMoves, tasksByStatus])
   
   // Column visibility state - initialize from localStorage
   const [columnVisibility, setColumnVisibility] = useState<Record<TaskStatus, boolean>>(
@@ -118,15 +139,45 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
     if (destination.droppableId === source.droppableId) {
       moveTask(draggableId, newStatus, destination.index)
     } else {
-      // Moving to different column
-      moveTask(draggableId, newStatus)
+      // Moving to different column — record optimistic move so the card
+      // stays in the target column while the API call is in flight.
+      setPendingMoves(prev => new Map(prev).set(draggableId, newStatus))
+
+      moveTask(draggableId, newStatus).catch(() => {
+        // Revert optimistic move on failure
+        setPendingMoves(prev => {
+          const next = new Map(prev)
+          next.delete(draggableId)
+          return next
+        })
+      })
     }
   }
 
-  // Get tasks for a specific column from Convex data
-  const getTasksForColumn = (status: TaskStatus): Task[] => {
-    return tasksByStatus?.[status] ?? []
-  }
+  // Get tasks for a specific column, applying optimistic move overrides
+  const getTasksForColumn = useCallback((status: TaskStatus): Task[] => {
+    if (activePendingMoves.size === 0) {
+      return tasksByStatus?.[status] ?? []
+    }
+
+    // Collect all tasks from Convex, then relocate any that have pending moves
+    const allTasks: Task[] = []
+    for (const col of Object.keys(tasksByStatus) as TaskStatus[]) {
+      for (const task of tasksByStatus[col]) {
+        allTasks.push(task)
+      }
+    }
+
+    return allTasks.filter(task => {
+      const pendingStatus = activePendingMoves.get(task.id)
+      if (pendingStatus !== undefined) {
+        // This task has a pending move — show it in the target column
+        return pendingStatus === status
+      }
+      // No pending move — show in its Convex-reported column
+      return task.status === status
+    })
+  }, [tasksByStatus, activePendingMoves])
 
   if (isLoading) {
     return (
