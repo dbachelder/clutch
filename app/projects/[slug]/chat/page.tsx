@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, use, useCallback } from "react"
+import { useEffect, useState, use } from "react"
 import { MessageSquare, Menu } from "lucide-react"
 import { useChatStore } from "@/lib/stores/chat-store"
 import { useSettings } from "@/lib/hooks/use-settings"
@@ -62,8 +62,6 @@ export default function ChatPage({ params }: PageProps) {
     sendMessage: sendMessageToDb,
     setActiveChat,
     setTyping,
-    startStreamingMessage,
-    appendToStreamingMessage,
     clearStreamingMessage,
   } = useChatStore()
 

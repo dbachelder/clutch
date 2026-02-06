@@ -85,7 +85,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    // Check for duplicate run_id to prevent double messages from OpenClaw WebSocket
+    // Check for duplicate run_id to prevent double messages from backend event handler
     if (run_id) {
       const existing = await convex.query(api.chats.getMessageByRunId, { runId: run_id })
       if (existing) {
