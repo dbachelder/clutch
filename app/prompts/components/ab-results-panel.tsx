@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { format } from 'date-fns'
-import { AlertTriangle, ArrowRight, BarChart3, Check, Loader2, Trophy, X } from 'lucide-react'
+import { AlertTriangle, BarChart3, Loader2, Trophy, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
