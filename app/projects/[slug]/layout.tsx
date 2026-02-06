@@ -8,6 +8,7 @@ import type { Project } from "@/lib/types"
 import { MobileProjectSwitcher } from "@/components/layout/mobile-project-switcher"
 import { DesktopProjectSwitcher } from "@/components/layout/desktop-project-switcher"
 import { useMobileDetection } from "@/components/board/use-mobile-detection"
+import { WorkLoopHeaderStatus } from "@/components/work-loop/work-loop-header-status"
 
 type LayoutProps = {
   children: React.ReactNode
@@ -80,32 +81,32 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
         <div className="container mx-auto px-4 lg:px-6 max-w-7xl">
           {/* Mobile: Ultra-compact header */}
           {isMobile ? (
-            <div className="py-2">
+            <div className="py-2 space-y-2">
               {/* Single row: Back + Project + Tabs */}
               <div className="flex items-center gap-2">
-                <Link 
+                <Link
                   href="/"
                   className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0"
                   style={{ minWidth: "40px", minHeight: "40px" }}
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
-                
+
                 {/* Compact project switcher */}
                 <div className="flex-shrink-0">
-                  <MobileProjectSwitcher 
+                  <MobileProjectSwitcher
                     currentProject={project}
                     projects={projects}
                   />
                 </div>
-                
+
                 {/* Compact tab navigation - hide Settings on mobile */}
                 <nav className="flex gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0">
                   {TABS.filter(tab => tab.id !== 'settings').map((tab) => {
                     const Icon = tab.icon
                     const isActive = activeTab === tab.id
                     const href = `/projects/${slug}${tab.href}`
-                    
+
                     return (
                       <Link
                         key={tab.id}
@@ -124,21 +125,37 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                   })}
                 </nav>
               </div>
+
+              {/* Work loop status row (mobile only, if enabled) */}
+              {project.work_loop_enabled === 1 && (
+                <div className="flex justify-end">
+                  <WorkLoopHeaderStatus
+                    projectId={project.id}
+                    workLoopEnabled={true}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             /* Desktop: Original layout */
             <>
-              {/* Top row: back + project name */}
-              <div className="py-4 flex items-center gap-4">
-                <Link 
-                  href="/"
-                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </Link>
-                <DesktopProjectSwitcher 
-                  currentProject={project}
-                  projects={projects}
+              {/* Top row: back + project name + work loop status */}
+              <div className="py-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <Link
+                    href="/"
+                    className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </Link>
+                  <DesktopProjectSwitcher
+                    currentProject={project}
+                    projects={projects}
+                  />
+                </div>
+                <WorkLoopHeaderStatus
+                  projectId={project.id}
+                  workLoopEnabled={project.work_loop_enabled === 1}
                 />
               </div>
               
