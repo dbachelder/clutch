@@ -21,7 +21,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const body = await request.json()
 
-  const { name, slug, description, color, repo_url, chat_layout, local_path, github_repo, work_loop_enabled, work_loop_schedule } = body
+  const { name, slug, description, color, repo_url, chat_layout, local_path, github_repo, work_loop_enabled, work_loop_max_agents, work_loop_schedule } = body
 
   if (!name || !slug) {
     return NextResponse.json(
@@ -56,6 +56,16 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Validate work_loop_max_agents if provided
+  if (work_loop_max_agents !== undefined && work_loop_max_agents !== null) {
+    if (typeof work_loop_max_agents !== 'number' || work_loop_max_agents < 1 || !Number.isInteger(work_loop_max_agents)) {
+      return NextResponse.json(
+        { error: "work_loop_max_agents must be a positive integer" },
+        { status: 400 }
+      )
+    }
+  }
+
   // Validate work_loop_schedule if provided
   if (work_loop_schedule) {
     if (typeof work_loop_schedule !== 'string') {
@@ -78,6 +88,7 @@ export async function POST(request: NextRequest) {
       github_repo: github_repo || undefined,
       chat_layout: chat_layout || undefined,
       work_loop_enabled: work_loop_enabled ?? undefined,
+      work_loop_max_agents: work_loop_max_agents ?? undefined,
       work_loop_schedule: work_loop_schedule || undefined,
     })
 
