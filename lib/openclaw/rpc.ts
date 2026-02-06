@@ -50,6 +50,11 @@ function getOpenClawUrl(): string {
     return process.env.NEXT_PUBLIC_OPENCLAW_HTTP_URL;
   }
   
+  // Client-side: proxy through Next.js to avoid CORS
+  if (typeof window !== 'undefined') {
+    return '';  // Use relative URL — /api/openclaw/rpc
+  }
+
   const host = getOpenClawHost();
   const port = getOpenClawPort();
   return `http://${host}:${port}`;
@@ -117,7 +122,8 @@ export async function openclawRpc<T = unknown>(
   method: string,
   params?: Record<string, unknown>
 ): Promise<T> {
-  const url = `${getOpenClawUrl()}/rpc`;
+  const baseUrl = getOpenClawUrl();
+  const url = baseUrl ? `${baseUrl}/rpc` : '/api/openclaw/rpc';
   const token = getAuthToken();
 
   const request: RpcRequest = {
