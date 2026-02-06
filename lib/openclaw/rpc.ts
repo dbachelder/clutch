@@ -1,36 +1,71 @@
 /**
  * OpenClaw HTTP RPC Client
- * Standalone HTTP client for OpenClaw RPC calls (no React, no WebSocket)
+ * 
+ * Standalone HTTP client for OpenClaw gateway RPC calls.
+ * Works in both client and server contexts (React-agnostic).
+ * 
+ * Usage:
+ *   import { openclawRpc, sendChatMessage, listSessions } from '@/lib/openclaw';
+ *   
+ *   // Generic RPC call
+ *   const result = await openclawRpc<SomeType>('method.name', { param: 'value' });
+ *   
+ *   // Typed helpers
+ *   const sessions = await listSessions({ limit: 10 });
+ *   const { runId } = await sendChatMessage('agent:main', 'Hello');
  */
 
-// Fallback UUID generator for non-secure contexts
-function generateUUID(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/** Get the OpenClaw gateway host */
+function getOpenClawHost(): string {
+  // Server-side: use env var
+  if (typeof process !== 'undefined' && process.env?.OPENCLAW_HOST) {
+    return process.env.OPENCLAW_HOST;
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
+  
+  // Client-side: derive from window.location
+  if (typeof window !== 'undefined') {
+    return window.location.hostname;
+  }
+  
+  // Fallback
+  return '127.0.0.1';
 }
 
-// Get the OpenClaw HTTP URL from environment or default
+/** Get the OpenClaw gateway port */
+function getOpenClawPort(): string {
+  if (typeof process !== 'undefined' && process.env?.OPENCLAW_PORT) {
+    return process.env.OPENCLAW_PORT;
+  }
+  return '18789';
+}
+
+/** Get the OpenClaw HTTP RPC URL */
 function getOpenClawUrl(): string {
+  // Allow full override
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_OPENCLAW_HTTP_URL) {
     return process.env.NEXT_PUBLIC_OPENCLAW_HTTP_URL;
   }
-  // Default to localhost:18789 (standard OpenClaw HTTP port)
-  return 'http://127.0.0.1:18789';
+  
+  const host = getOpenClawHost();
+  const port = getOpenClawPort();
+  return `http://${host}:${port}`;
 }
 
-// Get the auth token from environment
+/** Get the auth token */
 function getAuthToken(): string {
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_OPENCLAW_TOKEN) {
     return process.env.NEXT_PUBLIC_OPENCLAW_TOKEN;
   }
   return '';
 }
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface RpcRequest {
   type: 'req';
@@ -45,23 +80,40 @@ export interface RpcResponse<T = unknown> {
   ok: boolean;
   payload?: T;
   error?: {
+    code?: number;
     message: string;
-    code?: string;
+    data?: unknown;
   };
 }
 
-export interface ChatSendResult {
-  runId: string;
-  status: 'started' | 'queued' | 'error';
+// ============================================================================
+// Core RPC
+// ============================================================================
+
+/** Generate a UUID for RPC requests */
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
 /**
- * Make an HTTP RPC call to OpenClaw
- * @param method - The RPC method name
+ * Make a raw HTTP RPC call to OpenClaw gateway.
+ * 
+ * @param method - The RPC method name (e.g., 'sessions.list', 'chat.send')
  * @param params - Method parameters
  * @returns Promise with the response payload
+ * @throws Error if the request fails or returns an RPC error
+ * 
+ * @example
+ * const sessions = await openclawRpc<Array<Session>>('sessions.list', { limit: 10 });
  */
-export async function rpc<T = unknown>(
+export async function openclawRpc<T = unknown>(
   method: string,
   params?: Record<string, unknown>
 ): Promise<T> {
@@ -98,50 +150,55 @@ export async function rpc<T = unknown>(
 }
 
 /**
- * Send a chat message via HTTP POST to OpenClaw
- * @param message - The message content
- * @param sessionKey - The session key (default: 'main')
- * @param trapChatId - Optional trap chat ID for context
- * @returns Promise with runId and status
- */
-export async function sendChatMessage(
-  message: string,
-  sessionKey = 'main',
-  trapChatId?: string
-): Promise<ChatSendResult> {
-  const idempotencyKey = generateUUID();
-
-  const contextMessage = trapChatId
-    ? `[Trap Chat ID: ${trapChatId}]\n\n${message}`
-    : message;
-
-  const result = await rpc<ChatSendResult>('chat.send', {
-    sessionKey,
-    message: contextMessage,
-    idempotencyKey
-  });
-
-  return result;
-}
-
-/**
- * Abort an ongoing chat session
- * @param sessionKey - The session key to abort
- */
-export async function abortChat(sessionKey: string): Promise<void> {
-  await rpc('chat.abort', { sessionKey });
-}
-
-/**
- * Check if OpenClaw HTTP API is available
- * @returns Promise<boolean> indicating if the API is reachable
+ * Check if OpenClaw HTTP API is available.
+ * Uses a lightweight config.get call.
  */
 export async function isOpenClawAvailable(): Promise<boolean> {
   try {
-    // Use a lightweight config.get call to check availability
-    await rpc('config.get', {});
+    await openclawRpc('config.get', {});
     return true;
   } catch {
     return false;
   }
+}
+
+// ============================================================================
+// Gateway Status
+// ============================================================================
+
+export interface GatewayStatus {
+  version: string;
+  uptime: number;
+  sessions: {
+    active: number;
+    total: number;
+  };
+  memory?: {
+    backend: string;
+  };
+}
+
+/**
+ * Get OpenClaw gateway status.
+ * Returns version, uptime, and session counts.
+ */
+export async function getGatewayStatus(): Promise<GatewayStatus> {
+  // config.get returns the full config; we'll extract relevant info
+  const config = await openclawRpc<{
+    meta?: { lastTouchedVersion?: string };
+  }>('config.get', {});
+  
+  // Get session counts
+  const sessions = await openclawRpc<{
+    sessions?: Array<unknown>;
+  }>('sessions.list', { limit: 0 });
+
+  return {
+    version: config.meta?.lastTouchedVersion || 'unknown',
+    uptime: 0, // Not directly available via HTTP RPC
+    sessions: {
+      active: sessions.sessions?.length || 0,
+      total: sessions.sessions?.length || 0
+    }
+  };
 }
