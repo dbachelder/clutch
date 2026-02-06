@@ -2,7 +2,7 @@
  * Work Loop Orchestrator
  *
  * Main entry point for the persistent work loop process.
- * Cycles through phases (cleanup → review → work) indefinitely,
+ * Cycles through phases (cleanup → review → work → analyze) indefinitely,
  * logging all actions to Convex for visibility.
  */
 
@@ -15,12 +15,13 @@ import { sessionsPoller } from "./sessions"
 import { runReview } from "./phases/review"
 import type { Project } from "../lib/types"
 import { runWork } from "./phases/work"
+import { runAnalyze } from "./phases/analyze"
 
 // ============================================
 // Types
 // ============================================
 
-type WorkLoopPhase = "cleanup" | "review" | "work" | "idle" | "error"
+type WorkLoopPhase = "cleanup" | "review" | "work" | "analyze" | "idle" | "error"
 
 interface PhaseResult {
   success: boolean
@@ -133,7 +134,7 @@ async function runPhase(
 /**
  * Run one cycle for a single project.
  *
- * Executes cleanup → review → work phases sequentially.
+ * Executes cleanup → review → work → analyze phases sequentially.
  * Updates workLoopState in Convex after each cycle.
  */
 async function runProjectCycle(
@@ -227,9 +228,42 @@ async function runProjectCycle(
     }
   )
 
+  // Update state to analyze phase
+  await convex.mutation(api.workLoop.upsertState, {
+    project_id: project.id,
+    status: "running",
+    current_phase: "analyze",
+    current_cycle: cycle,
+    active_agents: childManager.activeCount(project.id),
+    max_agents: project.work_loop_max_agents ?? 2,
+  })
+
+  // Phase 4: Analyze
+  const analyzeResult = await runPhase(
+    convex,
+    project.id,
+    "analyze",
+    async () => {
+      const result = await runAnalyze({
+        convex,
+        children: childManager,
+        config,
+        cycle,
+        projectId: project.id,
+        log: async (params) => {
+          await logRun(convex, params)
+        },
+      })
+      return {
+        success: true,
+        actions: result.spawnedCount,
+      }
+    }
+  )
+
   // Calculate cycle duration and log completion
   const cycleDurationMs = Date.now() - cycleStart
-  const totalActions = cleanupResult.actions + reviewResult.actions + workResult.actions
+  const totalActions = cleanupResult.actions + reviewResult.actions + workResult.actions + analyzeResult.actions
 
   await logCycleComplete(convex, {
     projectId: project.id,
@@ -240,6 +274,7 @@ async function runProjectCycle(
       cleanup: cleanupResult.success,
       review: reviewResult.success,
       work: workResult.success,
+      analyze: analyzeResult.success,
     },
   })
 
@@ -292,7 +327,7 @@ async function getEnabledProjects(convex: ConvexHttpClient): Promise<ProjectInfo
  * Runs indefinitely until SIGTERM/SIGINT received.
  * Each iteration:
  * 1. Get enabled projects from Convex
- * 2. Run cleanup → review → work for each project
+ * 2. Run cleanup → review → work → analyze for each project
  * 3. Sleep for configured interval
  */
 async function runLoop(): Promise<void> {

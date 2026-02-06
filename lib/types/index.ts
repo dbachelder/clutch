@@ -68,6 +68,7 @@ export interface Task {
   requires_human_review: number // SQLite boolean (0/1)
   tags: string | null // JSON array stored as text
   session_id: string | null
+  prompt_version_id: string | null // ref to promptVersions
   dispatch_status: DispatchStatus | null
   dispatch_requested_at: number | null
   dispatch_requested_by: string | null

@@ -234,6 +234,7 @@ export default defineSchema({
       v.literal("cleanup"),
       v.literal("review"),
       v.literal("work"),
+      v.literal("analyze"),
       v.literal("idle"),
       v.literal("error")
     ),
