@@ -1,10 +1,12 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Draggable } from "@hello-pangea/dnd"
-import { Link2, Lock } from "lucide-react"
+import { Link2, Lock, Bot, AlertTriangle } from "lucide-react"
 import type { Task } from "@/lib/types"
-import { useSingleSessionStatus, getSessionStatusIndicator } from "@/lib/hooks/use-session-status"
+import { useSingleSessionStatus } from "@/lib/hooks/use-session-status"
 import { useDependencies } from "@/lib/hooks/use-dependencies"
+import { formatCompactTime } from "@/lib/utils"
 
 interface TaskCardProps {
   task: Task
@@ -36,11 +38,77 @@ const ROLE_LABELS: Record<string, string> = {
   security: "Sec",
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  backlog: "#6b7280",
+  ready: "#3b82f6",
+  in_progress: "#22c55e",
+  in_review: "#f97316",
+  done: "#22c55e",
+}
+
+/**
+ * Get color for status age based on duration and status
+ */
+function getStatusAgeColor(ageMs: number, status: string): string {
+  const hours = ageMs / (1000 * 60 * 60)
+  
+  if (status === 'in_progress' || status === 'in_review') {
+    if (hours < 1) return '#22c55e' // green
+    if (hours < 4) return '#eab308' // yellow
+    return '#ef4444' // red
+  }
+  
+  // For other statuses, use neutral colors
+  if (hours < 1) return '#22c55e'
+  if (hours < 24) return '#6b7280'
+  return '#9ca3af'
+}
+
+/**
+ * Get color for last output age
+ */
+function getLastOutputColor(ageMs: number): string {
+  const minutes = ageMs / (1000 * 60)
+  
+  if (minutes < 1) return '#22c55e' // green
+  if (minutes < 5) return '#eab308' // yellow
+  return '#ef4444' // red
+}
+
+/**
+ * Format model name for display
+ */
+function formatModelName(model?: string): string {
+  if (!model) return 'agent'
+  
+  // Extract short name from full model path (e.g., "moonshot/kimi-for-coding" -> "kimi")
+  const parts = model.split('/')
+  const name = parts[parts.length - 1]
+  
+  // Shorten common names
+  if (name.includes('kimi')) return 'kimi'
+  if (name.includes('claude')) return 'claude'
+  if (name.includes('gpt')) return 'gpt'
+  if (name.includes('gemini')) return 'gemini'
+  
+  return name.slice(0, 8) // truncate if still long
+}
+
 export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardProps) {
+  // Track current time for live updates - use lazy initializer to avoid impure function during render
+  const [now, setNow] = useState(() => Date.now())
+
+  // Update time every 10 seconds for live display
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now())
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Get session status for in-progress tasks
   const shouldFetchSessionStatus = task.status === 'in_progress' && task.session_id
   const { sessionStatus } = useSingleSessionStatus(shouldFetchSessionStatus ? task.session_id || undefined : undefined)
-  const sessionIndicator = getSessionStatusIndicator(sessionStatus || undefined)
 
   // Get dependency info
   const { dependencies } = useDependencies(task.id)
@@ -48,6 +116,22 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
   const blocksCount = dependencies.blocks.length
   const incompleteDeps = dependencies.depends_on.filter(d => d.status !== 'done')
   const isBlocked = incompleteDeps.length > 0
+
+  // Calculate status age
+  const statusAge = now - task.updated_at
+  const statusAgeColor = getStatusAgeColor(statusAge, task.status)
+
+  // Calculate agent runtime and last output
+  const agentRuntime = sessionStatus?.createdAt 
+    ? now - new Date(sessionStatus.createdAt).getTime()
+    : null
+  const lastOutput = sessionStatus?.updatedAt
+    ? now - new Date(sessionStatus.updatedAt).getTime()
+    : null
+  const lastOutputColor = lastOutput ? getLastOutputColor(lastOutput) : null
+
+  // Check if in_progress but no agent attached
+  const isOrphaned = task.status === 'in_progress' && (!task.session_id || sessionStatus?.status === 'not_found' || sessionStatus?.status === 'error')
 
   const tags = (() => {
     if (!task.tags) return []
@@ -103,18 +187,56 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
             <span className={`text-sm line-clamp-2 flex-1 ${isBlocked ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
               {task.title}
             </span>
-            {/* Session status indicator for in-progress tasks */}
-            {task.status === 'in_progress' && (
+          </div>
+          
+          {/* Status metadata row */}
+          <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+            {/* Status with age */}
+            <div className="flex items-center gap-1.5">
               <div 
-                className="flex-shrink-0 text-sm cursor-help"
-                style={{ color: sessionIndicator.color }}
-                title={sessionIndicator.title}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  // TODO: Could open session detail view here
-                }}
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: STATUS_COLORS[task.status] || '#6b7280' }}
+              />
+              <span className="text-[var(--text-muted)]">{task.status.replace('_', ' ')}</span>
+              <span 
+                className="font-medium"
+                style={{ color: statusAgeColor }}
+                title={`In this status for ${formatCompactTime(task.updated_at)}`}
               >
-                {sessionIndicator.emoji}
+                {formatCompactTime(task.updated_at)}
+              </span>
+            </div>
+
+            {/* Agent info for in_progress tasks */}
+            {task.status === 'in_progress' && task.session_id && sessionStatus && sessionStatus.status !== 'not_found' && (
+              <div className="flex items-center gap-1.5 ml-2 border-l border-[var(--border)] pl-2">
+                <Bot className="h-3 w-3 text-[var(--text-muted)]" />
+                <span className="text-[var(--text-muted)]">{formatModelName(sessionStatus.model)}</span>
+                {agentRuntime !== null && (
+                  <span className="text-[var(--text-muted)]">
+                    · {formatCompactTime(now - agentRuntime)}
+                  </span>
+                )}
+                {lastOutput !== null && (
+                  <span 
+                    className="font-medium"
+                    style={{ color: lastOutputColor || '#6b7280' }}
+                    title="Time since last output"
+                  >
+                    · out {formatCompactTime(now - lastOutput)}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Orphaned agent warning */}
+            {isOrphaned && (
+              <div 
+                className="flex items-center gap-1 ml-2 text-amber-500"
+                title="No agent attached to this in-progress task"
+              >
+                <AlertTriangle className="h-3 w-3" />
+                <span>no agent</span>
               </div>
             )}
           </div>
