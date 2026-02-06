@@ -65,7 +65,7 @@ export function useSessionStatus(sessionIds: string[]) {
     }
   }, [sessionIds, fetchSessionStatus])
 
-  // Auto-refresh every 30 seconds for active sessions
+  // Auto-refresh every 15 seconds for active sessions (in-progress tasks)
   useEffect(() => {
     const hasActiveSessions = Object.values(sessionStatus).some(
       status => status.isActive || status.status === 'running'
@@ -78,7 +78,7 @@ export function useSessionStatus(sessionIds: string[]) {
       if (validIds.length > 0) {
         fetchSessionStatus(validIds)
       }
-    }, 30000) // 30 seconds
+    }, 15000) // 15 seconds for more responsive updates
 
     return () => clearInterval(interval)
   }, [sessionIds, sessionStatus, fetchSessionStatus])

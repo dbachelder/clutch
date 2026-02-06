@@ -4,6 +4,7 @@ export interface SessionStatusInfo {
   id: string
   status: 'running' | 'idle' | 'completed' | 'error' | 'cancelled' | 'not_found'
   updatedAt?: string
+  createdAt?: string
   model?: string
   tokens?: {
     input: number
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
           id: sessionId,
           status,
           updatedAt,
+          createdAt: sessionInfo.createdAt,
           model: sessionInfo.model,
           tokens: {
             input: sessionInfo.inputTokens || 0,
