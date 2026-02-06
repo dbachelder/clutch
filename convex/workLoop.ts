@@ -6,7 +6,7 @@ import { generateId } from './_helpers'
 // Types
 // ============================================
 
-type WorkLoopPhase = "cleanup" | "review" | "work" | "idle" | "error"
+type WorkLoopPhase = "cleanup" | "review" | "work" | "analyze" | "idle" | "error"
 type WorkLoopStatus = "running" | "paused" | "stopped" | "error"
 
 // Convex document types
@@ -284,6 +284,7 @@ export const logRun = mutation({
       v.literal('cleanup'),
       v.literal('review'),
       v.literal('work'),
+      v.literal('analyze'),
       v.literal('idle'),
       v.literal('error')
     ),
