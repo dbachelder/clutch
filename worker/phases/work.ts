@@ -302,6 +302,7 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
 
     // --- 5. Spawn agent via gateway RPC ---
     const model = getModelForRole(role)
+    console.log(`[WorkPhase] Task ${task.id.slice(0, 8)} role=${role} → model=${model}`)
 
     try {
       const handle = await agents.spawn({

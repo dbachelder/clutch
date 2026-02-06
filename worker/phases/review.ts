@@ -112,9 +112,10 @@ export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
       break
     }
 
-    // Check project limits
+    // Check project limits — reserve at least 1 slot for work phase
     const projectActive = agents.activeCount(projectId)
-    if (projectActive >= config.maxAgentsPerProject) {
+    const reviewLimit = Math.max(1, config.maxAgentsPerProject - 1)
+    if (projectActive >= reviewLimit) {
       await ctx.log({
         projectId,
         cycle,

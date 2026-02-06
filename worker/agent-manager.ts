@@ -151,7 +151,7 @@ export class AgentManager {
    * @param staleMs - Milliseconds of inactivity before a session is considered stuck.
    *                  Default: 15 minutes (900_000 ms).
    */
-  async reapFinished(staleMs = 15 * 60 * 1000): Promise<AgentOutcome[]> {
+  async reapFinished(staleMs = 5 * 60 * 1000): Promise<AgentOutcome[]> {
     if (this.agents.size === 0) return []
 
     const reaped: AgentOutcome[] = []

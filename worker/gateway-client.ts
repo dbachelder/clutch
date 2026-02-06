@@ -260,14 +260,20 @@ export class GatewayRpcClient {
     // This ensures the agent runs with the correct model from the start.
     if (params.model) {
       try {
-        await this.request("sessions.patch", {
+        const patchResult = await this.request("sessions.patch", {
           key: params.sessionKey,
           model: params.model,
         }, 10_000)
+        console.log(
+          `[GatewayClient] Model override set for ${params.sessionKey}: ` +
+          `model=${params.model}, result=${JSON.stringify((patchResult as Record<string, unknown>)?.resolved ?? patchResult)}`,
+        )
       } catch (err) {
         // Non-fatal: agent will run with default model
         console.warn(`[GatewayClient] Failed to set model for ${params.sessionKey}:`, err)
       }
+    } else {
+      console.warn(`[GatewayClient] No model specified for ${params.sessionKey} — will use gateway default!`)
     }
 
     // Use a shorter timeout for the initial RPC since the gateway returns "accepted" quickly.
