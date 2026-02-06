@@ -43,11 +43,11 @@ interface ChatThreadProps {
   projectSlug?: string
 }
 
-export function ChatThread({ 
+export function ChatThread({
   chatId,
-  messages, 
+  messages,
   streamingMessage = null,
-  loading = false, 
+  loading = false,
   currentUser = "dan",
   onCreateTask,
   typingIndicators = [],
@@ -58,9 +58,9 @@ export function ChatThread({
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const { setScrollPosition, getScrollPosition } = useChatStore()
-  const lastChatIdRef = useRef<string>(chatId)
   const isAutoScrollingRef = useRef(false)
-  const restoredScrollPositionRef = useRef(false)
+  // Track which chat we've already scrolled for (initial load vs new messages)
+  const scrolledChatIdRef = useRef<string | null>(null)
 
   // Check if user is near bottom of chat (within 100px)
   const isNearBottom = useCallback(() => {
@@ -72,59 +72,61 @@ export function ChatThread({
   // Save scroll position to store (debounced to avoid excessive saves)
   const saveScrollPosition = useCallback(() => {
     if (!containerRef.current || isAutoScrollingRef.current) return
-    
+
     const { scrollTop } = containerRef.current
     setScrollPosition(chatId, scrollTop)
   }, [chatId, setScrollPosition])
 
-  // Restore scroll position when switching chats
+  // Handle scroll behavior on chat switch or initial load
   useEffect(() => {
-    if (lastChatIdRef.current !== chatId) {
-      // Chat switched - restore scroll position or scroll to bottom
-      lastChatIdRef.current = chatId
-      restoredScrollPositionRef.current = false
+    if (!containerRef.current) return
 
-      // Use setTimeout to ensure DOM is updated
-      setTimeout(() => {
-        if (!containerRef.current) return
+    // Only run when chatId changes (switching chats)
+    if (scrolledChatIdRef.current === chatId) return
 
-        const savedPosition = getScrollPosition(chatId)
-        if (savedPosition > 0) {
-          // Restore saved scroll position
-          isAutoScrollingRef.current = true
-          containerRef.current.scrollTop = savedPosition
-          restoredScrollPositionRef.current = true
+    // Mark this chat as scrolled so we don't re-run on message updates
+    scrolledChatIdRef.current = chatId
 
-          // Clear auto-scroll flag after a short delay
-          setTimeout(() => {
-            isAutoScrollingRef.current = false
-          }, 100)
-        } else {
-          // No saved position - scroll to bottom (instant on switch)
-          isAutoScrollingRef.current = true
-          bottomRef.current?.scrollIntoView({ behavior: "instant" })
-          restoredScrollPositionRef.current = true
+    const savedPosition = getScrollPosition(chatId)
 
-          setTimeout(() => {
-            isAutoScrollingRef.current = false
-          }, 100)
-        }
-      }, 50)
-    }
+    // Use setTimeout to ensure DOM is updated with new messages
+    setTimeout(() => {
+      if (!containerRef.current) return
+
+      if (savedPosition > 0) {
+        // Restore saved scroll position (user was here before)
+        isAutoScrollingRef.current = true
+        containerRef.current.scrollTop = savedPosition
+        setTimeout(() => {
+          isAutoScrollingRef.current = false
+        }, 100)
+      } else {
+        // First time viewing this chat - scroll to bottom instantly
+        isAutoScrollingRef.current = true
+        bottomRef.current?.scrollIntoView({ behavior: "instant" })
+        setTimeout(() => {
+          isAutoScrollingRef.current = false
+        }, 100)
+      }
+    }, 50)
   }, [chatId, getScrollPosition])
 
-  // Auto-scroll to bottom for new messages (only if near bottom or haven't restored position)
+  // Auto-scroll to bottom for new messages (only if user is already near bottom)
   useEffect(() => {
-    if (!restoredScrollPositionRef.current || isNearBottom()) {
+    // Skip if we haven't done initial scroll for this chat yet
+    if (scrolledChatIdRef.current !== chatId) return
+
+    // Only auto-scroll if user is near bottom (they haven't scrolled up to read history)
+    if (isNearBottom()) {
       isAutoScrollingRef.current = true
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-      
+
       // Clear auto-scroll flag after animation
       setTimeout(() => {
         isAutoScrollingRef.current = false
       }, 500)
     }
-  }, [messages.length, streamingMessage?.content, typingIndicators.length, isNearBottom])
+  }, [messages.length, streamingMessage?.content, typingIndicators.length, isNearBottom, chatId])
 
   // Set up scroll event listener for saving position
   useEffect(() => {
