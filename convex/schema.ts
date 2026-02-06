@@ -299,4 +299,33 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_role_model", ["role", "model"])
     .index("by_role_active", ["role", "active"]),
+
+  // Task Analyses - post-mortem analysis of completed/failed tasks
+  taskAnalyses: defineTable({
+    id: v.string(), // UUID primary key
+    task_id: v.string(), // UUID ref to tasks
+    session_key: v.optional(v.string()),
+    role: v.string(),
+    model: v.string(),
+    prompt_version_id: v.string(), // ref to promptVersions
+    outcome: v.union(
+      v.literal("success"),
+      v.literal("failure"),
+      v.literal("partial"),
+      v.literal("abandoned")
+    ),
+    token_count: v.optional(v.number()),
+    duration_ms: v.optional(v.number()),
+    failure_modes: v.optional(v.string()), // JSON array of categorized failures
+    amendments: v.optional(v.string()), // JSON array of suggested prompt changes
+    analysis_summary: v.string(), // human-readable summary
+    confidence: v.number(), // 0-1, how confident the analyzer is
+    analyzed_at: v.number(),
+  })
+    .index("by_uuid", ["id"])
+    .index("by_task", ["task_id"])
+    .index("by_role", ["role"])
+    .index("by_prompt_version", ["prompt_version_id"])
+    .index("by_outcome", ["outcome"])
+    .index("by_analyzed", ["analyzed_at"]),
 })
