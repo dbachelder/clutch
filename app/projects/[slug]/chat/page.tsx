@@ -136,7 +136,7 @@ export default function ChatPage({ params }: PageProps) {
           setSessionInfo(null)
         }
       } catch (error) {
-        console.error("[Chat] Failed to fetch session info:", error)
+        // OpenClaw RPC may be unavailable
         setSessionInfo(null)
       }
     }
@@ -213,8 +213,8 @@ export default function ChatPage({ params }: PageProps) {
 
         setActiveSubagents(subagents)
         setActiveCrons(crons)
-      } catch (err) {
-        console.error("[Chat] Failed to poll subagents:", err)
+      } catch {
+        // OpenClaw RPC may be unavailable — silently ignore
       }
     }
 

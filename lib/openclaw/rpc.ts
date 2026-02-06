@@ -118,10 +118,20 @@ function generateUUID(): string {
  * @example
  * const sessions = await openclawRpc<Array<Session>>('sessions.list', { limit: 10 });
  */
+// Track consecutive failures to implement backoff
+let _consecutiveFailures = 0;
+const _MAX_BACKOFF_FAILURES = 3;
+
 export async function openclawRpc<T = unknown>(
   method: string,
   params?: Record<string, unknown>
 ): Promise<T> {
+  // If we've failed too many times in a row, skip calls silently
+  // to avoid flooding the console. Reset after 60s.
+  if (_consecutiveFailures >= _MAX_BACKOFF_FAILURES) {
+    throw new Error('OpenClaw RPC unavailable (backing off)');
+  }
+
   const baseUrl = getOpenClawUrl();
   const url = baseUrl ? `${baseUrl}/rpc` : '/api/openclaw/rpc';
   const token = getAuthToken();
@@ -133,26 +143,46 @@ export async function openclawRpc<T = unknown>(
     params: params || {}
   };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify(request)
-  });
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(5000),
+    });
 
-  if (!response.ok) {
-    throw new Error(`OpenClaw HTTP ${response.status}: ${response.statusText}`);
+    if (!response.ok) {
+      _consecutiveFailures++;
+      if (_consecutiveFailures === _MAX_BACKOFF_FAILURES) {
+        console.warn('[OpenClaw RPC] Unavailable — suppressing further attempts for 60s');
+        setTimeout(() => { _consecutiveFailures = 0; }, 60000);
+      }
+      throw new Error(`OpenClaw HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const rpcResponse: RpcResponse<T> = await response.json();
+
+    if (!rpcResponse.ok || rpcResponse.error) {
+      throw new Error(rpcResponse.error?.message || 'OpenClaw RPC error');
+    }
+
+    // Success — reset failure counter
+    _consecutiveFailures = 0;
+    return rpcResponse.payload as T;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('OpenClaw')) {
+      throw error; // Re-throw our own errors
+    }
+    _consecutiveFailures++;
+    if (_consecutiveFailures === _MAX_BACKOFF_FAILURES) {
+      console.warn('[OpenClaw RPC] Unavailable — suppressing further attempts for 60s');
+      setTimeout(() => { _consecutiveFailures = 0; }, 60000);
+    }
+    throw new Error(`OpenClaw RPC error: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  const rpcResponse: RpcResponse<T> = await response.json();
-
-  if (!rpcResponse.ok || rpcResponse.error) {
-    throw new Error(rpcResponse.error?.message || 'OpenClaw RPC error');
-  }
-
-  return rpcResponse.payload as T;
 }
 
 /**

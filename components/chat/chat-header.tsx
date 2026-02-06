@@ -46,7 +46,7 @@ export function ChatHeader({ chat }: ChatHeaderProps) {
           contextPercent: Math.round(preview.contextPercentage ?? 0),
         })
       } catch (error) {
-        console.error("[ChatHeader] Failed to fetch session info:", error)
+        // OpenClaw RPC may be unavailable
         setSessionInfo(null)
       } finally {
         setLoadingSession(false)

@@ -50,7 +50,7 @@ export function ContextIndicator({
         model: preview.session.model
       })
     } catch (error) {
-      console.error("[ContextIndicator] Failed to fetch context:", error)
+      // OpenClaw RPC may be unavailable
       setContextData(null)
     } finally {
       setLoading(false)
