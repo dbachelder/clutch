@@ -222,4 +222,52 @@ export default defineSchema({
     .index("by_task", ["task_id"])
     .index("by_depends_on", ["depends_on_id"])
     .index("by_task_depends_on", ["task_id", "depends_on_id"]),
+
+  // Work Loop Runs - audit log of every action the loop takes
+  workLoopRuns: defineTable({
+    id: v.string(), // UUID primary key
+    project_id: v.string(), // UUID ref to projects
+    cycle: v.number(),
+    phase: v.union(
+      v.literal("cleanup"),
+      v.literal("review"),
+      v.literal("work"),
+      v.literal("idle"),
+      v.literal("error")
+    ),
+    action: v.string(),
+    task_id: v.optional(v.string()), // UUID ref to tasks
+    session_key: v.optional(v.string()),
+    details: v.optional(v.string()),
+    duration_ms: v.optional(v.number()),
+    created_at: v.number(),
+  })
+    .index("by_uuid", ["id"])
+    .index("by_project", ["project_id"])
+    .index("by_cycle", ["cycle"])
+    .index("by_phase", ["phase"])
+    .index("by_created", ["created_at"])
+    .index("by_project_created", ["project_id", "created_at"]),
+
+  // Work Loop State - current state of each project loop
+  workLoopState: defineTable({
+    id: v.string(), // UUID primary key
+    project_id: v.string(), // UUID ref to projects
+    status: v.union(
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("stopped"),
+      v.literal("error")
+    ),
+    current_phase: v.optional(v.string()),
+    current_cycle: v.number(),
+    active_agents: v.number(),
+    max_agents: v.number(),
+    last_cycle_at: v.optional(v.number()),
+    error_message: v.optional(v.string()),
+    updated_at: v.number(),
+  })
+    .index("by_uuid", ["id"])
+    .index("by_project", ["project_id"])
+    .index("by_status", ["status"]),
 })
