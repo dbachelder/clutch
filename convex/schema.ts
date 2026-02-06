@@ -320,6 +320,14 @@ export default defineSchema({
     duration_ms: v.optional(v.number()),
     failure_modes: v.optional(v.string()), // JSON array of categorized failures
     amendments: v.optional(v.string()), // JSON array of suggested prompt changes
+    amendment_status: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("applied"),
+      v.literal("rejected"),
+      v.literal("deferred")
+    )),
+    amendment_resolved_at: v.optional(v.number()),
+    amendment_reject_reason: v.optional(v.string()),
     analysis_summary: v.string(), // human-readable summary
     confidence: v.number(), // 0-1, how confident the analyzer is
     analyzed_at: v.number(),
@@ -329,7 +337,8 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_prompt_version", ["prompt_version_id"])
     .index("by_outcome", ["outcome"])
-    .index("by_analyzed", ["analyzed_at"]),
+    .index("by_analyzed", ["analyzed_at"])
+    .index("by_amendment_status", ["amendment_status"]),
 
   // Prompt Metrics - aggregated performance data per role+model+version
   promptMetrics: defineTable({
