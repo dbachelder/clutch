@@ -482,13 +482,15 @@ export const move = mutation({
       return reorderTask(ctx, existing._id, args.status, args.position)
     }
 
-    // Check for incomplete dependencies when moving forward from backlog
-    if (args.status !== 'backlog' && existing.status === 'backlog') {
+    // Check for incomplete dependencies when claiming work (ready → in_progress)
+    // Tasks can sit in ready with unmet deps — the gate script skips them.
+    // Only block when someone actually tries to start working.
+    if (args.status === 'in_progress' && existing.status !== 'in_progress') {
       const incompleteDeps = await getIncompleteDependencies(ctx, args.id)
       if (incompleteDeps.length > 0) {
         throw new Error(
-          `Cannot change status: ${incompleteDeps.length} incomplete dependencies. ` +
-          `Complete dependencies before moving from backlog.`
+          `Cannot change status: dependencies not complete. ` +
+          `${incompleteDeps.length} incomplete dependencies must be done first.`
         )
       }
     }
