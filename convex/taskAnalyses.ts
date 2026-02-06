@@ -6,6 +6,8 @@ import { generateId } from './_helpers'
 // Types
 // ============================================
 
+export type AmendmentStatus = 'pending' | 'applied' | 'rejected' | 'deferred'
+
 export type TaskAnalysis = {
   id: string
   task_id: string
@@ -18,6 +20,9 @@ export type TaskAnalysis = {
   duration_ms: number | null
   failure_modes: string[] | null
   amendments: string[] | null
+  amendment_status: AmendmentStatus | null
+  amendment_resolved_at: number | null
+  amendment_reject_reason: string | null
   analysis_summary: string
   confidence: number
   analyzed_at: number
@@ -95,18 +100,54 @@ export const listByRole = query({
 })
 
 /**
- * List analyses with pending amendments (non-null amendments)
+ * List analyses with pending amendments (non-null amendments, not yet resolved)
  */
 export const listPendingAmendments = query({
   args: {
     limit: v.optional(v.number()),
+    includeDeferred: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<TaskAnalysis[]> => {
     const allAnalyses = await ctx.db.query('taskAnalyses').collect()
 
-    const withAmendments = allAnalyses.filter((a) => a.amendments !== null && a.amendments !== undefined)
+    const withAmendments = allAnalyses.filter((a) => {
+      if (!a.amendments) return false
+      const status = a.amendment_status ?? 'pending'
+      if (status === 'pending') return true
+      if (args.includeDeferred && status === 'deferred') return true
+      return false
+    })
 
     const sorted = withAmendments.sort((a, b) => b.analyzed_at - a.analyzed_at)
+
+    const limited = args.limit ? sorted.slice(0, args.limit) : sorted
+
+    return limited.map((a) => toTaskAnalysis(a))
+  },
+})
+
+/**
+ * List analyses by amendment status (for viewing resolved items)
+ */
+export const listByAmendmentStatus = query({
+  args: {
+    status: v.union(
+      v.literal('pending'),
+      v.literal('applied'),
+      v.literal('rejected'),
+      v.literal('deferred')
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<TaskAnalysis[]> => {
+    const analyses = await ctx.db
+      .query('taskAnalyses')
+      .withIndex('by_amendment_status', (q) => q.eq('amendment_status', args.status))
+      .collect()
+
+    const sorted = analyses
+      .filter((a) => a.amendments)
+      .sort((a, b) => b.analyzed_at - a.analyzed_at)
 
     const limited = args.limit ? sorted.slice(0, args.limit) : sorted
 
@@ -244,6 +285,46 @@ export const create = mutation({
   },
 })
 
+/**
+ * Update amendment status on a task analysis
+ */
+export const updateAmendmentStatus = mutation({
+  args: {
+    id: v.string(),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('applied'),
+      v.literal('rejected'),
+      v.literal('deferred')
+    ),
+    reject_reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const analysis = await ctx.db
+      .query('taskAnalyses')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
+
+    if (!analysis) {
+      throw new Error(`Task analysis ${args.id} not found`)
+    }
+
+    const updates: Record<string, unknown> = {
+      amendment_status: args.status,
+    }
+
+    if (args.status !== 'pending') {
+      updates.amendment_resolved_at = Date.now()
+    }
+
+    if (args.reject_reason !== undefined) {
+      updates.amendment_reject_reason = args.reject_reason
+    }
+
+    await ctx.db.patch(analysis._id, updates)
+  },
+})
+
 // ============================================
 // Helper Functions
 // ============================================
@@ -263,6 +344,9 @@ function toTaskAnalysis(doc: {
   duration_ms?: number
   failure_modes?: string
   amendments?: string
+  amendment_status?: 'pending' | 'applied' | 'rejected' | 'deferred'
+  amendment_resolved_at?: number
+  amendment_reject_reason?: string
   analysis_summary: string
   confidence: number
   analyzed_at: number
@@ -279,6 +363,9 @@ function toTaskAnalysis(doc: {
     duration_ms: doc.duration_ms ?? null,
     failure_modes: doc.failure_modes ? JSON.parse(doc.failure_modes) : null,
     amendments: doc.amendments ? JSON.parse(doc.amendments) : null,
+    amendment_status: doc.amendment_status ?? (doc.amendments ? 'pending' : null),
+    amendment_resolved_at: doc.amendment_resolved_at ?? null,
+    amendment_reject_reason: doc.amendment_reject_reason ?? null,
     analysis_summary: doc.analysis_summary,
     confidence: doc.confidence,
     analyzed_at: doc.analyzed_at,
