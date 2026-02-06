@@ -59,10 +59,8 @@ export default function ChatPage({ params }: PageProps) {
     loadingMessages,
     typingIndicators,
     fetchChats,
-    refreshMessages,
     sendMessage: sendMessageToDb,
     setActiveChat,
-    receiveMessage,
     setTyping,
     startStreamingMessage,
     appendToStreamingMessage,
@@ -76,59 +74,13 @@ export default function ChatPage({ params }: PageProps) {
   // Format: trap:{projectSlug}:{chatId} - includes project for context
   const sessionKey = activeChat ? `trap:${slug}:${activeChat.id}` : "main"
 
-  // Handlers for OpenClaw WebSocket events
-  // Note: Message persistence is handled server-side by the trap-channel plugin
-  // WebSocket is used for typing indicators and streaming only
-  const handleOpenClawMessage = useCallback(async (msg: { role: string; content: string | Array<{ type: string; text?: string }> }, runId: string) => {
-    if (!activeChat) return
-    
-    // Clear streaming message if we were streaming
-    if (settings.streamingEnabled && streamingMessages[activeChat.id]?.runId === runId) {
-      clearStreamingMessage(activeChat.id)
-    }
-    
-    // Clear typing indicator when message is complete
-    setTyping(activeChat.id, "ada", false)
-    
-    // Extract text content from the message
-    const content = typeof msg.content === "string"
-      ? msg.content
-      : msg.content
-          ?.filter((c) => c.type === "text" && c.text)
-          .map((c) => c.text)
-          .join("\n\n") ?? ""
-    
-    if (!content.trim()) {
-      console.log("[Chat] Empty message received, skipping save")
-      return
-    }
-    
-    // Save AI response to Convex via API — Convex reactive query updates the UI
-    try {
-      const response = await fetch(`/api/chats/${activeChat.id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content,
-          author: "ada",
-          run_id: runId,
-          session_key: sessionKey,
-        }),
-      })
-      
-      if (!response.ok) {
-        const errorText = await response.text()
-        // 409 = duplicate run_id, message already saved (e.g. by trap-channel plugin)
-        if (response.status !== 409) {
-          console.error("[Chat] Failed to save AI response:", errorText)
-        }
-      }
-    } catch (error) {
-      console.error("[Chat] Error saving AI response:", error)
-    }
-  }, [activeChat, settings.streamingEnabled, streamingMessages, clearStreamingMessage, setTyping, sessionKey])
+  // ==========================================================================
+  // OpenClaw WebSocket — typing indicators & streaming only
+  // Message persistence is handled server-side by the trap-channel plugin's
+  // agent_end hook, which POSTs assistant responses to Convex.
+  // Convex reactive queries update the UI automatically.
+  // ==========================================================================
 
-  // Consolidated typing handler for OpenClaw WebSocket events
   const handleOpenClawTyping = useCallback((isTyping: boolean, state?: "thinking" | "typing") => {
     if (!activeChat) return
     
@@ -142,7 +94,6 @@ export default function ChatPage({ params }: PageProps) {
   const handleOpenClawDelta = useCallback((delta: string, runId: string) => {
     if (!activeChat) return
     
-    // Update typing state to "typing" when receiving deltas
     setTyping(activeChat.id, "ada", "typing")
     
     if (settings.streamingEnabled) {
@@ -153,17 +104,25 @@ export default function ChatPage({ params }: PageProps) {
     }
   }, [activeChat, setTyping, settings.streamingEnabled, streamingMessages, startStreamingMessage, appendToStreamingMessage])
 
-  // OpenClaw WebSocket - PRIMARY for both sending AND receiving
-  // SSE is BACKUP for tab switch recovery
+  const handleOpenClawMessageComplete = useCallback((_msg: unknown, runId: string) => {
+    if (!activeChat) return
+    
+    // Clear streaming state — the actual message is persisted by the
+    // trap-channel plugin (agent_end hook → Convex), not by the frontend.
+    if (settings.streamingEnabled && streamingMessages[activeChat.id]?.runId === runId) {
+      clearStreamingMessage(activeChat.id)
+    }
+    setTyping(activeChat.id, "ada", false)
+  }, [activeChat, settings.streamingEnabled, streamingMessages, clearStreamingMessage, setTyping])
+
   const { status, sendChatMessage, subscribe, rpc } = useOpenClawWS()
   const openClawConnected = status === 'connected'
 
-  // Subscribe to OpenClaw events (replaces useOpenClawChat hook)
+  // Subscribe to OpenClaw WebSocket events
   useEffect(() => {
     const unsubscribers = [
       subscribe('chat.typing.start', (data: unknown) => {
         const typedData = data as { runId: string; sessionKey?: string }
-        // Only handle events for our session or global events
         if (!typedData.sessionKey || typedData.sessionKey === sessionKey) {
           handleOpenClawTyping(true, "thinking")
         }
@@ -171,7 +130,6 @@ export default function ChatPage({ params }: PageProps) {
       
       subscribe('chat.typing.end', (data: unknown) => {
         const typedData = data as { sessionKey?: string } | undefined
-        // Only handle events for our session or global events
         if (!typedData?.sessionKey || typedData.sessionKey === sessionKey) {
           handleOpenClawTyping(false)
         }
@@ -179,23 +137,20 @@ export default function ChatPage({ params }: PageProps) {
       
       subscribe('chat.delta', (data: unknown) => {
         const { delta, runId, sessionKey: eventSessionKey } = data as { delta: string; runId: string; sessionKey?: string }
-        // Only handle events for our session or global events
         if (!eventSessionKey || eventSessionKey === sessionKey) {
           handleOpenClawDelta(delta, runId)
         }
       }),
       
       subscribe('chat.message', (data: unknown) => {
-        const { message, runId, sessionKey: eventSessionKey } = data as { message: { role: string; content: string | Array<{ type: string; text?: string }> }; runId: string; sessionKey?: string }
-        // Only handle events for our session or global events
+        const { message, runId, sessionKey: eventSessionKey } = data as { message: unknown; runId: string; sessionKey?: string }
         if (!eventSessionKey || eventSessionKey === sessionKey) {
-          handleOpenClawMessage(message, runId)
+          handleOpenClawMessageComplete(message, runId)
         }
       }),
       
       subscribe('chat.error', (data: unknown) => {
         const { error, sessionKey: eventSessionKey } = data as { error: string; runId: string; sessionKey?: string }
-        // Only handle events for our session or global events
         if (!eventSessionKey || eventSessionKey === sessionKey) {
           console.error('[Chat] OpenClaw chat error:', error)
           handleOpenClawTyping(false)
@@ -206,14 +161,13 @@ export default function ChatPage({ params }: PageProps) {
     return () => {
       unsubscribers.forEach(unsub => unsub())
     }
-  }, [subscribe, sessionKey, handleOpenClawMessage, handleOpenClawDelta, handleOpenClawTyping])
+  }, [subscribe, sessionKey, handleOpenClawMessageComplete, handleOpenClawDelta, handleOpenClawTyping])
 
-  // TYPING INDICATOR FLOW:
-  // OpenClaw WebSocket → handleOpenClawTyping() → setTyping()
-  //    - thinking (agent processing) → typing (streaming response) → false (done)
+  // ==========================================================================
+  // Sub-agent & session monitoring via RPC
+  // ==========================================================================
 
-  // Sub-agent monitoring via RPC
-  const { connected: rpcConnected, listSessions, getSessionPreview, getGatewayStatus } = useOpenClawRpc()
+  const { connected: rpcConnected, listSessions, getGatewayStatus } = useOpenClawRpc()
   
   interface SubAgentDetails {
     key: string
@@ -237,7 +191,7 @@ export default function ChatPage({ params }: PageProps) {
     uptimeString?: string;
   } | null>(null)
 
-  // Fetch session info when chat has session_key and RPC is connected
+  // Fetch session info directly from sessions.list RPC
   useEffect(() => {
     async function fetchSessionInfo() {
       if (!activeChat?.session_key || !rpcConnected) {
@@ -246,11 +200,18 @@ export default function ChatPage({ params }: PageProps) {
       }
 
       try {
-        const preview = await getSessionPreview(activeChat.session_key)
-        if (preview?.session) {
+        const response = await rpc<{ sessions: Array<Record<string, unknown>> }>("sessions.list", { limit: 200 })
+        const sessions = response.sessions || []
+        // OpenClaw RPC returns keys with "agent:main:" prefix, chat stores without it
+        const session = sessions.find(s => s.key === activeChat.session_key)
+          || sessions.find(s => String(s.key || '').endsWith(activeChat.session_key))
+        if (session) {
+          const totalTokens = (session.totalTokens as number) || 0
+          const contextWindow = (session.contextTokens as number) || 200000
+          const contextPercent = contextWindow > 0 ? Math.round((totalTokens / contextWindow) * 100) : 0
           setSessionInfo({
-            model: preview.session.model,
-            contextPercent: preview.contextPercentage ? Math.round(preview.contextPercentage) : undefined,
+            model: session.model as string,
+            contextPercent,
           })
         } else {
           setSessionInfo(null)
@@ -262,11 +223,10 @@ export default function ChatPage({ params }: PageProps) {
     }
 
     fetchSessionInfo()
-    
-    // Refresh session info periodically to keep context percentage up to date
+    // Refresh every 30s while connected
     const interval = setInterval(fetchSessionInfo, 30000)
     return () => clearInterval(interval)
-  }, [activeChat?.session_key, rpcConnected, getSessionPreview])
+  }, [activeChat?.session_key, rpcConnected, rpc])
 
   // Fetch gateway status and format uptime
   useEffect(() => {
@@ -279,7 +239,6 @@ export default function ChatPage({ params }: PageProps) {
           let uptimeString: string | undefined
           
           if (status.uptime && status.uptime > 0) {
-            // Format uptime as relative time
             const uptimeMs = status.uptime
             const minutes = Math.floor(uptimeMs / 60000)
             const hours = Math.floor(minutes / 60)
@@ -295,7 +254,6 @@ export default function ChatPage({ params }: PageProps) {
               uptimeString = "up <1m"
             }
           } else if (status.startedAt) {
-            // Fallback to calculating from startedAt
             const startTime = new Date(status.startedAt).getTime()
             const now = Date.now()
             const uptimeMs = now - startTime
@@ -314,10 +272,7 @@ export default function ChatPage({ params }: PageProps) {
             }
           }
           
-          setGatewayStatus({
-            ...status,
-            uptimeString
-          })
+          setGatewayStatus({ ...status, uptimeString })
         }
       } catch (error) {
         console.error('[Chat] Failed to fetch gateway status:', error)
@@ -325,39 +280,28 @@ export default function ChatPage({ params }: PageProps) {
     }
     
     fetchGatewayStatus()
-    const statusInterval = setInterval(fetchGatewayStatus, 30000) // Poll every 30s
-    
+    const statusInterval = setInterval(fetchGatewayStatus, 30000)
     return () => clearInterval(statusInterval)
   }, [rpcConnected, getGatewayStatus])
 
+  // Poll for active sub-agents and cron sessions
   useEffect(() => {
     if (!rpcConnected) return
     
     const pollSubagents = async () => {
       try {
-        // Increase limit to catch more sessions
         const response = await listSessions({ limit: 50 })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sessions = response.sessions as any[]
         const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
         
-        // Debug logging to understand what sessions we're getting
-        console.log("[Chat] Sessions fetched:", sessions?.length || 0)
-        const cronSessions = sessions?.filter(s => s.key?.includes(":cron:")) || []
-        console.log("[Chat] Cron sessions found:", cronSessions.length, cronSessions.map(s => ({ key: s.key, updatedAt: s.updatedAt })))
-        
-        // Filter for sessions that are:
-        // 1. Spawned by main session (sub-agents)
-        // 2. Updated in the last 5 minutes (still active)
-        // 3. NOT cron sessions (those are handled separately)
         const subagents = (sessions || [])
           .filter((s) => 
             s.spawnedBy === "agent:main:main" && 
             s.updatedAt && s.updatedAt > fiveMinutesAgo &&
-            !s.key?.includes(":cron:") // Exclude cron sessions
+            !s.key?.includes(":cron:")
           )
           .map((s) => {
-            // Calculate runtime if we have creation time
             let runtime: string | undefined
             if (s.createdAt) {
               const runtimeMs = Date.now() - s.createdAt
@@ -365,33 +309,17 @@ export default function ChatPage({ params }: PageProps) {
               const seconds = Math.floor((runtimeMs % 60000) / 1000)
               runtime = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
             }
-            
             return {
-              key: s.key as string,
-              label: s.label as string | undefined,
-              model: s.model as string | undefined,
-              status: s.status as string | undefined,
-              agentId: s.agentId as string | undefined,
-              createdAt: s.createdAt as number | undefined,
-              updatedAt: s.updatedAt as number | undefined,
-              runtime,
-              isCron: false,
+              key: s.key as string, label: s.label as string | undefined,
+              model: s.model as string | undefined, status: s.status as string | undefined,
+              agentId: s.agentId as string | undefined, createdAt: s.createdAt as number | undefined,
+              updatedAt: s.updatedAt as number | undefined, runtime, isCron: false,
             }
           })
 
-        // Filter for ALL cron sessions that are recently active
-        // Pattern: agent:main:cron:JOB_ID:LABEL or agent:main:cron:JOB_ID
         const crons = (sessions || [])
-          .filter((s) => {
-            const isRecentlyActive = s.updatedAt && s.updatedAt > fiveMinutesAgo
-            const isCronSession = s.key?.includes(":cron:")
-            
-            console.log(`[Chat] Checking session ${s.key}: active=${isRecentlyActive}, cron=${isCronSession}`)
-            
-            return isRecentlyActive && isCronSession
-          })
+          .filter((s) => s.updatedAt && s.updatedAt > fiveMinutesAgo && s.key?.includes(":cron:"))
           .map((s) => {
-            // Calculate runtime if we have creation time
             let runtime: string | undefined
             if (s.createdAt) {
               const runtimeMs = Date.now() - s.createdAt
@@ -399,38 +327,23 @@ export default function ChatPage({ params }: PageProps) {
               const seconds = Math.floor((runtimeMs % 60000) / 1000)
               runtime = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
             }
-            
-            // Extract meaningful label from cron session key
             let cronLabel = s.label
             if (!cronLabel && s.key) {
-              // Pattern: agent:main:cron:JOB_ID:trap-TASK_ID
               const trapTaskMatch = s.key.match(/:trap-(.+)$/)
-              if (trapTaskMatch) {
-                cronLabel = `Trap: ${trapTaskMatch[1]}`
-              } else if (s.key.match(/:trap-pr-review-/)) {
-                const prMatch = s.key.match(/:trap-pr-review-(\d+)$/)
-                cronLabel = prMatch ? `Trap PR Review #${prMatch[1]}` : "Trap PR Review"
-              } else {
-                // Generic cron job - extract job ID
+              if (trapTaskMatch) cronLabel = `Trap: ${trapTaskMatch[1]}`
+              else {
                 const cronIdMatch = s.key.match(/:cron:([^:]+)/)
                 cronLabel = cronIdMatch ? `Cron Job ${cronIdMatch[1].substring(0, 8)}...` : "Cron Job"
               }
             }
-            
             return {
-              key: s.key as string,
-              label: cronLabel as string | undefined,
-              model: s.model as string | undefined,
-              status: s.status as string | undefined,
-              agentId: s.agentId as string | undefined,
-              createdAt: s.createdAt as number | undefined,
-              updatedAt: s.updatedAt as number | undefined,
-              runtime,
-              isCron: true,
+              key: s.key as string, label: cronLabel as string | undefined,
+              model: s.model as string | undefined, status: s.status as string | undefined,
+              agentId: s.agentId as string | undefined, createdAt: s.createdAt as number | undefined,
+              updatedAt: s.updatedAt as number | undefined, runtime, isCron: true,
             }
           })
 
-        console.log(`[Chat] Active subagents: ${subagents.length}, Active crons: ${crons.length}`)
         setActiveSubagents(subagents)
         setActiveCrons(crons)
       } catch (err) {
@@ -439,24 +352,14 @@ export default function ChatPage({ params }: PageProps) {
     }
     
     pollSubagents()
-    const interval = setInterval(pollSubagents, 10000) // Poll every 10s
+    const interval = setInterval(pollSubagents, 10000)
     return () => clearInterval(interval)
   }, [rpcConnected, listSessions])
 
-  // Refetch messages when tab becomes visible (after being hidden)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && activeChat) {
-        console.log("[Chat] Refetching messages due to tab visibility change")
-        refreshMessages(activeChat.id)
-      }
-    }
+  // ==========================================================================
+  // Project init & chat selection
+  // ==========================================================================
 
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [activeChat, refreshMessages])
-
-  // Fetch project to get ID, settings, and context, then fetch chats
   useEffect(() => {
     async function init() {
       const response = await fetch(`/api/projects/${slug}`)
@@ -466,7 +369,6 @@ export default function ChatPage({ params }: PageProps) {
         setProjectId(data.project.id)
         await fetchChats(data.project.id)
         
-        // Fetch project context for AI sessions
         try {
           const contextResponse = await fetch(`/api/projects/${slug}/context`)
           if (contextResponse.ok) {
@@ -481,22 +383,22 @@ export default function ChatPage({ params }: PageProps) {
     init()
   }, [slug, fetchChats])
 
-  // Auto-select first chat if none selected
   useEffect(() => {
     if (chats.length > 0 && !activeChat) {
       setActiveChat(chats[0])
     }
   }, [chats, activeChat, setActiveChat])
 
+  // ==========================================================================
+  // Message sending
+  // ==========================================================================
+
   const handleSendMessage = async (content: string, images?: string[]) => {
     if (!activeChat) return
     
-    console.log("[Chat] handleSendMessage called, openClawConnected:", openClawConnected)
-    
-    // Check if this is the first message (session not yet established)
     const isFirstMessage = !activeChat.session_key
     
-    // Store session key if this is the first message and we don't have one yet
+    // Store session key on first message
     if (isFirstMessage) {
       try {
         await fetch(`/api/chats/${activeChat.id}`, {
@@ -504,7 +406,6 @@ export default function ChatPage({ params }: PageProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_key: sessionKey }),
         })
-        // Update local state
         setActiveChat({ ...activeChat, session_key: sessionKey })
       } catch (error) {
         console.error("[Chat] Failed to store session key:", error)
@@ -518,140 +419,20 @@ export default function ChatPage({ params }: PageProps) {
       messageContent = content ? `${content}\n\n${imageMarkdown}` : imageMarkdown
     }
     
-    // Save user message to local DB
+    // Save user message to Convex
     await sendMessageToDb(activeChat.id, messageContent, "dan")
     
-    // Build the message to send to OpenClaw
-    // For first message, include project context to establish session scope
+    // Build message for OpenClaw (include project context on first message)
     let openClawMessage = messageContent
     if (isFirstMessage && projectContext) {
       openClawMessage = `[Project Context]\n\n${projectContext}\n\n---\n\n[User Message]\n\n${messageContent}`
-      console.log("[Chat] Including project context for first message")
     }
     
     // Send to OpenClaw via WebSocket
+    // Response persistence is handled by the trap-channel plugin (agent_end hook)
     if (openClawConnected) {
       try {
-        console.log("[Chat] Sending to OpenClaw, sessionKey:", sessionKey)
-        const runId = await sendChatMessage(openClawMessage, sessionKey, activeChat.id)
-        console.log("[Chat] sendChatMessage returned runId:", runId)
-        
-        // Start polling OpenClaw chat history for the assistant response.
-        // The WebSocket chat.message event may not reach this client because
-        // OpenClaw routes responses through the main webchat session, and
-        // broadcasts may not reach the Trap WS client reliably.
-        // This polls the session transcript and saves the response to Convex.
-        const chatId = activeChat.id
-        const currentSessionKey = sessionKey
-        const pollForResponse = async () => {
-          const maxAttempts = 90  // 3 minutes max
-          const pollInterval = 2000  // check every 2 seconds
-          let lastKnownCount = 0
-          
-          // Get initial message count from OpenClaw session
-          try {
-            type HistoryMessage = {
-              role: string
-              content: string | Array<{ type: string; text?: string }>
-              timestamp?: number
-            }
-            const initial = await rpc<{ messages: HistoryMessage[] }>(
-              "chat.history",
-              { sessionKey: currentSessionKey, limit: 200 }
-            )
-            lastKnownCount = initial?.messages?.length ?? 0
-            console.log("[Chat] Initial session message count:", lastKnownCount)
-          } catch {
-            // Can't get initial count, start from 0
-          }
-          
-          for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            await new Promise(r => setTimeout(r, pollInterval))
-            
-            // Check if response already arrived via WebSocket → Convex reactive query
-            const storeMessages = useChatStore.getState().messages[chatId] || []
-            const hasResponse = storeMessages.some(
-              m => m.run_id === runId && m.author !== "dan"
-            )
-            if (hasResponse) {
-              console.log("[Chat] Response already delivered via WS for runId:", runId)
-              setTyping(chatId, "ada", false)
-              return
-            }
-            
-            // Poll OpenClaw session for new assistant message
-            try {
-              type HistoryMessage = {
-                role: string
-                content: string | Array<{ type: string; text?: string }>
-                timestamp?: number
-              }
-              const history = await rpc<{ messages: HistoryMessage[] }>(
-                "chat.history",
-                { sessionKey: currentSessionKey, limit: 200 }
-              )
-              
-              const messages = history?.messages ?? []
-              if (messages.length > lastKnownCount) {
-                // New messages appeared — check for assistant response
-                const newMessages = messages.slice(lastKnownCount)
-                const assistantMsg = newMessages.find(m => m.role === "assistant")
-                
-                if (assistantMsg) {
-                  const content = typeof assistantMsg.content === "string"
-                    ? assistantMsg.content
-                    : assistantMsg.content
-                        ?.filter(c => c.type === "text" && c.text)
-                        .map(c => c.text)
-                        .join("\n\n") ?? ""
-                  
-                  if (content.trim()) {
-                    console.log("[Chat] Found assistant response via polling, saving to Convex")
-                    
-                    // Save to Convex
-                    try {
-                      const resp = await fetch(`/api/chats/${chatId}/messages`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          content: content.trim(),
-                          author: "ada",
-                          run_id: runId,
-                          session_key: currentSessionKey,
-                        }),
-                      })
-                      
-                      if (resp.ok) {
-                        console.log("[Chat] Response saved to Convex successfully")
-                      } else if (resp.status === 409) {
-                        console.log("[Chat] Response already saved (duplicate run_id)")
-                      } else {
-                        console.warn("[Chat] Failed to save response:", resp.status)
-                      }
-                    } catch (saveErr) {
-                      console.error("[Chat] Error saving response:", saveErr)
-                    }
-                    
-                    setTyping(chatId, "ada", false)
-                    return
-                  }
-                }
-                
-                // Update known count even if no assistant message yet
-                // (user message echoed back, tool results, etc.)
-                lastKnownCount = messages.length
-              }
-            } catch (err) {
-              console.warn("[Chat] Poll failed:", err)
-            }
-          }
-          
-          console.warn("[Chat] Polling timeout for runId:", runId)
-          setTyping(chatId, "ada", false)
-        }
-        
-        // Run polling in background (non-blocking)
-        pollForResponse()
+        await sendChatMessage(openClawMessage, sessionKey, activeChat.id)
       } catch (error) {
         console.error("[Chat] Failed to send to OpenClaw:", error)
       }
@@ -663,32 +444,16 @@ export default function ChatPage({ params }: PageProps) {
   const handleStopChat = async () => {
     if (!activeChat) return
     
-    console.log("[Chat] Stopping chat response for chat:", activeChat.id)
-    
     try {
-      // Attempt to abort via OpenClaw
       if (openClawConnected) {
-        console.log("[Chat] Aborting chat via WebSocket")
         await rpc("chat.abort", { sessionKey })
-      } else {
-        console.log("[Chat] OpenClaw not connected, cleaning up local state only")
       }
     } catch (error) {
       console.error("[Chat] Failed to abort chat:", error)
     } finally {
-      // Always clean up local state, even if abort failed
-      console.log("[Chat] Cleaning up local UI state")
-      
-      // Clear typing and streaming state
       setTyping(activeChat.id, "ada", false)
       clearStreamingMessage(activeChat.id)
-      
-      // Show user that response was cancelled
-      await sendMessageToDb(
-        activeChat.id,
-        "_Response cancelled by user_",
-        "system"
-      )
+      await sendMessageToDb(activeChat.id, "_Response cancelled by user_", "system")
     }
   }
 
@@ -697,7 +462,6 @@ export default function ChatPage({ params }: PageProps) {
   }
 
   const handleTaskCreated = async () => {
-    // Optionally post a message linking to the task
     if (activeChat) {
       await sendMessageToDb(
         activeChat.id, 
@@ -709,13 +473,16 @@ export default function ChatPage({ params }: PageProps) {
 
   const currentMessages = activeChat ? messages[activeChat.id] || [] : []
 
+  // ==========================================================================
+  // Render
+  // ==========================================================================
+
   return (
     <>
       {/* Convex reactive sync — bridges real-time data into zustand store */}
       <ConvexChatSync chatId={activeChat?.id ?? null} projectId={projectId} />
 
       <div className="flex h-[calc(100vh-140px)] bg-[var(--bg-primary)] rounded-lg border border-[var(--border)] overflow-hidden min-w-0 max-w-full">
-        {/* Sidebar - Desktop: always visible, Mobile: drawer */}
         {projectId && (
           <ChatSidebar 
             projectId={projectId}
@@ -726,14 +493,11 @@ export default function ChatPage({ params }: PageProps) {
           />
         )}
         
-        {/* Main chat area - constrained to prevent wide content from pushing sidebar */}
         <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-hidden">
           {activeChat ? (
             <>
-              {/* Chat header */}
               <div className="border-b border-[var(--border)]">
                 <div className="flex items-center">
-                  {/* Mobile menu button */}
                   {isMobile && (
                     <Button
                       variant="ghost"
@@ -749,12 +513,9 @@ export default function ChatPage({ params }: PageProps) {
                   </div>
                 </div>
                 
-                {/* Status bar - compact on mobile */}
                 <div className="px-2 md:px-4 py-1.5 md:py-2 border-t border-[var(--border)]/50 bg-[var(--bg-secondary)]/30">
                   <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
-                      {/* Participants display removed - user knows who they're chatting with */}
-                    </div>
+                    <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0" />
                     <div className="flex items-center gap-2 md:gap-3">
                       <StreamingToggle 
                         enabled={settings.streamingEnabled} 
@@ -773,7 +534,6 @@ export default function ChatPage({ params }: PageProps) {
                 </div>
               </div>
               
-              {/* Messages */}
               <ChatThread 
                 chatId={activeChat.id}
                 messages={currentMessages} 
@@ -786,7 +546,6 @@ export default function ChatPage({ params }: PageProps) {
                 projectSlug={slug}
               />
               
-              {/* Input */}
               <ChatInput 
                 onSend={handleSendMessage}
                 onStop={handleStopChat}
@@ -810,7 +569,6 @@ export default function ChatPage({ params }: PageProps) {
         </div>
       </div>
       
-      {/* Create Task Modal */}
       {createTaskMessage && projectId && (
         <CreateTaskFromMessage
           message={createTaskMessage}
@@ -823,4 +581,3 @@ export default function ChatPage({ params }: PageProps) {
     </>
   )
 }
-// Updated
