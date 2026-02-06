@@ -50,6 +50,10 @@ interface ChatState {
   finalizeStreamingMessage: (chatId: string, finalMessage?: ChatMessage) => void
   clearStreamingMessage: (chatId: string) => void
   
+  // Convex sync
+  syncMessages: (chatId: string, messages: ChatMessage[]) => void
+  syncChats: (chats: ChatWithLastMessage[]) => void
+  
   // Scroll position tracking
   setScrollPosition: (chatId: string, position: number) => void
   getScrollPosition: (chatId: string) => number
@@ -404,6 +408,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
       
       return {
         streamingMessages: newStreamingMessages,
+      }
+    })
+  },
+
+  // Sync messages from Convex reactive query (replaces fetch-based loading)
+  syncMessages: (chatId, messages) => {
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [chatId]: messages,
+      },
+      loadingMessages: false,
+    }))
+  },
+
+  // Sync chat list from Convex reactive query
+  syncChats: (chats) => {
+    set((state) => {
+      // Preserve activeChat reference if it still exists
+      const activeChat = state.activeChat
+        ? chats.find((c) => c.id === state.activeChat?.id) ?? state.activeChat
+        : state.activeChat
+
+      return {
+        chats,
+        activeChat,
+        loading: false,
       }
     })
   },

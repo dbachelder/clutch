@@ -11,6 +11,7 @@ import { ChatSidebar } from "@/components/chat/chat-sidebar"
 import { ChatThread } from "@/components/chat/chat-thread"
 import { ChatInput } from "@/components/chat/chat-input"
 import { ChatHeader } from "@/components/chat/chat-header"
+import { ConvexChatSync } from "@/components/chat/convex-sync"
 import { CreateTaskFromMessage } from "@/components/chat/create-task-from-message"
 import { StreamingToggle } from "@/components/chat/streaming-toggle"
 import { SessionInfoDropdown } from "@/components/chat/session-info-dropdown"
@@ -581,6 +582,9 @@ export default function ChatPage({ params }: PageProps) {
 
   return (
     <>
+      {/* Convex reactive sync — bridges real-time data into zustand store */}
+      <ConvexChatSync chatId={activeChat?.id ?? null} projectId={projectId} />
+
       <div className="flex h-[calc(100vh-140px)] bg-[var(--bg-primary)] rounded-lg border border-[var(--border)] overflow-hidden min-w-0 max-w-full">
         {/* Sidebar - Desktop: always visible, Mobile: drawer */}
         {projectId && (
