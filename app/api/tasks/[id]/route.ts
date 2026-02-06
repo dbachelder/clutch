@@ -49,11 +49,34 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const convex = getConvexClient()
 
-    // Build updates object — only include fields that were explicitly provided
+    // If status is changing, use the move mutation (handles dependencies + position)
+    if (status !== undefined) {
+      // First do the status change via move
+      const movedTask = await convex.mutation(api.tasks.move, { id, status })
+
+      // If there are other fields to update, do that separately
+      const otherUpdates: Record<string, unknown> = {}
+      if (title !== undefined) otherUpdates.title = title
+      if (description !== undefined) otherUpdates.description = description || undefined
+      if (priority !== undefined) otherUpdates.priority = priority
+      if (role !== undefined) otherUpdates.role = role || undefined
+      if (assignee !== undefined) otherUpdates.assignee = assignee || undefined
+      if (requires_human_review !== undefined) otherUpdates.requires_human_review = !!requires_human_review
+      if (tags !== undefined) otherUpdates.tags = tags ? (typeof tags === "string" ? tags : JSON.stringify(tags)) : undefined
+      if (session_id !== undefined) otherUpdates.session_id = session_id || undefined
+
+      if (Object.keys(otherUpdates).length > 0) {
+        const task = await convex.mutation(api.tasks.update, { id, ...otherUpdates })
+        return NextResponse.json({ task })
+      }
+
+      return NextResponse.json({ task: movedTask })
+    }
+
+    // No status change — just update fields
     const updates: Record<string, unknown> = {}
     if (title !== undefined) updates.title = title
     if (description !== undefined) updates.description = description || undefined
-    if (status !== undefined) updates.status = status
     if (priority !== undefined) updates.priority = priority
     if (role !== undefined) updates.role = role || undefined
     if (assignee !== undefined) updates.assignee = assignee || undefined
