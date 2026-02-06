@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { FileText, Loader2 } from 'lucide-react'
+import { FileText, Loader2, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { RoleSidebar } from './components/role-sidebar'
 import { VersionList } from './components/version-list'
 import { EditorDialog } from './components/editor-dialog'
+import { AmendmentQueue } from './components/amendment-queue'
 import type { PromptVersion } from './types'
 
 const ROLES = [
@@ -18,7 +20,10 @@ const ROLES = [
   { id: 'analyzer', label: 'Analyzer' },
 ] as const
 
+type Tab = 'versions' | 'amendments'
+
 export default function PromptsPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('versions')
   const [selectedRole, setSelectedRole] = useState<string>('dev')
   const [selectedModel, setSelectedModel] = useState<string>('default')
   const [versions, setVersions] = useState<PromptVersion[]>([])
@@ -26,11 +31,10 @@ export default function PromptsPage() {
   const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [editorMode, setEditorMode] = useState<'create' | 'duplicate'>('create')
   const [duplicateSource, setDuplicateSource] = useState<PromptVersion | null>(null)
+  const [amendmentCount, setAmendmentCount] = useState(0)
 
-  // Fetch all versions on mount
   const fetchVersions = useCallback(async () => {
     try {
-      // Fetch versions for all roles to populate sidebar counts
       const allVersions: PromptVersion[] = []
       for (const role of ROLES) {
         const res = await fetch(`/api/prompts?role=${role.id}`)
@@ -48,9 +52,23 @@ export default function PromptsPage() {
     }
   }, [])
 
+  // Fetch amendment count for the badge
+  const fetchAmendmentCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/prompts/amendments')
+      if (res.ok) {
+        const data = await res.json()
+        setAmendmentCount(data.analyses?.length ?? 0)
+      }
+    } catch {
+      // Non-critical, silently ignore
+    }
+  }, [])
+
   useEffect(() => {
     fetchVersions()
-  }, [fetchVersions])
+    fetchAmendmentCount()
+  }, [fetchVersions, fetchAmendmentCount])
 
   const handleSetActive = async (version: PromptVersion) => {
     try {
@@ -62,7 +80,6 @@ export default function PromptsPage() {
         throw new Error('Failed to activate version')
       }
 
-      // Update local state
       setVersions(prev => prev.map(v => ({
         ...v,
         active: v.role === version.role && v.model === version.model
@@ -111,6 +128,11 @@ export default function PromptsPage() {
     setIsEditorOpen(true)
   }
 
+  const handleVersionCreated = () => {
+    fetchVersions()
+    fetchAmendmentCount()
+  }
+
   const roleLabel = ROLES.find(r => r.id === selectedRole)?.label || selectedRole
   const modelLabel = selectedModel === 'default' ? '' : ` (${selectedModel})`
 
@@ -124,42 +146,95 @@ export default function PromptsPage() {
 
   return (
     <div className="h-[calc(100vh-4rem)] flex">
-      {/* Sidebar */}
-      <RoleSidebar
-        selectedRole={selectedRole}
-        selectedModel={selectedModel}
-        onSelectRole={setSelectedRole}
-        onSelectModel={setSelectedModel}
-        versions={versions}
-        onNewVersion={handleNewVersion}
-      />
+      {/* Sidebar — only shown on versions tab */}
+      {activeTab === 'versions' && (
+        <RoleSidebar
+          selectedRole={selectedRole}
+          selectedModel={selectedModel}
+          onSelectRole={setSelectedRole}
+          onSelectModel={setSelectedModel}
+          versions={versions}
+          onNewVersion={handleNewVersion}
+        />
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
-          <div className="flex items-center gap-3">
-            <FileText className="h-5 w-5 text-[var(--text-muted)]" />
-            <div>
-              <h1 className="text-lg font-semibold text-[var(--text-primary)]">
-                {roleLabel}{modelLabel}
-              </h1>
-              <p className="text-sm text-[var(--text-muted)]">
-                Version history and prompt templates
-              </p>
+        {/* Header with tabs */}
+        <div className="border-b border-[var(--border)]">
+          <div className="flex items-center justify-between px-6 py-4">
+            <div className="flex items-center gap-3">
+              <FileText className="h-5 w-5 text-[var(--text-muted)]" />
+              <div>
+                <h1 className="text-lg font-semibold text-[var(--text-primary)]">
+                  {activeTab === 'versions'
+                    ? `${roleLabel}${modelLabel}`
+                    : 'Amendment Queue'}
+                </h1>
+                <p className="text-sm text-[var(--text-muted)]">
+                  {activeTab === 'versions'
+                    ? 'Version history and prompt templates'
+                    : 'Review AI-suggested prompt changes'}
+                </p>
+              </div>
             </div>
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex px-6 gap-1">
+            <button
+              onClick={() => setActiveTab('versions')}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+                activeTab === 'versions'
+                  ? 'border-[var(--accent-blue)] text-[var(--accent-blue)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Versions
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('amendments')}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+                activeTab === 'amendments'
+                  ? 'border-[var(--accent-blue)] text-[var(--accent-blue)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <ListChecks className="h-4 w-4" />
+                Amendments
+                {amendmentCount > 0 && (
+                  <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-xs font-medium bg-[var(--accent-blue)] text-white">
+                    {amendmentCount}
+                  </span>
+                )}
+              </span>
+            </button>
           </div>
         </div>
 
-        {/* Version list */}
+        {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-6">
-          <VersionList
-            versions={versions}
-            selectedRole={selectedRole}
-            selectedModel={selectedModel}
-            onSetActive={handleSetActive}
-            onDuplicate={handleDuplicate}
-          />
+          {activeTab === 'versions' && (
+            <VersionList
+              versions={versions}
+              selectedRole={selectedRole}
+              selectedModel={selectedModel}
+              onSetActive={handleSetActive}
+              onDuplicate={handleDuplicate}
+            />
+          )}
+          {activeTab === 'amendments' && (
+            <AmendmentQueue
+              versions={versions}
+              onVersionCreated={handleVersionCreated}
+            />
+          )}
         </div>
       </div>
 
