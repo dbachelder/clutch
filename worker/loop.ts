@@ -34,6 +34,8 @@ interface ProjectInfo {
   name: string
   work_loop_enabled: boolean
   work_loop_max_agents?: number | null
+  github_repo?: string | null
+  local_path?: string | null
 }
 
 // ============================================
@@ -64,6 +66,67 @@ process.on("SIGINT", () => {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// ============================================
+// Child Reaping
+// ============================================
+
+/**
+ * Reap completed children and update their tasks accordingly.
+ *
+ * - Exit code 0: Log success (agent should have moved task to in_review/done)
+ * - Exit non-zero: Reset task to ready for retry, log failure
+ */
+async function reapChildren(
+  convex: ConvexHttpClient,
+  projectId: string
+): Promise<number> {
+  const reaped = childManager.reap()
+  let actionsCount = 0
+
+  for (const child of reaped) {
+    if (child.exitCode === 0) {
+      // Success - agent should have already moved task to next status
+      await logRun(convex, {
+        projectId,
+        cycle,
+        phase: "cleanup",
+        action: "child_completed",
+        taskId: child.taskId,
+        details: { exitCode: 0, durationMs: child.durationMs },
+      })
+    } else {
+      // Failure - reset task to ready for retry
+      try {
+        await convex.mutation(api.tasks.move, {
+          id: child.taskId,
+          status: "ready",
+        })
+        await logRun(convex, {
+          projectId,
+          cycle,
+          phase: "cleanup",
+          action: "child_failed_reset",
+          taskId: child.taskId,
+          details: { exitCode: child.exitCode, durationMs: child.durationMs },
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        await logRun(convex, {
+          projectId,
+          cycle,
+          phase: "error",
+          action: "child_reset_failed",
+          taskId: child.taskId,
+          details: { exitCode: child.exitCode, error: message },
+        })
+      }
+    }
+    actionsCount++
+  }
+
+  return actionsCount
 }
 
 // ============================================
@@ -140,6 +203,10 @@ async function runProjectCycle(
   project: ProjectInfo
 ): Promise<void> {
   const cycleStart = Date.now()
+  const config = loadConfig()
+
+  // --- 1. Reap completed children ---
+  const reapedCount = await reapChildren(convex, project.id)
 
   // Update state to show we're starting a cycle
   await convex.mutation(api.workLoop.upsertState, {
@@ -158,8 +225,8 @@ async function runProjectCycle(
     project.id,
     "cleanup",
     async () => {
-      // TODO: Implement in ticket 5
-      return { success: true, actions: 0 }
+      // Reaped children count as cleanup actions
+      return { success: true, actions: reapedCount }
     }
   )
 
@@ -183,10 +250,12 @@ async function runProjectCycle(
         convex,
         children: childManager,
         sessions: sessionsPoller,
-        config: loadConfig(),
+        config,
         cycle,
         projectId: project.id,
-        log: (params) => logRun(convex, params),
+        log: async (params) => {
+          await logRun(convex, params)
+        },
       })
       return { success: true, actions: result.spawnedCount }
     }
@@ -203,7 +272,6 @@ async function runProjectCycle(
   })
 
   // Phase 3: Work
-  const config = loadConfig()
   const workResult = await runPhase(
     convex,
     project.id,
@@ -225,6 +293,35 @@ async function runProjectCycle(
       }
     }
   )
+
+  // --- 4. Poll sessions for health check ---
+  try {
+    const sessions = await sessionsPoller.poll(30)
+    const sessionHealth = {
+      activeSessions: sessions.length,
+      errors: sessions.filter((s) => s.abortedLastRun).length,
+    }
+    // Log health metrics if there are issues
+    if (sessionHealth.errors > 0) {
+      await logRun(convex, {
+        projectId: project.id,
+        cycle,
+        phase: "idle",
+        action: "session_health_warning",
+        details: sessionHealth,
+      })
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[WorkLoop] Failed to poll sessions: ${message}`)
+    await logRun(convex, {
+      projectId: project.id,
+      cycle,
+      phase: "idle",
+      action: "session_poll_failed",
+      details: { error: message },
+    })
+  }
 
   // Calculate cycle duration and log completion
   const cycleDurationMs = Date.now() - cycleStart
@@ -277,6 +374,8 @@ async function getEnabledProjects(convex: ConvexHttpClient): Promise<ProjectInfo
         name: p.name,
         work_loop_enabled: Boolean(p.work_loop_enabled),
         work_loop_max_agents: p.work_loop_max_agents,
+        github_repo: p.github_repo,
+        local_path: p.local_path,
       }))
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -350,14 +449,18 @@ async function main(): Promise<void> {
           const message = error instanceof Error ? error.message : String(error)
           console.error(`[WorkLoop] Error in cycle ${cycle} for project ${project.slug}: ${message}`)
 
-          // Log error to Convex
-          await logRun(convex, {
-            projectId: project.id,
-            cycle,
-            phase: "error",
-            action: "cycle_error",
-            details: { error: message },
-          })
+          // Log error to Convex (don't crash the loop)
+          try {
+            await logRun(convex, {
+              projectId: project.id,
+              cycle,
+              phase: "error",
+              action: "cycle_error",
+              details: { error: message },
+            })
+          } catch (logError) {
+            console.error(`[WorkLoop] Failed to log error to Convex:`, logError)
+          }
         }
       }
     }
