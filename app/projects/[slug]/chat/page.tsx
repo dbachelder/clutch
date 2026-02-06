@@ -13,7 +13,7 @@ import { CreateTaskFromMessage } from "@/components/chat/create-task-from-messag
 import { StreamingToggle } from "@/components/chat/streaming-toggle"
 import { SessionInfoDropdown } from "@/components/chat/session-info-dropdown"
 import { Button } from "@/components/ui/button"
-import { sendChatMessage, abortChat, rpc } from "@/lib/openclaw/rpc"
+import { sendChatMessage, abortSession, openclawRpc } from "@/lib/openclaw"
 import { useOpenClawHttpRpc } from "@/lib/hooks/use-openclaw-http"
 import type { ChatMessage } from "@/lib/types"
 
@@ -119,11 +119,11 @@ export default function ChatPage({ params }: PageProps) {
       }
 
       try {
-        const response = await rpc<{ sessions: Array<Record<string, unknown>> }>("sessions.list", { limit: 200 })
+        const response = await openclawRpc<{ sessions: Array<Record<string, unknown>> }>("sessions.list", { limit: 200 })
         const sessions = response.sessions || []
         // OpenClaw RPC returns keys with "agent:main:" prefix, chat stores without it
-        const session = sessions.find(s => s.key === activeChat.session_key)
-          || sessions.find(s => String(s.key || '').endsWith(activeChat.session_key!))
+        const session = sessions.find((s: Record<string, unknown>) => s.key === activeChat.session_key)
+          || sessions.find((s: Record<string, unknown>) => String(s.key || '').endsWith(activeChat.session_key!))
         if (session) {
           const totalTokens = (session.totalTokens as number) || 0
           const contextWindow = (session.contextTokens as number) || 200000
@@ -298,7 +298,7 @@ export default function ChatPage({ params }: PageProps) {
     // Send to OpenClaw via HTTP POST
     // Response persistence is handled by the trap-channel plugin (agent_end hook)
     try {
-      await sendChatMessage(openClawMessage, sessionKey, activeChat.id)
+      await sendChatMessage(sessionKey, openClawMessage)
     } catch (error) {
       console.error("[Chat] Failed to send to OpenClaw:", error)
     }
@@ -308,7 +308,7 @@ export default function ChatPage({ params }: PageProps) {
     if (!activeChat) return
 
     try {
-      await abortChat(sessionKey)
+      await abortSession(sessionKey)
     } catch (error) {
       console.error("[Chat] Failed to abort chat:", error)
     } finally {
