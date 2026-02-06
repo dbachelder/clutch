@@ -496,10 +496,6 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
 
   // Send chat message
   const sendChatMessage = useCallback(async (message: string, sessionKey = 'main', trapChatId?: string): Promise<string> => {
-    if (status !== 'connected') {
-      throw new Error('Not connected to OpenClaw');
-    }
-
     setIsSending(true);
     const idempotencyKey = generateUUID();
     
@@ -508,6 +504,7 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
       : message;
 
     try {
+      // rpc() has HTTP fallback when WS is disconnected
       const result = await rpc<{ runId: string; status: string }>('chat.send', {
         sessionKey,
         message: contextMessage,
@@ -526,7 +523,7 @@ export function OpenClawWSProvider({ children }: OpenClawWSProviderProps) {
       setIsSending(false);
       throw error;
     }
-  }, [status, rpc, emitEvent]);
+  }, [rpc, emitEvent]);
 
   // Connect on mount, cleanup on unmount
   useEffect(() => {

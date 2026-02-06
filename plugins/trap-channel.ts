@@ -3,11 +3,14 @@
  * 
  * Enables bidirectional communication between OpenClaw and the Trap UI.
  * 
- * Install:
- *   ln -s /home/dan/src/trap/plugins/trap-channel.ts ~/.openclaw/extensions/
+ * How it works:
+ *   1. Trap frontend sends messages via OpenClaw WebSocket (chat.send RPC)
+ *   2. OpenClaw processes the message in the agent session
+ *   3. On agent_end, this plugin detects trap:* session keys
+ *   4. Extracts the assistant response and POSTs it to Trap API → Convex
+ *   5. Convex reactive query updates the Trap UI
  * 
- * Outbound: Plugin POSTs to Trap API when agent responds
- * Inbound: Trap POSTs to OpenClaw /hooks/agent endpoint
+ * Session key format: trap:{projectSlug}:{chatId}
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
@@ -16,43 +19,38 @@ function getTrapUrl(api: OpenClawPluginApi): string {
   return api.config.env?.TRAP_URL || api.config.env?.TRAP_API_URL || "http://localhost:3002";
 }
 
-function detectAutomatedContext(api: OpenClawPluginApi, chatId: string): boolean {
-  // Check environment variables that indicate automated execution
-  const env = api.config.env || {};
+/**
+ * Parse a trap session key into its components.
+ * Format: trap:{projectSlug}:{chatId}
+ */
+function parseTrapSessionKey(sessionKey: string): { projectSlug: string; chatId: string } | null {
+  const match = sessionKey.match(/^trap:([^:]+):(.+)$/);
+  if (!match) return null;
+  return { projectSlug: match[1], chatId: match[2] };
+}
+
+/**
+ * Extract text content from an agent message.
+ * Handles both string content and structured content arrays.
+ */
+function extractTextContent(message: unknown): string {
+  if (!message || typeof message !== "object") return "";
   
-  // Check if this is a cron job execution
-  if (env.CRON_JOB_ID || env.CRON_NAME || env.AUTOMATED_RUN) {
-    return true;
+  const msg = message as Record<string, unknown>;
+  const content = msg.content;
+  
+  if (typeof content === "string") return content;
+  
+  if (Array.isArray(content)) {
+    return content
+      .filter((c): c is { type: string; text: string } => 
+        c && typeof c === "object" && c.type === "text" && typeof c.text === "string"
+      )
+      .map(c => c.text)
+      .join("\n\n");
   }
   
-  // Check for cron-specific indicators in the chat ID or session context
-  // Cron sessions typically have identifiable patterns in their IDs
-  if (chatId && typeof chatId === 'string') {
-    // Check if the chat ID contains cron-related patterns
-    if (chatId.includes('cron:') || chatId.includes(':cron') || 
-        chatId.includes('automated') || chatId.includes('background')) {
-      return true;
-    }
-    
-    // Check for sub-agent session patterns (which are often spawned by cron)
-    if (chatId.includes('trap:') && chatId.includes('-')) {
-      // This might be a sub-agent session ID pattern
-      return true;
-    }
-  }
-  
-  // Check for runtime flags that might indicate automation
-  const runtime = api.runtime || {};
-  if (runtime && typeof runtime === 'object') {
-    // Check if there are any automation indicators in runtime
-    const runtimeStr = JSON.stringify(runtime).toLowerCase();
-    if (runtimeStr.includes('cron') || runtimeStr.includes('automated') || runtimeStr.includes('background')) {
-      return true;
-    }
-  }
-  
-  // Default to false for interactive sessions
-  return false;
+  return "";
 }
 
 async function sendToTrap(
@@ -60,26 +58,36 @@ async function sendToTrap(
   chatId: string,
   content: string,
   options?: {
+    runId?: string;
+    sessionKey?: string;
     mediaUrl?: string;
     isAutomated?: boolean;
   }
 ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
   const trapUrl = getTrapUrl(api);
-  const { mediaUrl, isAutomated } = options || {};
-  
-  // If isAutomated is explicitly provided, use it; otherwise detect from context
-  const shouldMarkAsAutomated = isAutomated !== undefined ? isAutomated : detectAutomatedContext(api, chatId);
+  const { runId, sessionKey, mediaUrl, isAutomated } = options || {};
   
   try {
+    const body: Record<string, unknown> = {
+      author: "ada",
+      content: mediaUrl ? `${content}\n\n📎 ${mediaUrl}` : content,
+      is_automated: isAutomated ?? false,
+    };
+    
+    if (runId) body.run_id = runId;
+    if (sessionKey) body.session_key = sessionKey;
+    
     const response = await fetch(`${trapUrl}/api/chats/${chatId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        author: "ada",
-        content: mediaUrl ? `${content}\n\n📎 ${mediaUrl}` : content,
-        is_automated: shouldMarkAsAutomated,
-      }),
+      body: JSON.stringify(body),
     });
+
+    if (response.status === 409) {
+      // Duplicate run_id — message already saved (e.g. by frontend polling)
+      api.logger.info(`Trap: message already saved (duplicate run_id: ${runId})`);
+      return { ok: true };
+    }
 
     if (!response.ok) {
       const error = await response.text();
@@ -97,6 +105,58 @@ async function sendToTrap(
 }
 
 export default function register(api: OpenClawPluginApi) {
+  // =========================================================================
+  // agent_end hook — persist assistant responses to Trap/Convex
+  // =========================================================================
+  api.on("agent_end", async (event, ctx) => {
+    const sessionKey = ctx.sessionKey;
+    if (!sessionKey) return;
+    
+    // Only handle trap:* sessions
+    const parsed = parseTrapSessionKey(sessionKey);
+    if (!parsed) return;
+    
+    const { chatId } = parsed;
+    
+    if (!event.success) {
+      api.logger.warn(`Trap: agent_end failed for chat ${chatId}: ${event.error}`);
+      return;
+    }
+    
+    // Find the last assistant message in the transcript
+    const messages = event.messages || [];
+    let lastAssistantContent = "";
+    
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as Record<string, unknown>;
+      if (msg?.role === "assistant") {
+        lastAssistantContent = extractTextContent(msg);
+        break;
+      }
+    }
+    
+    if (!lastAssistantContent.trim()) {
+      api.logger.info(`Trap: no assistant content to save for chat ${chatId}`);
+      return;
+    }
+    
+    // POST the response to Trap API → Convex
+    api.logger.info(`Trap: saving assistant response to chat ${chatId} (${lastAssistantContent.length} chars)`);
+    const result = await sendToTrap(api, chatId, lastAssistantContent.trim(), {
+      sessionKey,
+      isAutomated: false,
+    });
+    
+    if (result.ok) {
+      api.logger.info(`Trap: response saved to chat ${chatId}`);
+    } else {
+      api.logger.warn(`Trap: failed to save response to chat ${chatId}: ${result.error}`);
+    }
+  });
+
+  // =========================================================================
+  // Channel registration (for outbound messaging via message tool)
+  // =========================================================================
   api.registerChannel({
     plugin: {
       id: "trap",
@@ -119,13 +179,9 @@ export default function register(api: OpenClawPluginApi) {
       outbound: {
         deliveryMode: "direct",
         
-        // Send typing indicator to Trap chat
         sendTypingIndicator: async (ctx) => {
           const { to, isTyping } = ctx;
-          
-          if (!to) {
-            return { ok: false, error: "No chat ID (to) provided" };
-          }
+          if (!to) return { ok: false, error: "No chat ID (to) provided" };
 
           const trapUrl = getTrapUrl(api);
           try {
@@ -134,69 +190,39 @@ export default function register(api: OpenClawPluginApi) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ typing: isTyping, author: "ada" }),
             });
-
             if (!response.ok) {
               api.logger.warn(`Trap: typing indicator failed - ${response.status}`);
               return { ok: false, error: `HTTP ${response.status}` };
             }
-
             return { ok: true };
           } catch (error) {
             api.logger.warn(`Trap: typing indicator error - ${error}`);
-            return { 
-              ok: false, 
-              error: error instanceof Error ? error.message : "Unknown error" 
-            };
+            return { ok: false, error: error instanceof Error ? error.message : "Unknown error" };
           }
         },
         
-        // Send text message to Trap chat
-        // Automation status is now detected automatically based on execution context
         sendText: async (ctx) => {
           const { to, text } = ctx;
-          
-          if (!to) {
-            return { ok: false, error: "No chat ID (to) provided" };
-          }
+          if (!to) return { ok: false, error: "No chat ID (to) provided" };
 
-          api.logger.info(`Trap: sending text to chat ${to}`);
+          api.logger.info(`Trap: sendText to chat ${to}`);
           const result = await sendToTrap(api, to, text);
-          
-          if (!result.ok) {
-            api.logger.warn(`Trap: failed to send - ${result.error}`);
-          }
-          
-          return { 
-            ok: result.ok, 
-            messageId: result.messageId,
-            error: result.error ? new Error(result.error) : undefined,
-          };
+          if (!result.ok) api.logger.warn(`Trap: sendText failed - ${result.error}`);
+          return { ok: result.ok, messageId: result.messageId, error: result.error ? new Error(result.error) : undefined };
         },
         
-        // Send media to Trap chat (include URL in message)
         sendMedia: async (ctx) => {
           const { to, text, mediaUrl } = ctx;
-          
-          if (!to) {
-            return { ok: false, error: "No chat ID (to) provided" };
-          }
+          if (!to) return { ok: false, error: "No chat ID (to) provided" };
 
-          api.logger.info(`Trap: sending media to chat ${to}`);
+          api.logger.info(`Trap: sendMedia to chat ${to}`);
           const result = await sendToTrap(api, to, text || "📎 Attachment", { mediaUrl });
-          
-          if (!result.ok) {
-            api.logger.warn(`Trap: failed to send media - ${result.error}`);
-          }
-          
-          return { 
-            ok: result.ok, 
-            messageId: result.messageId,
-            error: result.error ? new Error(result.error) : undefined,
-          };
+          if (!result.ok) api.logger.warn(`Trap: sendMedia failed - ${result.error}`);
+          return { ok: result.ok, messageId: result.messageId, error: result.error ? new Error(result.error) : undefined };
         },
       },
     },
   });
 
-  api.logger.info("Trap channel plugin loaded");
+  api.logger.info("Trap channel plugin loaded (with agent_end hook)");
 }

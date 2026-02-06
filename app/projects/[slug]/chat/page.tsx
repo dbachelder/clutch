@@ -204,7 +204,7 @@ export default function ChatPage({ params }: PageProps) {
         const sessions = response.sessions || []
         // OpenClaw RPC returns keys with "agent:main:" prefix, chat stores without it
         const session = sessions.find(s => s.key === activeChat.session_key)
-          || sessions.find(s => String(s.key || '').endsWith(activeChat.session_key))
+          || sessions.find(s => String(s.key || '').endsWith(activeChat.session_key!))
         if (session) {
           const totalTokens = (session.totalTokens as number) || 0
           const contextWindow = (session.contextTokens as number) || 200000
