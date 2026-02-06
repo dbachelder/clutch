@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { fetchMutation } from "convex/nextjs"
+import { getConvexClient } from "@/lib/convex/server"
 import { api } from "@/convex/_generated/api"
 
 // PATCH /api/work-loop/state — Update work loop state
@@ -24,7 +24,8 @@ export async function PATCH(request: NextRequest) {
 
     // Upsert the state with provided values
     // Convex will handle creating new or updating existing
-    const updatedState = await fetchMutation(api.workLoop.upsertState, {
+    const convex = getConvexClient()
+    const updatedState = await convex.mutation(api.workLoop.upsertState, {
       project_id: projectId,
       status,
       current_phase,
