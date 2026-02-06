@@ -10,9 +10,22 @@
 
 import { ConvexReactClient } from "convex/react"
 
-// Hardcoded for self-hosted Convex — Turbopack doesn't inline NEXT_PUBLIC_ env vars
-// into the client bundle correctly, causing the Convex client to fall back to ws://localhost:3003
-const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "http://127.0.0.1:3210"
+// Self-hosted Convex — use the server's LAN IP so browsers on other machines can connect.
+// Turbopack doesn't inline NEXT_PUBLIC_ env vars reliably, so we derive the URL at runtime
+// from the current page origin (same host, port 3210).
+function getConvexUrl(): string {
+  if (process.env.NEXT_PUBLIC_CONVEX_URL) {
+    return process.env.NEXT_PUBLIC_CONVEX_URL
+  }
+  // In the browser, use the same hostname the page was loaded from
+  if (typeof window !== "undefined") {
+    return `http://${window.location.hostname}:3210`
+  }
+  // Server-side fallback
+  return "http://127.0.0.1:3210"
+}
+
+const CONVEX_URL = getConvexUrl()
 
 if (typeof window !== "undefined" && !CONVEX_URL) {
   console.error("NEXT_PUBLIC_CONVEX_URL environment variable is required for client-side Convex")
