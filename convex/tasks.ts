@@ -543,6 +543,14 @@ export const move = mutation({
       position: newPosition,
       updated_at: now,
       completed_at: wasCompleted ? now : existing.completed_at,
+      // Clear stale agent fields when status changes —
+      // new agent (if any) will write its own info after spawn
+      agent_session_key: undefined,
+      agent_model: undefined,
+      agent_started_at: undefined,
+      agent_last_active_at: undefined,
+      agent_tokens_in: undefined,
+      agent_tokens_out: undefined,
     })
 
     const updated = await ctx.db.get(existing._id)

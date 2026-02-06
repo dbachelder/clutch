@@ -139,7 +139,7 @@ interface TaskProcessResult {
 }
 
 async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessResult> {
-  const { agents, projectId } = ctx
+  const { convex, agents, projectId } = ctx
 
   // Derive branch name from task ID (first 8 chars)
   const branchName = `fix/${task.id.slice(0, 8)}`
@@ -184,6 +184,25 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
       model: "sonnet",
       timeoutSeconds: 600,
     })
+
+    // Write reviewer agent info to task (same pattern as work phase)
+    try {
+      await convex.mutation(api.tasks.update, {
+        id: task.id,
+        session_id: handle.sessionKey,
+      })
+      await convex.mutation(api.tasks.updateAgentActivity, {
+        updates: [{
+          task_id: task.id,
+          agent_session_key: handle.sessionKey,
+          agent_model: "sonnet",
+          agent_started_at: handle.spawnedAt,
+          agent_last_active_at: handle.spawnedAt,
+        }],
+      })
+    } catch (updateError) {
+      console.error(`[ReviewPhase] Failed to update task agent info:`, updateError)
+    }
 
     return {
       spawned: true,
