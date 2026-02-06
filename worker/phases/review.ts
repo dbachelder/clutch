@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process"
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
-import type { ChildManager } from "../children"
-import type { SessionsPoller } from "../sessions"
+import type { AgentManager } from "../agent-manager"
+// SessionsPoller removed — agent tracking now via AgentManager + Convex
 import type { WorkLoopConfig } from "../config"
 import type { Task } from "../../lib/types"
 
@@ -25,8 +25,8 @@ interface LogRunParams {
 
 interface ReviewContext {
   convex: ConvexHttpClient
-  children: ChildManager
-  sessions: SessionsPoller
+  agents: AgentManager
+  sessions?: unknown // unused, kept for interface compat
   config: WorkLoopConfig
   cycle: number
   projectId: string
@@ -64,7 +64,7 @@ interface PRInfo {
  * 4. Spawn via ChildManager with role="reviewer", model="sonnet"
  */
 export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
-  const { convex, children, config, cycle, projectId } = ctx
+  const { convex, agents, config, cycle, projectId } = ctx
 
   let spawnedCount = 0
   let skippedCount = 0
@@ -100,7 +100,7 @@ export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
     })
 
     // Check global limits after each spawn
-    const globalActive = children.activeCount()
+    const globalActive = agents.activeCount()
     if (globalActive >= config.maxAgentsGlobal) {
       await ctx.log({
         projectId,
@@ -113,7 +113,7 @@ export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
     }
 
     // Check project limits
-    const projectActive = children.activeCount(projectId)
+    const projectActive = agents.activeCount(projectId)
     if (projectActive >= config.maxAgentsPerProject) {
       await ctx.log({
         projectId,
@@ -139,20 +139,20 @@ interface TaskProcessResult {
 }
 
 async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessResult> {
-  const { children, projectId } = ctx
+  const { agents, projectId } = ctx
 
   // Derive branch name from task ID (first 8 chars)
   const branchName = `fix/${task.id.slice(0, 8)}`
 
-  // Check if reviewer already running for this task
-  const existingChild = children.get(task.id)
-  if (existingChild && existingChild.exitCode === null) {
+  // Check if agent already running for this task
+  if (agents.has(task.id)) {
+    const existing = agents.get(task.id)
     return {
       spawned: false,
       details: {
         reason: "reviewer_already_running",
         taskId: task.id,
-        sessionKey: existingChild.sessionKey,
+        sessionKey: existing?.sessionKey,
       },
     }
   }
@@ -171,28 +171,40 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
     }
   }
 
-  // Spawn reviewer
+  // Spawn reviewer via gateway RPC
   const worktreePath = `/home/dan/src/trap-worktrees/${branchName}`
   const prompt = buildReviewerPrompt(task, pr, branchName, worktreePath)
 
-  const child = children.spawn({
-    taskId: task.id,
-    projectId,
-    role: "reviewer",
-    message: prompt,
-    model: "sonnet",
-    label: `reviewer:${task.id.slice(0, 8)}`,
-  })
-
-  return {
-    spawned: true,
-    details: {
+  try {
+    const handle = await agents.spawn({
       taskId: task.id,
-      prNumber: pr.number,
-      prTitle: pr.title,
-      branch: branchName,
-      sessionKey: child.sessionKey,
-    },
+      projectId,
+      role: "reviewer",
+      message: prompt,
+      model: "sonnet",
+      timeoutSeconds: 600,
+    })
+
+    return {
+      spawned: true,
+      details: {
+        taskId: task.id,
+        prNumber: pr.number,
+        prTitle: pr.title,
+        branch: branchName,
+        sessionKey: handle.sessionKey,
+      },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      spawned: false,
+      details: {
+        reason: "spawn_failed",
+        taskId: task.id,
+        error: message,
+      },
+    }
   }
 }
 

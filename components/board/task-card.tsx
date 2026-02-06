@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { Draggable } from "@hello-pangea/dnd"
 import { Link2, Lock, Bot, AlertTriangle } from "lucide-react"
 import type { Task } from "@/lib/types"
-import { useSingleSessionStatus } from "@/lib/hooks/use-session-status"
 import { useDependencies } from "@/lib/hooks/use-dependencies"
 import { formatCompactTime } from "@/lib/utils"
 
@@ -106,10 +105,6 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
     return () => clearInterval(interval)
   }, [])
 
-  // Get session status for in-progress tasks
-  const shouldFetchSessionStatus = task.status === 'in_progress' && task.session_id
-  const { sessionStatus } = useSingleSessionStatus(shouldFetchSessionStatus ? task.session_id || undefined : undefined)
-
   // Get dependency info
   const { dependencies } = useDependencies(task.id)
   const dependsOnCount = dependencies.depends_on.length
@@ -121,17 +116,17 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
   const statusAge = now - task.updated_at
   const statusAgeColor = getStatusAgeColor(statusAge, task.status)
 
-  // Calculate agent runtime and last output
-  const agentRuntime = sessionStatus?.createdAt 
-    ? now - new Date(sessionStatus.createdAt).getTime()
+  // Agent data comes directly from task record (written by work loop via Convex)
+  const hasAgent = !!task.agent_session_key
+  const lastOutput = task.agent_last_active_at
+    ? now - task.agent_last_active_at
     : null
-  const lastOutput = sessionStatus?.updatedAt
-    ? now - new Date(sessionStatus.updatedAt).getTime()
-    : null
-  const lastOutputColor = lastOutput ? getLastOutputColor(lastOutput) : null
+  const lastOutputColor = lastOutput !== null ? getLastOutputColor(lastOutput) : null
 
   // Check if in_progress but no agent attached
-  const isOrphaned = task.status === 'in_progress' && (!task.session_id || sessionStatus?.status === 'not_found' || sessionStatus?.status === 'error')
+  const ORPHAN_GRACE_MS = 30 * 60 * 1000
+  const taskAge = task.updated_at ? now - task.updated_at : Infinity
+  const isOrphaned = (task.status === 'in_progress' || task.status === 'in_review') && taskAge > ORPHAN_GRACE_MS && !hasAgent
 
   const tags = (() => {
     if (!task.tags) return []
@@ -207,23 +202,18 @@ export function TaskCard({ task, index, onClick, isMobile = false }: TaskCardPro
               </span>
             </div>
 
-            {/* Agent info for in_progress tasks */}
-            {task.status === 'in_progress' && task.session_id && sessionStatus && sessionStatus.status !== 'not_found' && (
+            {/* Agent info — read directly from Convex task record */}
+            {(task.status === 'in_progress' || task.status === 'in_review') && hasAgent && (
               <div className="flex items-center gap-1.5 ml-2 border-l border-[var(--border)] pl-2">
                 <Bot className="h-3 w-3 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-muted)]">{formatModelName(sessionStatus.model)}</span>
-                {agentRuntime !== null && (
-                  <span className="text-[var(--text-muted)]">
-                    · {formatCompactTime(now - agentRuntime)}
-                  </span>
-                )}
+                <span className="font-medium text-[var(--text-secondary)]">{formatModelName(task.agent_model ?? undefined)}</span>
                 {lastOutput !== null && (
                   <span 
                     className="font-medium"
                     style={{ color: lastOutputColor || '#6b7280' }}
-                    title="Time since last output"
+                    title="Time since last token output"
                   >
-                    · out {formatCompactTime(now - lastOutput)}
+                    · {formatCompactTime(task.agent_last_active_at!)}
                   </span>
                 )}
               </div>

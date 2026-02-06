@@ -29,6 +29,12 @@ function toTask(doc: {
   dispatch_status?: DispatchStatus
   dispatch_requested_at?: number
   dispatch_requested_by?: string
+  agent_session_key?: string
+  agent_model?: string
+  agent_started_at?: number
+  agent_last_active_at?: number
+  agent_tokens_in?: number
+  agent_tokens_out?: number
   position: number
   created_at: number
   updated_at: number
@@ -50,6 +56,12 @@ function toTask(doc: {
     dispatch_status: doc.dispatch_status ?? null,
     dispatch_requested_at: doc.dispatch_requested_at ?? null,
     dispatch_requested_by: doc.dispatch_requested_by ?? null,
+    agent_session_key: doc.agent_session_key ?? null,
+    agent_model: doc.agent_model ?? null,
+    agent_started_at: doc.agent_started_at ?? null,
+    agent_last_active_at: doc.agent_last_active_at ?? null,
+    agent_tokens_in: doc.agent_tokens_in ?? null,
+    agent_tokens_out: doc.agent_tokens_out ?? null,
     position: doc.position,
     created_at: doc.created_at,
     updated_at: doc.updated_at,
@@ -614,6 +626,70 @@ export const deleteTask = mutation({
     await ctx.db.delete(existing._id)
 
     return { success: true }
+  },
+})
+
+/**
+ * Batch update agent activity on tasks.
+ * Called by the work loop each cycle to sync live agent status into Convex.
+ */
+export const updateAgentActivity = mutation({
+  args: {
+    updates: v.array(
+      v.object({
+        task_id: v.string(),
+        agent_session_key: v.string(),
+        agent_model: v.optional(v.string()),
+        agent_started_at: v.number(),
+        agent_last_active_at: v.number(),
+        agent_tokens_in: v.optional(v.number()),
+        agent_tokens_out: v.optional(v.number()),
+      })
+    ),
+  },
+  handler: async (ctx, args): Promise<{ updated: number }> => {
+    let updated = 0
+    for (const update of args.updates) {
+      const task = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', update.task_id))
+        .unique()
+      if (!task) continue
+      await ctx.db.patch(task._id, {
+        agent_session_key: update.agent_session_key,
+        agent_model: update.agent_model,
+        agent_started_at: update.agent_started_at,
+        agent_last_active_at: update.agent_last_active_at,
+        agent_tokens_in: update.agent_tokens_in,
+        agent_tokens_out: update.agent_tokens_out,
+        updated_at: Date.now(),
+      })
+      updated++
+    }
+    return { updated }
+  },
+})
+
+/**
+ * Clear agent fields from a task (called when agent finishes).
+ */
+export const clearAgentActivity = mutation({
+  args: { task_id: v.string() },
+  handler: async (ctx, args): Promise<void> => {
+    const task = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.task_id))
+      .unique()
+    if (!task) return
+    await ctx.db.patch(task._id, {
+      agent_session_key: undefined,
+      agent_model: undefined,
+      agent_started_at: undefined,
+      agent_last_active_at: undefined,
+      agent_tokens_in: undefined,
+      agent_tokens_out: undefined,
+      updated_at: Date.now(),
+    })
   },
 })
 

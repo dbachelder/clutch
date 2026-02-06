@@ -10,7 +10,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { loadConfig } from "./config"
 import { api } from "../convex/_generated/api"
 import { logRun, logCycleComplete } from "./logger"
-import { childManager } from "./children"
+import { agentManager } from "./agent-manager"
 import { sessionsPoller } from "./sessions"
 import { runReview } from "./phases/review"
 import type { Project } from "../lib/types"
@@ -143,13 +143,61 @@ async function runProjectCycle(
 ): Promise<void> {
   const cycleStart = Date.now()
 
+  // Reap finished agents before doing anything else.
+  // Convert staleTaskMinutes from config into milliseconds for the reaper.
+  const config = loadConfig()
+  const staleMs = config.staleTaskMinutes * 60 * 1000
+  const reaped = await agentManager.reapFinished(staleMs)
+  if (reaped.length > 0) {
+    for (const outcome of reaped) {
+      const isStale = outcome.reply === "stale_timeout"
+      await logRun(convex, {
+        projectId: project.id,
+        cycle,
+        phase: "cleanup",
+        action: isStale ? "agent_stale_reaped" : "agent_reaped",
+        taskId: outcome.taskId,
+        sessionKey: outcome.sessionKey,
+        details: {
+          reason: outcome.reply,
+          error: outcome.error,
+          durationMs: outcome.durationMs,
+          tokens: outcome.usage?.totalTokens,
+        },
+      })
+
+      // Clear agent fields on the task
+      try {
+        await convex.mutation(api.tasks.clearAgentActivity, {
+          task_id: outcome.taskId,
+        })
+      } catch {
+        // Non-fatal — task may have been deleted
+      }
+
+      // If the agent was stale (stuck), move the task back to ready so
+      // it can be retried on the next cycle.
+      if (isStale) {
+        try {
+          await convex.mutation(api.tasks.move, {
+            id: outcome.taskId,
+            status: "ready",
+          })
+          console.log(`[WorkLoop] Moved stale task ${outcome.taskId} back to ready`)
+        } catch {
+          // Non-fatal — task may already be in a different state
+        }
+      }
+    }
+  }
+
   // Update state to show we're starting a cycle
   await convex.mutation(api.workLoop.upsertState, {
     project_id: project.id,
     status: "running",
     current_phase: "cleanup",
     current_cycle: cycle,
-    active_agents: childManager.activeCount(project.id),
+    active_agents: agentManager.activeCount(project.id),
     max_agents: project.work_loop_max_agents ?? 2,
     last_cycle_at: cycleStart,
   })
@@ -171,7 +219,7 @@ async function runProjectCycle(
     status: "running",
     current_phase: "review",
     current_cycle: cycle,
-    active_agents: childManager.activeCount(project.id),
+    active_agents: agentManager.activeCount(project.id),
     max_agents: project.work_loop_max_agents ?? 2,
   })
 
@@ -183,7 +231,7 @@ async function runProjectCycle(
     async () => {
       const result = await runReview({
         convex,
-        children: childManager,
+        agents: agentManager,
         sessions: sessionsPoller,
         config: loadConfig(),
         cycle,
@@ -200,12 +248,11 @@ async function runProjectCycle(
     status: "running",
     current_phase: "work",
     current_cycle: cycle,
-    active_agents: childManager.activeCount(project.id),
+    active_agents: agentManager.activeCount(project.id),
     max_agents: project.work_loop_max_agents ?? 2,
   })
 
   // Phase 3: Work
-  const config = loadConfig()
   const workResult = await runPhase(
     convex,
     project.id,
@@ -213,7 +260,7 @@ async function runProjectCycle(
     async () => {
       const result = await runWork({
         convex,
-        children: childManager,
+        agents: agentManager,
         config,
         cycle,
         projectId: project.id,
@@ -234,7 +281,7 @@ async function runProjectCycle(
     status: "running",
     current_phase: "analyze",
     current_cycle: cycle,
-    active_agents: childManager.activeCount(project.id),
+    active_agents: agentManager.activeCount(project.id),
     max_agents: project.work_loop_max_agents ?? 2,
   })
 
@@ -246,7 +293,7 @@ async function runProjectCycle(
     async () => {
       const result = await runAnalyze({
         convex,
-        children: childManager,
+        agents: agentManager,
         config,
         cycle,
         projectId: project.id,
@@ -284,7 +331,7 @@ async function runProjectCycle(
     status: "running",
     current_phase: "idle",
     current_cycle: cycle,
-    active_agents: childManager.activeCount(project.id),
+    active_agents: agentManager.activeCount(project.id),
     max_agents: project.work_loop_max_agents ?? 2,
     last_cycle_at: Date.now(),
   })
@@ -415,7 +462,7 @@ async function runLoop(): Promise<void> {
         status: "stopped",
         current_phase: currentPhase,
         current_cycle: cycle,
-        active_agents: childManager.activeCount(project.id),
+        active_agents: agentManager.activeCount(project.id),
         max_agents: project.work_loop_max_agents ?? 2,
         last_cycle_at: Date.now(),
       })

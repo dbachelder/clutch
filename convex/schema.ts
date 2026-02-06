@@ -65,6 +65,13 @@ export default defineSchema({
     )),
     dispatch_requested_at: v.optional(v.number()),
     dispatch_requested_by: v.optional(v.string()),
+    // Agent tracking (written by work loop each cycle)
+    agent_session_key: v.optional(v.string()),
+    agent_model: v.optional(v.string()),
+    agent_started_at: v.optional(v.number()),
+    agent_last_active_at: v.optional(v.number()),
+    agent_tokens_in: v.optional(v.number()),
+    agent_tokens_out: v.optional(v.number()),
     position: v.number(),
     created_at: v.number(),
     updated_at: v.number(),

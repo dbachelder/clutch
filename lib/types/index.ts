@@ -72,6 +72,12 @@ export interface Task {
   dispatch_status: DispatchStatus | null
   dispatch_requested_at: number | null
   dispatch_requested_by: string | null
+  agent_session_key: string | null
+  agent_model: string | null
+  agent_started_at: number | null
+  agent_last_active_at: number | null
+  agent_tokens_in: number | null
+  agent_tokens_out: number | null
   position: number
   created_at: number
   updated_at: number
