@@ -53,6 +53,7 @@ function toProject(doc: {
   github_repo?: string
   chat_layout: 'slack' | 'imessage'
   work_loop_enabled: boolean
+  work_loop_max_agents?: number
   work_loop_schedule: string
   created_at: number
   updated_at: number
@@ -69,6 +70,7 @@ function toProject(doc: {
     github_repo: doc.github_repo ?? null,
     chat_layout: doc.chat_layout,
     work_loop_enabled: doc.work_loop_enabled ? 1 : 0,
+    work_loop_max_agents: doc.work_loop_max_agents ?? null,
     work_loop_schedule: doc.work_loop_schedule,
     created_at: doc.created_at,
     updated_at: doc.updated_at,
@@ -161,6 +163,7 @@ export const create = mutation({
     github_repo: v.optional(v.string()),
     chat_layout: v.optional(v.union(v.literal('slack'), v.literal('imessage'))),
     work_loop_enabled: v.optional(v.boolean()),
+    work_loop_max_agents: v.optional(v.number()),
     work_loop_schedule: v.optional(v.string()),
     slug: v.optional(v.string()),
   },
@@ -200,6 +203,7 @@ export const create = mutation({
       github_repo: args.github_repo?.trim() || undefined,
       chat_layout: args.chat_layout || 'slack',
       work_loop_enabled: args.work_loop_enabled ?? false,
+      work_loop_max_agents: args.work_loop_max_agents ?? undefined,
       work_loop_schedule: args.work_loop_schedule?.trim() || '*/5 * * * *',
       created_at: now,
       updated_at: now,
@@ -230,6 +234,7 @@ export const update = mutation({
     github_repo: v.optional(v.string()),
     chat_layout: v.optional(v.union(v.literal('slack'), v.literal('imessage'))),
     work_loop_enabled: v.optional(v.boolean()),
+    work_loop_max_agents: v.optional(v.number()),
     work_loop_schedule: v.optional(v.string()),
     slug: v.optional(v.string()),
   },
@@ -282,6 +287,7 @@ export const update = mutation({
     if (args.github_repo !== undefined) updates.github_repo = args.github_repo?.trim() ?? undefined
     if (args.chat_layout !== undefined) updates.chat_layout = args.chat_layout
     if (args.work_loop_enabled !== undefined) updates.work_loop_enabled = args.work_loop_enabled
+    if (args.work_loop_max_agents !== undefined) updates.work_loop_max_agents = args.work_loop_max_agents
     if (args.work_loop_schedule !== undefined) updates.work_loop_schedule = args.work_loop_schedule.trim()
 
     await ctx.db.patch(existing._id, updates)
