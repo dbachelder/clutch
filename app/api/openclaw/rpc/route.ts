@@ -1,39 +1,64 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getOpenClawClient, initializeOpenClawClient } from "@/lib/openclaw/client"
 
 /**
  * POST /api/openclaw/rpc
- * Proxy RPC calls to OpenClaw gateway (avoids CORS from browser)
+ *
+ * Proxy browser RPC calls to the OpenClaw gateway via the persistent
+ * server-side WebSocket client.  The gateway only speaks WS for RPC —
+ * there is no HTTP /rpc endpoint — so we bridge through the WS client.
  */
+
+/** Ensure the WS client is connected (lazy init). */
+function ensureClient() {
+  const client = getOpenClawClient()
+  if (client.getStatus() === "disconnected") {
+    initializeOpenClawClient()
+  }
+  return client
+}
+
 export async function POST(request: NextRequest) {
+  let body: { id?: string; method?: string; params?: Record<string, unknown> }
   try {
-    const body = await request.json()
+    body = await request.json()
+  } catch {
+    return NextResponse.json(
+      { type: "res", id: "unknown", ok: false, error: { message: "Invalid JSON body" } },
+      { status: 400 },
+    )
+  }
 
-    const openclawUrl = process.env.OPENCLAW_HTTP_URL || "http://127.0.0.1:18789"
-    const openclawToken = process.env.OPENCLAW_TOKEN || process.env.NEXT_PUBLIC_OPENCLAW_TOKEN || ""
+  const { id = "unknown", method, params } = body
+  if (!method) {
+    return NextResponse.json(
+      { type: "res", id, ok: false, error: { message: "Missing 'method' in request body" } },
+      { status: 400 },
+    )
+  }
 
-    const response = await fetch(`${openclawUrl}/rpc`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(openclawToken ? { Authorization: `Bearer ${openclawToken}` } : {}),
-      },
-      body: JSON.stringify(body),
-    })
+  const client = ensureClient()
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { type: "res", id: body.id, ok: false, error: { message: `OpenClaw HTTP ${response.status}: ${response.statusText}` } },
-        { status: 502 }
-      )
-    }
+  // If the WS client isn't connected yet, give it a brief window to connect.
+  if (client.getStatus() !== "connected") {
+    await new Promise((r) => setTimeout(r, 2000))
+  }
 
-    const data = await response.json()
-    return NextResponse.json(data)
+  if (client.getStatus() !== "connected") {
+    return NextResponse.json(
+      { type: "res", id, ok: false, error: { message: "OpenClaw gateway not connected" } },
+      { status: 502 },
+    )
+  }
+
+  try {
+    const payload = await client.rpc(method, params)
+    return NextResponse.json({ type: "res", id, ok: true, payload })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
-      { type: "res", id: "unknown", ok: false, error: { message: `Proxy error: ${message}` } },
-      { status: 502 }
+      { type: "res", id, ok: false, error: { message } },
+      { status: 502 },
     )
   }
 }

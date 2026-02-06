@@ -6,7 +6,6 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useChatStore, type ChatWithLastMessage } from "@/lib/stores/chat-store"
-import { useOpenClawHttpRpc } from "@/lib/hooks/use-openclaw-http"
 
 interface ChatHeaderProps {
   chat: ChatWithLastMessage
@@ -19,34 +18,45 @@ interface SessionInfo {
 
 export function ChatHeader({ chat }: ChatHeaderProps) {
   const { updateChat } = useChatStore()
-  const { connected: rpcConnected, getSessionPreview } = useOpenClawHttpRpc()
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(chat.title)
   const [isUpdating, setIsUpdating] = useState(false)
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null)
   const [loadingSession, setLoadingSession] = useState(false)
 
-  // Fetch session info when chat has session_key and RPC is connected
+  // Fetch session info from CLI-backed endpoint (no WS dependency)
   useEffect(() => {
     async function fetchSessionInfo() {
-      if (!chat.session_key || !rpcConnected) {
+      if (!chat.session_key) {
         setSessionInfo(null)
         return
       }
 
       setLoadingSession(true)
       try {
-        const preview = await getSessionPreview(chat.session_key)
-        if (!preview?.session) {
+        const response = await fetch("/api/sessions/list?activeMinutes=60&limit=200", {
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!response.ok) {
           setSessionInfo(null)
           return
         }
-        setSessionInfo({
-          model: preview.session.model,
-          contextPercent: Math.round(preview.contextPercentage ?? 0),
-        })
-      } catch (error) {
-        // OpenClaw RPC may be unavailable
+        const data = await response.json()
+        const sessions: Array<Record<string, unknown>> = data.sessions || []
+        const session = sessions.find((s) => s.id === chat.session_key)
+          || sessions.find((s) => String(s.id || "").endsWith(chat.session_key!))
+        if (session) {
+          const tokens = (session.tokens as { total?: number } | undefined)?.total ?? 0
+          const contextWindow = 200000
+          const contextPercent = contextWindow > 0 ? Math.round((tokens / contextWindow) * 100) : 0
+          setSessionInfo({
+            model: session.model as string | undefined,
+            contextPercent,
+          })
+        } else {
+          setSessionInfo(null)
+        }
+      } catch {
         setSessionInfo(null)
       } finally {
         setLoadingSession(false)
@@ -54,7 +64,7 @@ export function ChatHeader({ chat }: ChatHeaderProps) {
     }
 
     fetchSessionInfo()
-  }, [chat.session_key, rpcConnected, getSessionPreview])
+  }, [chat.session_key])
 
   const handleStartEdit = () => {
     setIsEditing(true)

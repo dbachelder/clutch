@@ -13,7 +13,7 @@ import { CreateTaskFromMessage } from "@/components/chat/create-task-from-messag
 import { StreamingToggle } from "@/components/chat/streaming-toggle"
 import { SessionInfoDropdown } from "@/components/chat/session-info-dropdown"
 import { Button } from "@/components/ui/button"
-import { sendChatMessage, abortSession, openclawRpc } from "@/lib/openclaw"
+import { sendChatMessage, abortSession } from "@/lib/openclaw"
 import { useOpenClawHttpRpc } from "@/lib/hooks/use-openclaw-http"
 import type { ChatMessage } from "@/lib/types"
 
@@ -113,7 +113,7 @@ export default function ChatPage({ params }: PageProps) {
     uptimeString?: string;
   } | null>(null)
 
-  // Fetch session info directly from sessions.list RPC
+  // Fetch session info from the CLI-backed sessions endpoint (no WS dependency)
   useEffect(() => {
     async function fetchSessionInfo() {
       if (!activeChat?.session_key) {
@@ -122,14 +122,23 @@ export default function ChatPage({ params }: PageProps) {
       }
 
       try {
-        const response = await openclawRpc<{ sessions: Array<Record<string, unknown>> }>("sessions.list", { limit: 200 })
-        const sessions = response.sessions || []
-        // OpenClaw RPC returns keys with "agent:main:" prefix, chat stores without it
-        const session = sessions.find((s: Record<string, unknown>) => s.key === activeChat.session_key)
-          || sessions.find((s: Record<string, unknown>) => String(s.key || '').endsWith(activeChat.session_key!))
+        const response = await fetch("/api/sessions/list?activeMinutes=60&limit=200", {
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!response.ok) {
+          setSessionInfo(null)
+          return
+        }
+        const data = await response.json()
+        const sessions: Array<Record<string, unknown>> = data.sessions || []
+        // Session IDs from the CLI endpoint use the key directly
+        const session = sessions.find((s) => s.id === activeChat.session_key)
+          || sessions.find((s) => String(s.id || "").endsWith(activeChat.session_key!))
         if (session) {
-          const totalTokens = (session.totalTokens as number) || 0
-          const contextWindow = (session.contextTokens as number) || 200000
+          const tokens = session.tokens as { total?: number } | undefined
+          const totalTokens = tokens?.total || 0
+          // Estimate context window from model (200k default)
+          const contextWindow = 200000
           const contextPercent = contextWindow > 0 ? Math.round((totalTokens / contextWindow) * 100) : 0
           setSessionInfo({
             model: session.model as string,
@@ -138,14 +147,14 @@ export default function ChatPage({ params }: PageProps) {
         } else {
           setSessionInfo(null)
         }
-      } catch (error) {
-        // OpenClaw RPC may be unavailable
+      } catch {
+        // Endpoint may be unavailable
         setSessionInfo(null)
       }
     }
 
     fetchSessionInfo()
-    // Refresh every 30s while connected
+    // Refresh every 30s
     const interval = setInterval(fetchSessionInfo, 30000)
     return () => clearInterval(interval)
   }, [activeChat?.session_key])

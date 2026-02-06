@@ -1,8 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useOpenClawHttpRpc } from "@/lib/hooks/use-openclaw-http"
-import { SessionPreview } from "@/lib/types"
 
 interface ContextIndicatorProps {
   sessionKey?: string
@@ -13,7 +11,6 @@ export function ContextIndicator({
   sessionKey = "main",
   onUpdate 
 }: ContextIndicatorProps) {
-  const { connected, getSessionPreview } = useOpenClawHttpRpc()
   const [contextData, setContextData] = useState<{
     percentage: number
     tokens: number
@@ -23,48 +20,49 @@ export function ContextIndicator({
   const [loading, setLoading] = useState(false)
 
   const fetchContextData = useCallback(async () => {
-    if (!connected) return
-    
     try {
       setLoading(true)
-      const preview: SessionPreview = await getSessionPreview(sessionKey, 1) // Only need 1 message for context info
-      
-      // Handle missing session data gracefully
-      if (!preview?.session) {
+      const response = await fetch("/api/sessions/list?activeMinutes=60&limit=200", {
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!response.ok) {
         setContextData(null)
         return
       }
-      
-      // Calculate actual token counts if available
-      const tokens = preview.session.tokens?.total ?? 0
-      const percentage = preview.contextPercentage ?? 0
-      
-      // Estimate total context window based on percentage
-      // If percentage is 0, avoid division by zero
-      const total = percentage > 0 ? Math.round(tokens / (percentage / 100)) : 200000 // fallback
-      
+      const data = await response.json()
+      const sessions: Array<Record<string, unknown>> = data.sessions || []
+      const session = sessions.find((s) => s.id === sessionKey)
+        || sessions.find((s) => String(s.id || "").endsWith(sessionKey))
+
+      if (!session) {
+        setContextData(null)
+        return
+      }
+
+      const tokens = (session.tokens as { total?: number } | undefined)?.total ?? 0
+      // Default context window estimate
+      const total = 200000
+      const percentage = total > 0 ? Math.round((tokens / total) * 100) : 0
+
       setContextData({
         percentage,
         tokens,
         total,
-        model: preview.session.model
+        model: session.model as string | undefined,
       })
-    } catch (error) {
-      // OpenClaw RPC may be unavailable
+    } catch {
       setContextData(null)
     } finally {
       setLoading(false)
     }
-  }, [connected, getSessionPreview, sessionKey])
+  }, [sessionKey])
 
-  // Initial fetch and periodic updates
+  // Initial fetch and periodic updates (every 30s — not critical data)
   useEffect(() => {
-    if (connected) {
-      fetchContextData()
-      const interval = setInterval(fetchContextData, 10000) // Update every 10 seconds
-      return () => clearInterval(interval)
-    }
-  }, [connected, sessionKey, fetchContextData])
+    fetchContextData()
+    const interval = setInterval(fetchContextData, 30000)
+    return () => clearInterval(interval)
+  }, [sessionKey, fetchContextData])
 
   // Fetch after updates (when onUpdate is called)
   useEffect(() => {
@@ -73,7 +71,7 @@ export function ContextIndicator({
     }
   }, [onUpdate, fetchContextData])
 
-  if (!connected || !contextData) {
+  if (!contextData) {
     return null
   }
 
