@@ -80,21 +80,31 @@ export function ChatThread({
   // Restore scroll position when switching chats
   useEffect(() => {
     if (lastChatIdRef.current !== chatId) {
-      // Chat switched - restore scroll position
+      // Chat switched - restore scroll position or scroll to bottom
       lastChatIdRef.current = chatId
       restoredScrollPositionRef.current = false
-      
+
       // Use setTimeout to ensure DOM is updated
       setTimeout(() => {
         if (!containerRef.current) return
-        
+
         const savedPosition = getScrollPosition(chatId)
         if (savedPosition > 0) {
+          // Restore saved scroll position
           isAutoScrollingRef.current = true
           containerRef.current.scrollTop = savedPosition
           restoredScrollPositionRef.current = true
-          
+
           // Clear auto-scroll flag after a short delay
+          setTimeout(() => {
+            isAutoScrollingRef.current = false
+          }, 100)
+        } else {
+          // No saved position - scroll to bottom (instant on switch)
+          isAutoScrollingRef.current = true
+          bottomRef.current?.scrollIntoView({ behavior: "instant" })
+          restoredScrollPositionRef.current = true
+
           setTimeout(() => {
             isAutoScrollingRef.current = false
           }, 100)
