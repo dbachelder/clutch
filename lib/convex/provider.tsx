@@ -39,9 +39,9 @@ export function ConvexProviderWrapper({ children }: ConvexProviderWrapperProps) 
     }
   }, [])
 
-  // If no Convex URL is configured, just render children without provider
+  // Block rendering until Convex client is initialized
   if (!client) {
-    return <>{children}</>
+    return null
   }
 
   return <ConvexProvider client={client}>{children}</ConvexProvider>
