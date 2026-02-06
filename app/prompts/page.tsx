@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { FileText, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { FileText, Loader2, BarChart3 } from 'lucide-react'
 import { toast } from 'sonner'
 import { RoleSidebar } from './components/role-sidebar'
 import { VersionList } from './components/version-list'
@@ -149,6 +150,13 @@ export default function PromptsPage() {
               </p>
             </div>
           </div>
+          <Link
+            href="/prompts/metrics"
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Metrics
+          </Link>
         </div>
 
         {/* Version list */}
