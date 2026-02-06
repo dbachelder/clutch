@@ -108,17 +108,37 @@ export interface RpcResponse<T = unknown> {
  * @example
  * const sessions = await openclawRpc<Array<Session>>('sessions.list', { limit: 10 });
  */
-// Track consecutive failures to implement backoff
+// Exponential backoff state for transient failures.
+// After consecutive failures, we suppress calls for an increasing cooldown
+// to avoid flooding the console/network with doomed requests.
 let _consecutiveFailures = 0;
-const _MAX_BACKOFF_FAILURES = 3;
+let _backoffUntil = 0;  // timestamp (ms) — skip calls until this time
+
+function _recordFailure(): void {
+  _consecutiveFailures++;
+  // Exponential backoff: 5s → 10s → 20s → 40s → 60s (cap)
+  const delaySec = Math.min(5 * Math.pow(2, _consecutiveFailures - 1), 60);
+  _backoffUntil = Date.now() + delaySec * 1000;
+  if (_consecutiveFailures <= 3) {
+    console.warn(`[OpenClaw RPC] Failure #${_consecutiveFailures} — backing off ${delaySec}s`);
+  }
+  // After the longest backoff expires, reset so the next call tries fresh
+  if (_consecutiveFailures === 1) {
+    // Only log once per backoff cycle
+  }
+}
+
+function _recordSuccess(): void {
+  _consecutiveFailures = 0;
+  _backoffUntil = 0;
+}
 
 export async function openclawRpc<T = unknown>(
   method: string,
   params?: Record<string, unknown>
 ): Promise<T> {
-  // If we've failed too many times in a row, skip calls silently
-  // to avoid flooding the console. Reset after 60s.
-  if (_consecutiveFailures >= _MAX_BACKOFF_FAILURES) {
+  // If we're in a backoff window, reject immediately without hitting the network
+  if (_backoffUntil > 0 && Date.now() < _backoffUntil) {
     throw new Error('OpenClaw RPC unavailable (backing off)');
   }
 
@@ -141,37 +161,34 @@ export async function openclawRpc<T = unknown>(
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       },
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {
-      _consecutiveFailures++;
-      if (_consecutiveFailures === _MAX_BACKOFF_FAILURES) {
-        console.warn('[OpenClaw RPC] Unavailable — suppressing further attempts for 60s');
-        setTimeout(() => { _consecutiveFailures = 0; }, 60000);
-      }
+      _recordFailure();
       throw new Error(`OpenClaw HTTP ${response.status}: ${response.statusText}`);
     }
 
     const rpcResponse: RpcResponse<T> = await response.json();
 
     if (!rpcResponse.ok || rpcResponse.error) {
+      // RPC-level error (method exists but returned error) — don't backoff
       throw new Error(rpcResponse.error?.message || 'OpenClaw RPC error');
     }
 
-    // Success — reset failure counter
-    _consecutiveFailures = 0;
+    _recordSuccess();
     return rpcResponse.payload as T;
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('OpenClaw')) {
-      throw error; // Re-throw our own errors
+    if (error instanceof Error && error.message.includes('backing off')) {
+      throw error;
     }
-    _consecutiveFailures++;
-    if (_consecutiveFailures === _MAX_BACKOFF_FAILURES) {
-      console.warn('[OpenClaw RPC] Unavailable — suppressing further attempts for 60s');
-      setTimeout(() => { _consecutiveFailures = 0; }, 60000);
+    // Network / timeout errors trigger backoff
+    if (error instanceof Error && !error.message.startsWith('OpenClaw RPC error')) {
+      _recordFailure();
     }
-    throw new Error(`OpenClaw RPC error: ${error instanceof Error ? error.message : String(error)}`);
+    throw error instanceof Error
+      ? error
+      : new Error(`OpenClaw RPC error: ${String(error)}`);
   }
 }
 

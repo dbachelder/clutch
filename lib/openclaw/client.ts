@@ -194,7 +194,7 @@ class OpenClawClient {
       })
 
       const message = JSON.stringify({
-        jsonrpc: '2.0',
+        type: 'req',
         id,
         method,
         params: params || {}
