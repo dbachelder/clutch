@@ -10,6 +10,7 @@ import { ChatHeader } from "@/components/chat/chat-header"
 import { ConvexChatSync } from "@/components/chat/convex-sync"
 import { CreateTaskFromMessage } from "@/components/chat/create-task-from-message"
 import { SessionInfoDropdown } from "@/components/chat/session-info-dropdown"
+import { resetSession } from "@/lib/openclaw"
 import { Button } from "@/components/ui/button"
 import { sendChatMessage, abortSession } from "@/lib/openclaw"
 import { useOpenClawHttpRpc } from "@/lib/hooks/use-openclaw-http"
@@ -98,7 +99,17 @@ export default function ChatPage({ params }: PageProps) {
 
   const [activeSubagents, setActiveSubagents] = useState<SubAgentDetails[]>([])
   const [activeCrons, setActiveCrons] = useState<SubAgentDetails[]>([])
-  const [sessionInfo, setSessionInfo] = useState<{ model?: string; contextPercent?: number } | null>(null)
+  const [sessionInfo, setSessionInfo] = useState<{
+    model?: string;
+    contextPercent?: number;
+    tokensIn?: number;
+    tokensOut?: number;
+    tokensTotal?: number;
+    cost?: number;
+    createdAt?: number;
+    updatedAt?: number;
+    thinking?: boolean;
+  } | null>(null)
   const [gatewayStatus, setGatewayStatus] = useState<{
     startedAt?: string;
     uptime?: number;
@@ -123,19 +134,36 @@ export default function ChatPage({ params }: PageProps) {
           return
         }
         const data = await response.json()
-        const sessions: Array<Record<string, unknown>> = data.sessions || []
+        const sessions: Array<{
+          id: string;
+          model?: string;
+          tokens?: { input?: number; output?: number; total?: number };
+          cost?: number;
+          createdAt?: string;
+          updatedAt?: string;
+          metadata?: { thinking?: boolean };
+        }> = data.sessions || []
         // Session IDs from the CLI endpoint use the key directly
         const session = sessions.find((s) => s.id === activeChat.session_key)
           || sessions.find((s) => String(s.id || "").endsWith(activeChat.session_key!))
         if (session) {
-          const tokens = session.tokens as { total?: number } | undefined
-          const totalTokens = tokens?.total || 0
+          const tokens = session.tokens || {}
+          const totalTokens = tokens.total || tokens.input || tokens.output
+            ? (tokens.input || 0) + (tokens.output || 0)
+            : 0
           // Estimate context window from model (200k default)
           const contextWindow = 200000
           const contextPercent = contextWindow > 0 ? Math.round((totalTokens / contextWindow) * 100) : 0
           setSessionInfo({
-            model: session.model as string,
+            model: session.model,
             contextPercent,
+            tokensIn: tokens.input,
+            tokensOut: tokens.output,
+            tokensTotal: totalTokens,
+            cost: session.cost,
+            createdAt: session.createdAt ? new Date(session.createdAt).getTime() : undefined,
+            updatedAt: session.updatedAt ? new Date(session.updatedAt).getTime() : undefined,
+            thinking: session.metadata?.thinking,
           })
         } else {
           setSessionInfo(null)
@@ -479,11 +507,16 @@ export default function ChatPage({ params }: PageProps) {
                     <div className="flex items-center gap-2 md:gap-3">
                       <SessionInfoDropdown
                         sessionKey={sessionKey}
-                        sessionInfo={sessionInfo || undefined}
+                        projectId={projectId || undefined}
+                        projectSlug={slug}
+                        sessionDetails={sessionInfo || undefined}
                         connected={true} // HTTP is always "connected"
-                        activeSubagents={activeSubagents}
-                        activeCrons={activeCrons}
                         gatewayStatus={gatewayStatus || undefined}
+                        onResetSession={activeChat?.session_key ? () => resetSession(activeChat.session_key!) : undefined}
+                        onToggleThinking={() => {
+                          // TODO: Implement thinking mode toggle via API
+                          console.log("Toggle thinking mode - not yet implemented")
+                        }}
                       />
                     </div>
                   </div>
