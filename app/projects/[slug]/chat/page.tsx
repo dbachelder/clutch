@@ -167,6 +167,11 @@ export default function ChatPage({ params }: PageProps) {
   // Project init & chat selection
   // ==========================================================================
 
+  // Reset active chat when project changes - ensures we load chats for the new project
+  useEffect(() => {
+    setActiveChat(null)
+  }, [slug, setActiveChat])
+
   useEffect(() => {
     async function init() {
       const response = await fetch(`/api/projects/${slug}`)
