@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { Send, Square, X, Command, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ContextIndicator } from "@/components/chat/context-indicator"
+import { SlashCommandAutocomplete } from "@/components/chat/slash-command-autocomplete"
 import { parseSlashCommand, executeSlashCommand, SLASH_COMMANDS, type SlashCommandResult } from "@/lib/slash-commands"
 
 // Generate a UUID with fallback for non-secure contexts
@@ -58,7 +59,9 @@ export function ChatInput({
     command?: string;
     valid: boolean;
   }>({ active: false, valid: false })
+  const [showAutocomplete, setShowAutocomplete] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const inputContainerRef = useRef<HTMLDivElement>(null)
 
   // Auto-resize textarea
   useEffect(() => {
@@ -68,10 +71,17 @@ export function ChatInput({
     }
   }, [content])
 
-  // Detect slash command mode
+  // Detect slash command mode and control autocomplete visibility
   useEffect(() => {
     const trimmed = content.trim()
-    if (trimmed.startsWith("/")) {
+    // Show autocomplete if content starts with "/" and we're at the beginning of input
+    // (either the whole input starts with /, or we're at the start of a new line after \n)
+    const lines = content.split("\n")
+    const lastLine = lines[lines.length - 1]
+    const isAtStartOfLine = lastLine.startsWith("/")
+
+    if (isAtStartOfLine && !content.includes("/ ")) {
+      // Don't show autocomplete if there's already a space after the command
       const parsed = parseSlashCommand(trimmed)
       const knownCommands = Object.keys(SLASH_COMMANDS)
       setSlashCommandMode({
@@ -79,52 +89,68 @@ export function ChatInput({
         command: parsed.command,
         valid: knownCommands.includes(parsed.command || ""),
       })
+      setShowAutocomplete(true)
     } else {
       setSlashCommandMode({ active: false, valid: false })
+      setShowAutocomplete(false)
     }
   }, [content])
+
+  const handleAutocompleteSelect = (command: string) => {
+    // Replace the current partial command with the selected one
+    const lines = content.split("\n")
+    lines[lines.length - 1] = command
+    setContent(lines.join("\n") + " ")
+    setShowAutocomplete(false)
+    textareaRef.current?.focus()
+  }
+
+  const handleAutocompleteDismiss = () => {
+    setShowAutocomplete(false)
+    textareaRef.current?.focus()
+  }
 
   const uploadImage = async (file: File): Promise<string> => {
     const formData = new FormData()
     formData.append("image", file)
-    
+
     const response = await fetch("/api/upload/image", {
       method: "POST",
       body: formData,
     })
-    
+
     if (!response.ok) {
       throw new Error(`Upload failed: ${response.statusText}`)
     }
-    
+
     const data = await response.json()
     return data.url
   }
 
   const handlePaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items
-    
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
-      
+
       // Check if item is an image
       if (item.type.startsWith("image/")) {
         e.preventDefault()
-        
+
         const file = item.getAsFile()
         if (!file) continue
-        
+
         // Create preview
         const imageId = generateId()
         const imageUrl = URL.createObjectURL(file)
-        
+
         const imagePreview: ImagePreview = {
           id: imageId,
           file,
           url: imageUrl,
           uploading: false,
         }
-        
+
         setImages(prev => [...prev, imagePreview])
       }
     }
@@ -227,7 +253,7 @@ export function ChatInput({
 
   const handleStop = async () => {
     if (!onStop || stopping) return
-    
+
     setStopping(true)
     try {
       await onStop()
@@ -239,6 +265,13 @@ export function ChatInput({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Don't handle Enter for sending if autocomplete is visible
+    // (the autocomplete component handles its own Enter key)
+    if (showAutocomplete && (e.key === "Enter" || e.key === "Tab" || e.key === "Escape")) {
+      // Let the autocomplete handle these keys
+      return
+    }
+
     // Cmd/Ctrl + Enter to send
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault()
@@ -292,9 +325,9 @@ export function ChatInput({
           ))}
         </div>
       )}
-      
-      {/* Slash command indicator */}
-      {slashCommandMode.active && (
+
+      {/* Slash command indicator (shown when not using autocomplete or for unknown commands) */}
+      {slashCommandMode.active && !showAutocomplete && (
         <div className={`mb-2 flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg ${slashCommandMode.valid ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
           {slashCommandMode.valid ? (
             <>
@@ -318,7 +351,15 @@ export function ChatInput({
 
       {/* Chat input and send button container - aligned to top */}
       <div className="flex gap-2 md:gap-3 items-start">
-        <div className="flex-1">
+        <div className="flex-1 relative" ref={inputContainerRef}>
+          {/* Slash command autocomplete */}
+          <SlashCommandAutocomplete
+            inputValue={content}
+            onSelect={handleAutocompleteSelect}
+            onDismiss={handleAutocompleteDismiss}
+            isVisible={showAutocomplete}
+          />
+
           <textarea
             ref={textareaRef}
             value={content}
@@ -331,7 +372,7 @@ export function ChatInput({
             className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-xl px-3 md:px-4 py-3 text-sm md:text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-blue)] resize-none touch-manipulation min-h-[44px]"
           />
         </div>
-        
+
         {isAssistantTyping ? (
           <Button
             onClick={handleStop}
@@ -362,18 +403,18 @@ export function ChatInput({
           </Button>
         )}
       </div>
-      
+
       {/* Context indicator */}
       <div className="mt-2 md:mt-3 mb-1 md:mb-2">
-        <ContextIndicator 
+        <ContextIndicator
           sessionKey={sessionKey}
           key={contextUpdateTrigger} // Force re-fetch when trigger updates
         />
       </div>
-      
+
       <p className="text-xs text-[var(--text-muted)] hidden md:block">
         Press Enter to send, Shift+Enter for newline • Paste images with Cmd+V • Use /help for commands
       </p>
     </div>
   )
-}// Updated
+}
