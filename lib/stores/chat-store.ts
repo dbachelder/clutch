@@ -21,6 +21,7 @@ interface ChatState {
   error: string | null
   currentProjectId: string | null
   typingIndicators: Record<string, { author: string; state: "thinking" | "typing" }[]> // chatId -> typing info
+  hasMoreMessages: Record<string, boolean> // chatId -> whether more messages exist
 
   // Actions
   fetchChats: (projectId: string) => Promise<void>
@@ -42,6 +43,7 @@ interface ChatState {
   syncMessages: (chatId: string, messages: ChatMessage[]) => void
   syncChats: (chats: ChatWithLastMessage[]) => void
   syncTyping: (chatId: string, typingState: { author: string; state: "thinking" | "typing" }[]) => void
+  syncHasMoreMessages: (chatId: string, hasMore: boolean) => void
 
   // Scroll position tracking
   setScrollPosition: (chatId: string, position: number) => void
@@ -58,6 +60,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   currentProjectId: null,
   typingIndicators: {},
+  hasMoreMessages: {},
 
   fetchChats: async (projectId) => {
     set({ loading: true, error: null, currentProjectId: projectId })
@@ -393,5 +396,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // Get scroll position for a chat (returns 0 if not set)
   getScrollPosition: (chatId) => {
     return get().scrollPositions[chatId] || 0
+  },
+
+  // Sync hasMore state from Convex reactive query
+  syncHasMoreMessages: (chatId, hasMore) => {
+    set((state) => ({
+      hasMoreMessages: {
+        ...state.hasMoreMessages,
+        [chatId]: hasMore,
+      },
+    }))
   },
 }))

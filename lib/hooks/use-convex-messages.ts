@@ -11,7 +11,7 @@ import { api } from "@/convex/_generated/api"
  *
  * Falls back gracefully if Convex provider is not available.
  */
-export function useConvexMessages(chatId: string | null, limit = 50) {
+export function useConvexMessages(chatId: string | null, limit = 30) {
   const result = useQuery(
     api.chats.getMessages,
     chatId ? { chatId, limit } : "skip"

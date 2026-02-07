@@ -21,17 +21,19 @@ export function ConvexChatSync({
   chatId: string | null
   projectId: string | null
 }) {
-  const { messages } = useConvexMessages(chatId)
+  const { messages, hasMore } = useConvexMessages(chatId)
   const { chats } = useConvexChats(projectId)
   const { typingState } = useConvexTyping(chatId)
   const syncMessages = useChatStore((s) => s.syncMessages)
   const syncChats = useChatStore((s) => s.syncChats)
   const syncTyping = useChatStore((s) => s.syncTyping)
+  const syncHasMoreMessages = useChatStore((s) => s.syncHasMoreMessages)
 
   // Track previous values to avoid unnecessary syncs
   const prevMessagesRef = useRef<typeof messages>(null)
   const prevChatsRef = useRef<typeof chats>(null)
   const prevTypingRef = useRef<typeof typingState>(null)
+  const prevHasMoreRef = useRef<typeof hasMore>(null)
 
   // Sync messages when Convex data changes
   useEffect(() => {
@@ -57,6 +59,14 @@ export function ConvexChatSync({
     prevTypingRef.current = typingState
     syncTyping(chatId, typingState.map((t) => ({ author: t.author, state: t.state })))
   }, [chatId, typingState, syncTyping])
+
+  // Sync hasMore state when Convex data changes
+  useEffect(() => {
+    if (!chatId) return
+    if (hasMore === prevHasMoreRef.current) return
+    prevHasMoreRef.current = hasMore
+    syncHasMoreMessages(chatId, hasMore)
+  }, [chatId, hasMore, syncHasMoreMessages])
 
   return null
 }

@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
-import { MessageSquare } from "lucide-react"
+import { useEffect, useRef, useCallback, useState } from "react"
+import { MessageSquare, Loader2 } from "lucide-react"
 import { MessageBubble } from "./message-bubble"
 import { useChatStore } from "@/lib/stores/chat-store"
 import type { ChatMessage } from "@/lib/types"
@@ -33,10 +33,13 @@ interface ChatThreadProps {
   chatLayout?: 'slack' | 'imessage'
   activeCrons?: SubAgentDetails[]
   projectSlug?: string
+  hasMore?: boolean
 }
 
 // Threshold in pixels for considering the user "at the bottom"
 const BOTTOM_THRESHOLD = 50
+// Threshold in pixels from top to trigger loading more messages
+const TOP_THRESHOLD = 100
 
 export function ChatThread({
   chatId,
@@ -48,14 +51,19 @@ export function ChatThread({
   chatLayout = 'slack',
   activeCrons = [],
   projectSlug,
+  hasMore = false,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const { setScrollPosition, getScrollPosition } = useChatStore()
+  const { setScrollPosition, getScrollPosition, loadMoreMessages } = useChatStore()
   const isAutoScrollingRef = useRef(false)
   const hasScrolledUpRef = useRef(false)
   const prevMessagesLengthRef = useRef(messages.length)
   const prevTypingIndicatorsLengthRef = useRef(typingIndicators.length)
+  const isLoadingMoreRef = useRef(false)
+  
+  // Local state for loading more indicator
+  const [loadingMore, setLoadingMore] = useState(false)
 
   // Check if user is near bottom of chat (within threshold)
   const isNearBottom = useCallback(() => {
@@ -78,6 +86,36 @@ export function ChatThread({
     hasScrolledUpRef.current = !nearBottom
     saveScrollPosition()
   }, [isNearBottom, saveScrollPosition])
+
+  // Handle scroll to load more messages when near top
+  const handleScrollUp = useCallback(async () => {
+    if (!containerRef.current || loadingMore || isLoadingMoreRef.current || !hasMore) return
+    
+    const { scrollTop } = containerRef.current
+    if (scrollTop < TOP_THRESHOLD) {
+      isLoadingMoreRef.current = true
+      setLoadingMore(true)
+      
+      // Save current scroll height before loading
+      const prevScrollHeight = containerRef.current.scrollHeight
+      
+      try {
+        await loadMoreMessages(chatId)
+        
+        // Restore scroll position after messages are prepended
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            const newScrollHeight = containerRef.current.scrollHeight
+            const heightDiff = newScrollHeight - prevScrollHeight
+            containerRef.current.scrollTop = scrollTop + heightDiff
+          }
+        })
+      } finally {
+        setLoadingMore(false)
+        isLoadingMoreRef.current = false
+      }
+    }
+  }, [chatId, loadingMore, hasMore, loadMoreMessages])
 
   // Initial scroll and chat switch handling
   useEffect(() => {
@@ -163,7 +201,7 @@ export function ChatThread({
     return () => observer.disconnect()
   }, [])
 
-  // Set up scroll event listener for saving position and tracking scroll state
+  // Set up scroll event listener for saving position, tracking scroll state, and loading more
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -171,7 +209,10 @@ export function ChatThread({
     let debounceTimeout: NodeJS.Timeout
     const onScroll = () => {
       clearTimeout(debounceTimeout)
-      debounceTimeout = setTimeout(handleScroll, 50)
+      debounceTimeout = setTimeout(() => {
+        handleScroll()
+        handleScrollUp()
+      }, 50)
     }
 
     container.addEventListener('scroll', onScroll)
@@ -179,7 +220,7 @@ export function ChatThread({
       container.removeEventListener('scroll', onScroll)
       clearTimeout(debounceTimeout)
     }
-  }, [handleScroll])
+  }, [handleScroll, handleScrollUp])
 
   if (loading) {
     return (
@@ -214,6 +255,21 @@ export function ChatThread({
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4 space-y-3 md:space-y-4 min-w-0 max-w-full">
+      {/* Loading indicator at top */}
+      {loadingMore && (
+        <div className="flex items-center justify-center py-4">
+          <Loader2 className="h-5 w-5 text-[var(--text-muted)] animate-spin" />
+          <span className="ml-2 text-sm text-[var(--text-muted)]">Loading older messages...</span>
+        </div>
+      )}
+      
+      {/* End of messages indicator */}
+      {!hasMore && messages.length > 0 && (
+        <div className="flex items-center justify-center py-2">
+          <span className="text-xs text-[var(--text-muted)]">Beginning of conversation</span>
+        </div>
+      )}
+      
       {groupedMessages.map((group, groupIndex) => (
         <div key={groupIndex} className="space-y-1">
           {group.messages.map((message, msgIndex) => {
