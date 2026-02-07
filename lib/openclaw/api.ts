@@ -208,7 +208,7 @@ export async function compactSession(sessionKey: string): Promise<void> {
  * @param sessionKey - The session key to abort
  */
 export async function abortSession(sessionKey: string): Promise<void> {
-  await openclawRpc<void>('chat.abort', { key: sessionKey });
+  await openclawRpc<void>('chat.abort', { sessionKey });
 }
 
 // Alias for backward compatibility
