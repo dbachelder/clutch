@@ -301,6 +301,23 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
     const repoDir = project?.local_path ?? "/home/dan/src/trap"
     const worktreeDir = `/home/dan/src/trap-worktrees/fix/${task.id.slice(0, 8)}`
 
+    // For PM tasks, fetch any signal Q&A history to include in the prompt
+    let signalResponses: Array<{ question: string; response: string }> | undefined
+    if (role === "pm") {
+      try {
+        const signals = await convex.query(api.signals.getByTask, { taskId: task.id })
+        signalResponses = signals
+          .filter((s) => s.responded_at && s.response)
+          .map((s) => ({
+            question: s.message,
+            response: s.response!,
+          }))
+      } catch {
+        // Non-fatal — proceed without signal context
+        signalResponses = undefined
+      }
+    }
+
     const prompt = buildPrompt({
       role,
       taskId: task.id,
@@ -310,6 +327,7 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
       projectId,
       repoDir,
       worktreeDir,
+      signalResponses,
     })
 
     // --- 5. Spawn agent via gateway RPC ---
