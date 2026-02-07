@@ -203,8 +203,9 @@ async function runProjectCycle(
         // Non-fatal — task may have been deleted
       }
 
-      // If the agent was stale (stuck), move the task back to ready so
-      // it can be retried on the next cycle.
+      // Post-reap status verification:
+      // - Stale agents: move task back to ready for retry
+      // - Finished agents: verify the task isn't orphaned in in_progress
       if (isStale) {
         try {
           await convex.mutation(api.tasks.move, {
@@ -214,6 +215,26 @@ async function runProjectCycle(
           console.log(`[WorkLoop] Moved stale task ${outcome.taskId} back to ready`)
         } catch {
           // Non-fatal — task may already be in a different state
+        }
+      } else {
+        // Agent finished normally — verify it actually updated the task status.
+        // If the task is still in_progress with no agent, it's orphaned.
+        try {
+          const tasks = await convex.query(api.tasks.getByProject, {
+            projectId: project.id,
+            status: "in_progress",
+          })
+          const orphan = tasks.find((t: { id: string }) => t.id === outcome.taskId)
+          if (orphan) {
+            // Agent said it finished but task is still in_progress — move to ready for retry
+            await convex.mutation(api.tasks.move, {
+              id: outcome.taskId,
+              status: "ready",
+            })
+            console.log(`[WorkLoop] Rescued orphaned task ${outcome.taskId} (agent finished but task still in_progress)`)
+          }
+        } catch {
+          // Non-fatal
         }
       }
     }

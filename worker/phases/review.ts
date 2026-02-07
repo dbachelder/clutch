@@ -155,13 +155,14 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
     }
   }
 
-  // Check if this task was recently reaped — don't re-spawn
-  if (agents.isRecentlyReaped(task.id)) {
+  // Check if this task was recently reaped as a reviewer — don't re-spawn same role
+  if (agents.isRecentlyReaped(task.id, "reviewer")) {
     return {
       spawned: false,
       details: {
         reason: "recently_reaped",
         taskId: task.id,
+        role: "reviewer",
       },
     }
   }
