@@ -217,8 +217,10 @@ async function runProjectCycle(
           // Non-fatal — task may already be in a different state
         }
       } else {
-        // Agent finished normally — verify it actually updated the task status.
-        // If the task is still in_progress with no agent, it's orphaned.
+        // Agent finished normally — check if it left the task in a bad state.
+        // We DON'T move it back to ready (that causes infinite re-dispatch loops
+        // where agents keep saying "already done" without updating the status).
+        // Instead, just log it so a human can investigate.
         try {
           const tasks = await convex.query(api.tasks.getByProject, {
             projectId: project.id,
@@ -226,12 +228,21 @@ async function runProjectCycle(
           })
           const orphan = tasks.find((t: { id: string }) => t.id === outcome.taskId)
           if (orphan) {
-            // Agent said it finished but task is still in_progress — move to ready for retry
-            await convex.mutation(api.tasks.move, {
-              id: outcome.taskId,
-              status: "ready",
+            console.warn(
+              `[WorkLoop] Task ${outcome.taskId} still in_progress after agent finished — ` +
+              `agent may not have updated status. Leaving as-is (won't re-dispatch).`
+            )
+            await logRun(convex, {
+              projectId: project.id,
+              cycle,
+              phase: "cleanup",
+              action: "orphan_detected",
+              taskId: outcome.taskId,
+              details: {
+                reason: "agent_finished_without_status_update",
+                agentReply: outcome.reply?.slice(0, 200),
+              },
             })
-            console.log(`[WorkLoop] Rescued orphaned task ${outcome.taskId} (agent finished but task still in_progress)`)
           }
         } catch {
           // Non-fatal
