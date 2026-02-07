@@ -215,6 +215,12 @@ export default defineSchema({
     responded_at: v.optional(v.number()),
     response: v.optional(v.string()),
     delivered_at: v.optional(v.number()), // When notification was sent to user
+    notification_status: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("sent"),
+      v.literal("failed")
+    )),
+    notification_error: v.optional(v.string()),
     created_at: v.number(),
   })
     .index("by_uuid", ["id"])

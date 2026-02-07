@@ -160,6 +160,7 @@ export interface Event {
 
 export type SignalKind = "question" | "blocker" | "alert" | "fyi"
 export type SignalSeverity = "normal" | "high" | "critical"
+export type SignalNotificationStatus = "pending" | "sent" | "failed"
 
 export interface Signal {
   id: string
@@ -173,6 +174,8 @@ export interface Signal {
   responded_at: number | null
   response: string | null
   delivered_at: number | null // When notification was sent to user
+  notification_status: SignalNotificationStatus | null
+  notification_error: string | null
   created_at: number
 }
 
