@@ -809,6 +809,16 @@ export const move = mutation({
       return reorderTask(ctx, existing._id, args.status, args.position)
     }
 
+    // Guard: prevent moving tasks backward from 'done' to any earlier status.
+    // Only humans should resurrect completed tasks (via the UI with force flag).
+    // This prevents bugs where stale agent reaping accidentally un-completes tasks.
+    if (existing.status === 'done' && args.status !== 'done') {
+      throw new Error(
+        `Cannot move task from 'done' to '${args.status}'. ` +
+        `Completed tasks can only be reopened manually.`
+      )
+    }
+
     // Check for incomplete dependencies when claiming work (ready → in_progress)
     // Tasks can sit in ready with unmet deps — the gate script skips them.
     // Only block when someone actually tries to start working.

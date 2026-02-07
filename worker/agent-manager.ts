@@ -29,6 +29,7 @@ export interface AgentHandle {
 export interface AgentOutcome {
   taskId: string
   sessionKey: string
+  role: string
   success: boolean
   reply?: string
   error?: string
@@ -134,6 +135,7 @@ export class AgentManager {
       return {
         taskId: params.taskId,
         sessionKey,
+        role: params.role,
         success: true,
         reply: "accepted",
         durationMs: 0,
@@ -143,6 +145,7 @@ export class AgentManager {
       const outcome: AgentOutcome = {
         taskId: params.taskId,
         sessionKey,
+        role: params.role,
         success: false,
         error: message,
         durationMs: 0,
@@ -230,6 +233,7 @@ export class AgentManager {
         const outcome: AgentOutcome = {
           taskId,
           sessionKey: handle.sessionKey,
+          role: handle.role,
           success: reason === "finished",
           reply: replyText,
           error: reason === "stale" ? `Agent stale for >${Math.round(staleMs / 60_000)}min` : undefined,

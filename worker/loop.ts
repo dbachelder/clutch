@@ -204,17 +204,43 @@ async function runProjectCycle(
       }
 
       // Post-reap status verification:
-      // - Stale agents: move task back to ready for retry
+      // - Stale agents: move task back to ready for retry (but NOT for analyzers/reviewers —
+      //   they're observers and the task's real status should be preserved)
       // - Finished agents: verify the task isn't orphaned in in_progress
       if (isStale) {
-        try {
-          await convex.mutation(api.tasks.move, {
-            id: outcome.taskId,
-            status: "ready",
-          })
-          console.log(`[WorkLoop] Moved stale task ${outcome.taskId} back to ready`)
-        } catch {
-          // Non-fatal — task may already be in a different state
+        // Analyzer and reviewer agents are observers — they don't own the task's status.
+        // If they time out, the task should stay wherever it is (usually done).
+        const isObserverRole = outcome.role === "analyzer" || outcome.role === "reviewer"
+        if (isObserverRole) {
+          console.log(
+            `[WorkLoop] Stale ${outcome.role} for task ${outcome.taskId} — ` +
+            `not moving task (observer role, task status is correct)`
+          )
+        } else {
+          try {
+            // Only move back to ready if the task is currently in_progress
+            // (prevents resurrecting done/backlog tasks)
+            const currentTasks = await convex.query(api.tasks.getByProject, {
+              projectId: project.id,
+              status: "in_progress",
+            })
+            const isInProgress = currentTasks.some((t: { id: string }) => t.id === outcome.taskId)
+
+            if (isInProgress) {
+              await convex.mutation(api.tasks.move, {
+                id: outcome.taskId,
+                status: "ready",
+              })
+              console.log(`[WorkLoop] Moved stale task ${outcome.taskId} back to ready`)
+            } else {
+              console.log(
+                `[WorkLoop] Stale agent for task ${outcome.taskId} but task is not in_progress — ` +
+                `leaving status as-is`
+              )
+            }
+          } catch {
+            // Non-fatal — task may already be in a different state
+          }
         }
       } else {
         // Agent finished normally — check if it left the task in a bad state.
