@@ -23,6 +23,7 @@ import type * as signals from "../signals.js";
 import type * as stuckTickets from "../stuckTickets.js";
 import type * as taskAnalyses from "../taskAnalyses.js";
 import type * as taskDependencies from "../taskDependencies.js";
+import type * as task_events from "../task_events.js";
 import type * as tasks from "../tasks.js";
 import type * as workLoop from "../workLoop.js";
 
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   stuckTickets: typeof stuckTickets;
   taskAnalyses: typeof taskAnalyses;
   taskDependencies: typeof taskDependencies;
+  task_events: typeof task_events;
   tasks: typeof tasks;
   workLoop: typeof workLoop;
 }>;

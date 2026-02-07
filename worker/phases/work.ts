@@ -440,6 +440,21 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
             agent_last_active_at: handle.spawnedAt,
           }],
         })
+        // Log agent assignment event
+        await convex.mutation(api.task_events.logAgentAssigned, {
+          taskId: task.id,
+          sessionKey: handle.sessionKey,
+          model,
+          role,
+        })
+        // Log status change event (ready -> in_progress)
+        await convex.mutation(api.task_events.logStatusChange, {
+          taskId: task.id,
+          from: 'ready',
+          to: 'in_progress',
+          actor: 'work-loop',
+          reason: 'task_claimed',
+        })
       } catch (updateError) {
         console.error(`[WorkPhase] Failed to update task agent info:`, updateError)
       }

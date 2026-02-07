@@ -2,6 +2,7 @@ import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
 import { generateId } from './_helpers'
 import type { Task, Comment, TaskSummary, TaskDependencySummary } from '../lib/types'
+import { logTaskEvent } from './task_events'
 
 // ============================================
 // Type Helpers
@@ -875,6 +876,10 @@ export const move = mutation({
       return reorderTask(ctx, existing._id, args.status, args.position)
     }
 
+    // Log the status change event BEFORE the actual move
+    const fromStatus = existing.status
+    const toStatus = args.status
+
     // Guard: prevent moving tasks backward from 'done' to any earlier status.
     // Only humans should resurrect completed tasks (via the UI with force flag).
     // This prevents bugs where stale agent reaping accidentally un-completes tasks.
@@ -947,6 +952,15 @@ export const move = mutation({
     if (!updated) {
       throw new Error('Failed to move task')
     }
+
+    // Log the status change event after successful move
+    await logTaskEvent(
+      ctx,
+      args.id,
+      'status_changed',
+      'system', // Could be enhanced to track actual actor (user session key, etc.)
+      { from: fromStatus, to: toStatus }
+    )
 
     return toTask(updated as Parameters<typeof toTask>[0])
   },

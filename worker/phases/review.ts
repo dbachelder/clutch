@@ -198,6 +198,20 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
 
           // Trigger Convex deploy if PR touched convex/ directory
           await handlePostMergeDeploy(convex, task.pr_number, project, task.id)
+          // Log status change event (in_review -> done) for auto-merged PR
+          await convex.mutation(api.task_events.logStatusChange, {
+            taskId: task.id,
+            from: 'in_review',
+            to: 'done',
+            actor: 'work-loop',
+            reason: 'pr_already_merged',
+          })
+          // Log PR merged event
+          await convex.mutation(api.task_events.logPRMerged, {
+            taskId: task.id,
+            prNumber: task.pr_number,
+            mergedBy: 'work-loop',
+          })
         } catch {
           // Non-fatal
         }
@@ -253,6 +267,13 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
           agent_started_at: handle.spawnedAt,
           agent_last_active_at: handle.spawnedAt,
         }],
+      })
+      // Log agent assignment event
+      await convex.mutation(api.task_events.logAgentAssigned, {
+        taskId: task.id,
+        sessionKey: handle.sessionKey,
+        model: "sonnet",
+        role: "reviewer",
       })
     } catch (updateError) {
       console.error(`[ReviewPhase] Failed to update task agent info:`, updateError)

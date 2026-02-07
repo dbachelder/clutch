@@ -52,6 +52,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const convex = getConvexClient()
 
+    // Get current task to check for PR number changes
+    let currentTask = null
+    if (pr_number !== undefined) {
+      const result = await convex.query(api.tasks.getById, { id })
+      if (result) {
+        currentTask = result.task
+      }
+    }
+
     // If status is changing, use the move mutation (handles dependencies + position)
     if (status !== undefined) {
       // First do the status change via move
@@ -73,6 +82,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
       if (Object.keys(otherUpdates).length > 0) {
         const task = await convex.mutation(api.tasks.update, { id, ...otherUpdates })
+
+        // Log PR opened event if pr_number is being set for the first time
+        if (pr_number !== undefined && pr_number !== null && currentTask && !currentTask.pr_number) {
+          try {
+            await convex.mutation(api.task_events.logPROpened, {
+              taskId: id,
+              prNumber: pr_number,
+              branch: branch || `fix/${id.slice(0, 8)}`,
+              actor: currentTask.agent_session_key || 'agent',
+            })
+          } catch (logErr) {
+            // Non-fatal — just log the error
+            console.warn(`[Tasks API] Failed to log PR opened event:`, logErr)
+          }
+        }
+
         return NextResponse.json({ task })
       }
 
@@ -103,6 +128,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { error: "Task not found" },
         { status: 404 }
       )
+    }
+
+    // Log PR opened event if pr_number is being set for the first time
+    if (pr_number !== undefined && pr_number !== null && currentTask && !currentTask.pr_number) {
+      try {
+        await convex.mutation(api.task_events.logPROpened, {
+          taskId: id,
+          prNumber: pr_number,
+          branch: branch || `fix/${id.slice(0, 8)}`,
+          actor: currentTask.agent_session_key || 'agent',
+        })
+      } catch (logErr) {
+        // Non-fatal — just log the error
+        console.warn(`[Tasks API] Failed to log PR opened event:`, logErr)
+      }
     }
 
     return NextResponse.json({ task })

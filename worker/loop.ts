@@ -199,6 +199,29 @@ async function runProjectCycle(
         },
       })
 
+      // Log task event for agent completion or reap
+      try {
+        if (isStale) {
+          await convex.mutation(api.task_events.logAgentReaped, {
+            taskId: outcome.taskId,
+            sessionKey: outcome.sessionKey,
+            reason: "stale",
+          })
+        } else {
+          await convex.mutation(api.task_events.logAgentCompleted, {
+            taskId: outcome.taskId,
+            sessionKey: outcome.sessionKey,
+            tokensIn: outcome.usage?.inputTokens,
+            tokensOut: outcome.usage?.outputTokens,
+            outputPreview: outcome.reply?.slice(0, 500), // Limit preview
+            durationMs: outcome.durationMs,
+          })
+        }
+      } catch (logErr) {
+        // Non-fatal — log and continue
+        console.warn(`[WorkLoop] Failed to log agent event: ${logErr}`)
+      }
+
       // For finished agents (not stale), write accurate JSONL-sourced data to Convex
       // before clearing. This captures the real model, token counts, and output preview.
       if (!isStale) {
