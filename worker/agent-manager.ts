@@ -194,8 +194,14 @@ export class AgentManager {
       let replyText = ""
 
       if (!info) {
-        // Session file not found — may have been cleaned up or never created
-        // Treat as finished (session is gone)
+        // Session file not found yet — agent may still be starting up.
+        // Only treat as finished if the agent has been running for a while.
+        const agentAgeMs = now - handle.spawnedAt
+        if (agentAgeMs < 60_000) {
+          // Agent was spawned less than 60s ago — give it time to create its session file
+          continue
+        }
+        // Session file still missing after 60s — treat as failed/gone
         reason = "finished"
         replyText = "completed"
       } else if (info.isDone) {
