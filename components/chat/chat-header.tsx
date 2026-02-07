@@ -1,19 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Edit2, Check, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useChatStore, type ChatWithLastMessage } from "@/lib/stores/chat-store"
+import { useAgentSessions, type AgentSession } from "@/lib/hooks/use-agent-sessions"
 
 interface ChatHeaderProps {
   chat: ChatWithLastMessage
-}
-
-interface SessionInfo {
-  model?: string
-  contextPercent?: number
 }
 
 export function ChatHeader({ chat }: ChatHeaderProps) {
@@ -21,50 +17,31 @@ export function ChatHeader({ chat }: ChatHeaderProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(chat.title)
   const [isUpdating, setIsUpdating] = useState(false)
-  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null)
-  const [loadingSession, setLoadingSession] = useState(false)
 
-  // Fetch session info from CLI-backed endpoint (no WS dependency)
-  useEffect(() => {
-    async function fetchSessionInfo() {
-      if (!chat.session_key) {
-        setSessionInfo(null)
-        return
-      }
+  // Get agent sessions from Convex (reactive, no polling)
+  const { sessions: agentSessions, isLoading: loadingSession } = useAgentSessions(
+    chat.project_id ?? "",
+    100
+  )
 
-      setLoadingSession(true)
-      try {
-        const response = await fetch("/api/sessions/list?activeMinutes=60&limit=200", {
-          signal: AbortSignal.timeout(10000),
-        })
-        if (!response.ok) {
-          setSessionInfo(null)
-          return
-        }
-        const data = await response.json()
-        const sessions: Array<Record<string, unknown>> = data.sessions || []
-        const session = sessions.find((s) => s.id === chat.session_key)
-          || sessions.find((s) => String(s.id || "").endsWith(chat.session_key!))
-        if (session) {
-          const tokens = (session.tokens as { total?: number } | undefined)?.total ?? 0
-          const contextWindow = 200000
-          const contextPercent = contextWindow > 0 ? Math.round((tokens / contextWindow) * 100) : 0
-          setSessionInfo({
-            model: session.model as string | undefined,
-            contextPercent,
-          })
-        } else {
-          setSessionInfo(null)
-        }
-      } catch {
-        setSessionInfo(null)
-      } finally {
-        setLoadingSession(false)
-      }
+  // Find session matching this chat's session_key
+  const session = agentSessions?.find(
+    (s: AgentSession) => s.id === chat.session_key
+  ) || agentSessions?.find(
+    (s: AgentSession) => s.id.endsWith(chat.session_key ?? "")
+  )
+
+  // Derive session info from Convex data
+  const sessionInfo = (() => {
+    if (!session) return null
+    const tokens = session.tokens.total
+    const contextWindow = 200000
+    const contextPercent = contextWindow > 0 ? Math.round((tokens / contextWindow) * 100) : 0
+    return {
+      model: session.model,
+      contextPercent,
     }
-
-    fetchSessionInfo()
-  }, [chat.session_key])
+  })()
 
   const handleStartEdit = () => {
     setIsEditing(true)
