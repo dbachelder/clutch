@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Draggable } from "@hello-pangea/dnd"
 import { Link2, Lock } from "lucide-react"
 import type { Task } from "@/lib/types"
-import { useDependencies } from "@/lib/hooks/use-dependencies"
+import { useConvexDependencies } from "@/lib/hooks/use-convex-dependencies"
 import { formatCompactTime } from "@/lib/utils"
 import { AgentStatus, OrphanedTaskWarning } from "@/components/agents/agent-status"
 import { TaskCardMenu } from "./task-card-menu"
@@ -79,8 +79,8 @@ export function TaskCard({ task, index, onClick, isMobile = false, projectId, co
     return () => clearInterval(interval)
   }, [])
 
-  // Get dependency info
-  const { dependencies } = useDependencies(task.id)
+  // Get dependency info (using reactive Convex query instead of REST)
+  const { dependencies } = useConvexDependencies(task.id)
   const dependsOnCount = dependencies.depends_on.length
   const blocksCount = dependencies.blocks.length
   const incompleteDeps = dependencies.depends_on.filter(d => d.status !== 'done')

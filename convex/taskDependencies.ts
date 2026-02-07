@@ -112,6 +112,63 @@ export const exists = query({
 })
 
 /**
+ * Get dependency summary for a task — returns both depends_on and blocks
+ * in a single query for efficient reactive updates.
+ */
+export const getDependencySummary = query({
+  args: { taskId: v.string() },
+  handler: async (ctx, args): Promise<{
+    depends_on: TaskDependencySummary[]
+    blocks: TaskSummary[]
+  }> => {
+    // Get tasks this task depends on
+    const dependencyLinks = await ctx.db
+      .query('taskDependencies')
+      .withIndex('by_task', (q) => q.eq('task_id', args.taskId))
+      .collect()
+
+    const depends_on: TaskDependencySummary[] = []
+    for (const link of dependencyLinks) {
+      const task = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', link.depends_on_id))
+        .unique()
+      if (task) {
+        depends_on.push({
+          id: task.id,
+          title: task.title,
+          status: task.status as TaskSummary['status'],
+          dependency_id: link.id,
+        })
+      }
+    }
+
+    // Get tasks that depend on this task (are blocked by it)
+    const blockedLinks = await ctx.db
+      .query('taskDependencies')
+      .withIndex('by_depends_on', (q) => q.eq('depends_on_id', args.taskId))
+      .collect()
+
+    const blocks: TaskSummary[] = []
+    for (const link of blockedLinks) {
+      const task = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', link.task_id))
+        .unique()
+      if (task) {
+        blocks.push({
+          id: task.id,
+          title: task.title,
+          status: task.status as TaskSummary['status'],
+        })
+      }
+    }
+
+    return { depends_on, blocks }
+  },
+})
+
+/**
  * Check if adding a dependency would create a cycle
  */
 export const wouldCreateCycle = query({
