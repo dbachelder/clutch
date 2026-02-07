@@ -1,13 +1,10 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useWorkLoopState, useWorkLoopStats, useActiveAgentCount } from "@/lib/hooks/use-work-loop"
 import { Activity, AlertCircle, Clock, Users, RefreshCw } from "lucide-react"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { formatTimestamp } from "@/lib/utils"
 
 interface StatsPanelProps {
   projectId: string
@@ -64,6 +61,29 @@ export function StatsPanel({ projectId }: StatsPanelProps) {
           <div className="text-2xl font-bold">{state?.current_cycle ?? 0}</div>
         </CardContent>
       </Card>
+
+      {state?.last_cycle_at && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              Last Cycle
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="text-2xl font-bold cursor-help">
+                  {formatTimestamp(state.last_cycle_at)}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {new Date(state.last_cycle_at).toLocaleString()}
+              </TooltipContent>
+            </Tooltip>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-2">
@@ -170,27 +190,4 @@ function formatTimeAgo(timestamp: number): string {
   }
 }
 
-function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const isToday = date.toDateString() === now.toDateString()
-  const isThisYear = date.getFullYear() === now.getFullYear()
-
-  const timeStr = date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
-
-  if (isToday) {
-    return timeStr
-  }
-
-  const dateStr = date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    ...(isThisYear ? {} : { year: "numeric" }),
-  })
-
-  return `${dateStr} ${timeStr}`
-}
+// formatTimestamp now imported from @/lib/utils

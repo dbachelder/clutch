@@ -2,15 +2,12 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useActiveAgentTasks } from "@/lib/hooks/use-work-loop"
 import { Cpu, Clock, Terminal, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { useMemo } from "react"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { formatTimestamp } from "@/lib/utils"
 
 interface ActiveAgentsProps {
   projectId: string
@@ -202,31 +199,4 @@ function formatLastActivity(lastActiveAt: number | null): string {
   return ">24h ago"
 }
 
-/**
- * Format a timestamp as a concise absolute time.
- * Shows "10:32 PM" for today, "Feb 6 10:32 PM" for older dates.
- */
-function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const isToday = date.toDateString() === now.toDateString()
-  const isThisYear = date.getFullYear() === now.getFullYear()
-
-  const timeStr = date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
-
-  if (isToday) {
-    return timeStr
-  }
-
-  const dateStr = date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    ...(isThisYear ? {} : { year: "numeric" }),
-  })
-
-  return `${dateStr} ${timeStr}`
-}
+// formatTimestamp now imported from @/lib/utils
