@@ -31,26 +31,23 @@ Statuses: `backlog` → `ready` → `in_progress` → `in_review` → `done`
 ```
 read(path="/home/dan/src/trap/some/file.ts")
 ```
-Never call `read()` with no arguments — it will fail. If you need to explore the project structure, use `exec` with `find` or `ls` instead.
+Never call `read()` with no arguments — it will fail. If you need to explore the project structure, use `exec` with `fd`, `rg`, or `cat` instead.
 
-**`exec` tool — use for shell commands:**
-```
-exec(command="ls /home/dan/src/trap/app/")
-exec(command="cat /home/dan/src/trap/package.json")
-```
-
-**Prefer `exec` with `cat`/`ls`/`find` for file exploration.** Use `read` only when you have a specific file path.
+**Prefer `exec` for file exploration.** Use `read` only when you already have a specific file path.
 
 **Common patterns:**
 ```bash
-# Find files
-find /home/dan/src/trap/app -name "*.tsx" | head -20
+# Find files by name (fd is available)
+fd "\.tsx$" /home/dan/src/trap/app
+
+# Search for code (rg is available — use it instead of grep)
+rg "functionName" /home/dan/src/trap/app -t ts
 
 # Read a file
 cat /home/dan/src/trap/app/page.tsx
 
-# Search for code
-grep -rn "functionName" /home/dan/src/trap/app/ --include="*.ts"
+# List directory
+ls /home/dan/src/trap/app/
 ```
 
 ## Git Worktrees (REQUIRED)

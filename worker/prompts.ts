@@ -177,7 +177,8 @@ function buildReviewerInstructions(params: PromptParams): string {
 ## Tool Usage (CRITICAL)
 - **\`read\` tool REQUIRES a \`path\` parameter.** Never call read() with no arguments.
 - **Use \`exec\` with \`cat\` to read files:** \`exec(command="cat /path/to/file.ts")\`
-- **Use \`exec\` with \`grep\`/\`find\` to explore code:** \`exec(command="grep -rn 'pattern' /path --include='*.ts'")\`
+- **Use \`rg\` to search code:** \`exec(command="rg 'pattern' /path -t ts")\`
+- **Use \`fd\` to find files:** \`exec(command="fd '\\.tsx$' /path")\`
 
 Ticket ID: \`${params.taskId}\`
 Role: \`reviewer\`
@@ -221,7 +222,8 @@ function buildDevInstructions(params: PromptParams): string {
 ## Tool Usage (CRITICAL)
 - **\`read\` tool REQUIRES a \`path\` parameter.** Never call read() with no arguments.
 - **Use \`exec\` with \`cat\` to read files:** \`exec(command="cat /path/to/file.ts")\`
-- **Use \`exec\` with \`find\`/\`ls\`/\`grep\` to explore:** \`exec(command="find ${params.worktreeDir}/app -name '*.tsx' | head -20")\`
+- **Use \`rg\` to search code:** \`exec(command="rg 'pattern' ${params.worktreeDir}/app -t ts")\`
+- **Use \`fd\` to find files:** \`exec(command="fd '\\.tsx$' ${params.worktreeDir}/app")\`
 - **All work happens in your worktree:** \`${params.worktreeDir}\` (NOT in /home/dan/src/trap)
 
 Ticket ID: \`${params.taskId}\`
