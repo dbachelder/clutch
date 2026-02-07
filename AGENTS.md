@@ -79,8 +79,6 @@ Branch naming: `fix/<ticket-id-prefix>-<short-desc>` or `feat/<ticket-id-prefix>
 
 ## Ticket Verification
 
-⚠️ **DO NOT use the `browser` tool.** It will timeout, error, and waste your token budget. Browser QA is handled separately by the main agent. Do not attempt CDP, screenshots, or any browser automation.
-
 **Before marking a ticket as `in_review`:**
 1. TypeScript compiles (`pnpm typecheck`)
 2. Lint passes (`pnpm lint`)
@@ -88,4 +86,13 @@ Branch naming: `fix/<ticket-id-prefix>-<short-desc>` or `feat/<ticket-id-prefix>
 
 **If the ticket involves UI changes:**
 - Note "needs browser QA" in your PR description
-- Leave the ticket in `in_review` — a human or the main agent will verify visually
+- Leave the ticket in `in_review` — QA agents will verify visually
+
+## Browser Testing (QA role only)
+
+⚠️ **Only QA agents should use browser automation.** Dev and reviewer agents should NOT use browser tools.
+
+QA agents have access to `agent-browser` (CLI). See the QA role prompt for full usage. Key points:
+- App runs at `http://localhost:3002`
+- Use `agent-browser open`, `snapshot`, `click`, `fill`, `screenshot`, `close`
+- **Always run `agent-browser close` when done** — failing to do so leaks memory

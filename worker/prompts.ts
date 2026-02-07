@@ -192,20 +192,82 @@ ${params.taskDescription}
 
 ---
 
-**Your job:** Verify this ticket's requirements are met via code review and testing.
+**Your job:** Test this ticket's requirements via browser automation and code review.
 
-**NOTE:** You do NOT have browser access. Verify via code review, type checking, and lint. If manual browser QA is needed, leave the ticket in \`in_review\` with a comment noting what needs visual verification.
+## Browser Testing with agent-browser
 
-**When verified:** Mark done:
+You have \`agent-browser\` installed globally. Use it for all UI verification.
+
+**Workflow:**
+\`\`\`bash
+# 1. Open the target page
+agent-browser open http://localhost:3002/projects/the-trap/board
+
+# 2. Get accessibility tree to understand UI state
+agent-browser snapshot
+
+# 3. Interact with elements (use refs from snapshot, or CSS selectors)
+agent-browser click @e5
+agent-browser fill @e3 "test input"
+agent-browser find role button click --name "Save"
+
+# 4. Verify results
+agent-browser get text @e1
+agent-browser snapshot
+agent-browser screenshot /tmp/qa-evidence.png
+
+# 5. ALWAYS close when done
+agent-browser close
+\`\`\`
+
+**Key commands:**
+- \`agent-browser open <url>\` — navigate to page
+- \`agent-browser snapshot\` — get accessibility tree with refs (do this often)
+- \`agent-browser click @ref\` / \`agent-browser click "selector"\` — click
+- \`agent-browser fill @ref "text"\` / \`agent-browser fill "selector" "text"\` — fill input
+- \`agent-browser find role button click --name "Name"\` — semantic find + action
+- \`agent-browser get text @ref\` — read element text
+- \`agent-browser wait --text "Expected"\` — wait for text to appear
+- \`agent-browser wait --load networkidle\` — wait for page to finish loading
+- \`agent-browser screenshot /tmp/name.png\` — capture evidence
+- \`agent-browser close\` — **MUST call when done**
+
+**Notes:**
+- Refs (\`@e5\`) are only valid until the page changes — take a new snapshot after interactions
+- The app runs at \`http://localhost:3002\`
+- Take screenshots of failures as evidence
+
+## Testing Scope
+1. **Browser test** all acceptance criteria in the ticket
+2. **Code review** — check the implementation makes sense (\`cat\`, \`rg\` in the repo)
+3. **Type check** — \`cd ${params.repoDir} && pnpm typecheck\` (if relevant)
+4. **File bug tickets** for any issues found
+
+**When verified (all criteria pass):** Mark done:
 \`\`\`bash
 curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "done"}'
 \`\`\`
 
-**If issues found:** Add a comment and move back to ready:
+**If issues found:** File a bug ticket, add a comment, and move back to ready:
 \`\`\`bash
-curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "<findings>"}'
+# File a bug ticket for each issue
+curl -X POST http://localhost:3002/api/tasks -H 'Content-Type: application/json' -d '{
+  "project_id": "${params.projectId}",
+  "title": "[BUG] <description>",
+  "description": "## Summary\\n...\\n## Steps to Reproduce\\n1. ...\\n## Expected\\n...\\n## Actual\\n...\\n## Severity\\nHigh/Medium/Low",
+  "status": "ready",
+  "priority": "high",
+  "role": "dev"
+}'
+
+# Comment on the original ticket
+curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "QA failed: <summary of issues found>"}'
+
+# Move back to ready for rework
 curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "ready"}'
-\`\`\``
+\`\`\`
+
+**CRITICAL: Always run \`agent-browser close\` before finishing.**`
 }
 
 /**
