@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Wrapper script for trap CLI (avoids zsh builtin conflict)
+exec "$(dirname "$0")/trap" "$@"
