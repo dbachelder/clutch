@@ -2,6 +2,16 @@ import { execFileSync } from "node:child_process"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
+ * @deprecated This endpoint is deprecated. Use the Convex `tasks.getAgentSessions` query instead.
+ * The Sessions tab now uses Convex for reactive session data derived from task agent tracking.
+ * This endpoint is kept for backward compatibility but may be removed in a future version.
+ *
+ * Migration:
+ * - Frontend: Use `useAgentSessions(projectId)` hook from `@/lib/hooks/use-agent-sessions`
+ * - Backend: Use `api.tasks.getAgentSessions` Convex query
+ */
+
+/**
  * Raw session data from `openclaw sessions --json`.
  */
 interface OpenClawSession {

@@ -362,6 +362,127 @@ export const getWithActiveAgents = query({
   },
 })
 
+// Status thresholds for session derivation:
+// < 5min since last activity → running (actively working)
+// 5-15min → idle (paused but may resume)
+// > 15min → completed (done, no longer active)
+const IDLE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
+const COMPLETED_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
+
+type SessionStatus = 'running' | 'idle' | 'completed'
+type SessionType = 'main' | 'isolated' | 'subagent'
+
+/**
+ * Agent session information derived from task data
+ * Mirrors the Session type from lib/types/session.ts but derived from Convex task data
+ */
+export interface AgentSession {
+  id: string // agent_session_key
+  name: string // derived from session key or task title
+  type: SessionType
+  model: string
+  status: SessionStatus
+  createdAt: string // agent_started_at
+  updatedAt: string // agent_last_active_at
+  completedAt?: string // set if status is completed
+  tokens: {
+    input: number
+    output: number
+    total: number
+  }
+  task: {
+    id: string
+    title: string
+    status: TaskStatus
+  }
+}
+
+function deriveSessionStatus(lastActiveAt: number | undefined): SessionStatus {
+  if (!lastActiveAt) return 'completed'
+  const timeSinceActivity = Date.now() - lastActiveAt
+  if (timeSinceActivity < IDLE_THRESHOLD_MS) return 'running'
+  if (timeSinceActivity >= COMPLETED_THRESHOLD_MS) return 'completed'
+  return 'idle'
+}
+
+function mapSessionType(sessionKey: string): SessionType {
+  if (sessionKey.includes(':isolated:')) return 'isolated'
+  if (sessionKey.includes(':subagent:')) return 'subagent'
+  return 'main'
+}
+
+function extractSessionName(sessionKey: string, taskTitle: string): string {
+  // Try to extract meaningful name from session key
+  const parts = sessionKey.split(':')
+  const lastPart = parts[parts.length - 1]
+  // If last part looks like a task ID prefix, use task title
+  if (lastPart && lastPart.length >= 8 && /^[a-f0-9]+$/.test(lastPart)) {
+    return taskTitle
+  }
+  return lastPart || taskTitle
+}
+
+/**
+ * Get agent sessions for a project
+ * Returns sessions derived from tasks that have agent_session_key set
+ * This replaces the openclaw sessions CLI for the Sessions tab
+ */
+export const getAgentSessions = query({
+  args: {
+    projectId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<AgentSession[]> => {
+    const tasks = await ctx.db
+      .query('tasks')
+      .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
+      .filter((q) => q.neq('agent_session_key', undefined))
+      .collect()
+
+    // Sort by most recently active first
+    const sortedTasks = tasks.sort(
+      (a, b) => (b.agent_last_active_at ?? 0) - (a.agent_last_active_at ?? 0)
+    )
+
+    // Apply limit if provided
+    const limitedTasks = args.limit && args.limit > 0
+      ? sortedTasks.slice(0, args.limit)
+      : sortedTasks
+
+    // Map tasks to session-like objects
+    return limitedTasks.map((task) => {
+      const sessionKey = task.agent_session_key!
+      const startedAt = task.agent_started_at ?? Date.now()
+      const lastActiveAt = task.agent_last_active_at ?? startedAt
+      const status = deriveSessionStatus(lastActiveAt)
+
+      const tokensIn = task.agent_tokens_in ?? 0
+      const tokensOut = task.agent_tokens_out ?? 0
+
+      return {
+        id: sessionKey,
+        name: extractSessionName(sessionKey, task.title),
+        type: mapSessionType(sessionKey),
+        model: task.agent_model ?? 'unknown',
+        status,
+        createdAt: new Date(startedAt).toISOString(),
+        updatedAt: new Date(lastActiveAt).toISOString(),
+        completedAt: status === 'completed' ? new Date(lastActiveAt).toISOString() : undefined,
+        tokens: {
+          input: tokensIn,
+          output: tokensOut,
+          total: tokensIn + tokensOut,
+        },
+        task: {
+          id: task.id,
+          title: task.title,
+          status: task.status as TaskStatus,
+        },
+      }
+    })
+  },
+})
+
 /**
  * Get agent activity history for a project
  * Returns all tasks that have been worked on by agents (have agent_started_at)
