@@ -23,6 +23,8 @@ function toSignal(doc: {
   responded_at?: number
   response?: string
   delivered_at?: number
+  notification_status?: string
+  notification_error?: string
   created_at: number
 }): Signal {
   return {
@@ -37,6 +39,8 @@ function toSignal(doc: {
     responded_at: doc.responded_at ?? null,
     response: doc.response ?? null,
     delivered_at: doc.delivered_at ?? null,
+    notification_status: (doc.notification_status as Signal['notification_status']) ?? null,
+    notification_error: doc.notification_error ?? null,
     created_at: doc.created_at,
   }
 }
@@ -397,6 +401,43 @@ export const markDelivered = mutation({
 
     await ctx.db.patch(existing._id, {
       delivered_at: now,
+    })
+
+    const updated = await ctx.db.get(existing._id)
+    if (!updated) {
+      throw new Error('Failed to update signal')
+    }
+
+    return toSignal(updated as Parameters<typeof toSignal>[0])
+  },
+})
+
+/**
+ * Update notification status for a signal
+ */
+export const updateNotificationStatus = mutation({
+  args: {
+    id: v.string(),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('sent'),
+      v.literal('failed')
+    ),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Signal> => {
+    const existing = await ctx.db
+      .query('signals')
+      .withIndex('by_uuid', (q) => q.eq('id', args.id))
+      .unique()
+
+    if (!existing) {
+      throw new Error(`Signal not found: ${args.id}`)
+    }
+
+    await ctx.db.patch(existing._id, {
+      notification_status: args.status,
+      notification_error: args.error,
     })
 
     const updated = await ctx.db.get(existing._id)

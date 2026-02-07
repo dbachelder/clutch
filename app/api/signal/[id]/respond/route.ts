@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getConvexClient } from "@/lib/convex/server"
 import { api } from "@/convex/_generated/api"
+import { getOpenClawClient } from "@/lib/openclaw/client"
 
 // POST /api/signal/[id]/respond — Respond to signal
 export async function POST(
@@ -22,18 +23,65 @@ export async function POST(
   try {
     const convex = getConvexClient()
 
-    const signal = await convex.mutation(api.signals.respond, {
+    // First, get the signal to access session_key and original message
+    const signal = await convex.query(api.signals.getById, { id })
+    
+    if (!signal) {
+      return NextResponse.json(
+        { error: "Signal not found" },
+        { status: 404 }
+      )
+    }
+
+    // Save response to Convex (this sets responded_at)
+    await convex.mutation(api.signals.respond, {
       id,
       response,
     })
 
-    // TODO: Integrate with OpenClaw sessions_send to notify the agent
-    // This will be wired later when OpenClaw session integration is ready
-    
+    // Set notification status to pending
+    await convex.mutation(api.signals.updateNotificationStatus, {
+      id,
+      status: "pending",
+    })
+
+    // Send notification to agent session via OpenClaw
+    let notificationStatus: "sent" | "failed" = "sent"
+    let notificationError: string | undefined
+
+    try {
+      const openclaw = getOpenClawClient()
+      
+      // Ensure connection is established
+      if (openclaw.getStatus() !== "connected") {
+        openclaw.connect()
+        // Wait a moment for connection (fire-and-forget approach)
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+
+      // Format message with original question and human response
+      const message = formatSignalResponse(signal.message, response, signal.kind)
+      
+      await openclaw.sendMessage(signal.session_key, message)
+      console.log(`[Signal API] Notification sent to session ${signal.session_key}`)
+    } catch (error) {
+      notificationStatus = "failed"
+      notificationError = error instanceof Error ? error.message : String(error)
+      console.warn(`[Signal API] Failed to notify agent session ${signal.session_key}:`, notificationError)
+      // Don't throw - we still saved the response, just couldn't notify
+    }
+
+    // Update signal with final notification status
+    const finalSignal = await convex.mutation(api.signals.updateNotificationStatus, {
+      id,
+      status: notificationStatus,
+      error: notificationError,
+    })
+
     return NextResponse.json({
       success: true,
-      signal,
-      // TODO: Add session notification status once OpenClaw integration is ready
+      signal: finalSignal,
+      notificationSent: notificationStatus === "sent",
     })
   } catch (error) {
     console.error("[Signal API] Error responding to signal:", error)
@@ -58,4 +106,19 @@ export async function POST(
       { status: 500 }
     )
   }
+}
+
+/**
+ * Format a signal response message for the agent
+ */
+function formatSignalResponse(
+  originalMessage: string,
+  humanResponse: string,
+  kind: string
+): string {
+  const kindLabel = kind.charAt(0).toUpperCase() + kind.slice(1)
+  
+  return `[${kindLabel} Response from Human]\n\n` +
+    `Original ${kind}:\n${originalMessage}\n\n` +
+    `Response:\n${humanResponse}`
 }
