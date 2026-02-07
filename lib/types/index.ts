@@ -242,3 +242,23 @@ export interface TaskSummary {
 export interface TaskDependencySummary extends TaskSummary {
   dependency_id: string
 }
+
+// Task Event Types
+type TaskEventType =
+  | "status_changed"
+  | "agent_assigned"
+  | "agent_completed"
+  | "agent_reaped"
+  | "pr_opened"
+  | "pr_merged"
+  | "comment_added"
+
+export interface TaskEvent {
+  id: string
+  task_id: string
+  project_id: string
+  event_type: TaskEventType
+  timestamp: number
+  actor: string | null
+  data: string | null // JSON string with event-specific fields
+}

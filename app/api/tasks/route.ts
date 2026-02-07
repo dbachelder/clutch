@@ -82,6 +82,20 @@ export async function POST(request: NextRequest) {
       role: role || undefined,
     })
 
+    // Log task created event using the existing events system (not task_events)
+    try {
+      await convex.mutation(api.events.create, {
+        projectId: project_id,
+        taskId: task.id,
+        type: 'task_created',
+        actor: 'user',
+        data: JSON.stringify({ title, status, priority }),
+      })
+    } catch (logErr) {
+      // Non-fatal — just log the error
+      console.warn(`[Tasks API] Failed to log task created event:`, logErr)
+    }
+
     return NextResponse.json({ task }, { status: 201 })
   } catch (error) {
     console.error("[Tasks API] Error creating task:", error)

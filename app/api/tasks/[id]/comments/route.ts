@@ -73,6 +73,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       type,
     })
 
+    // Log comment added event
+    try {
+      await convex.mutation(api.task_events.logCommentAdded, {
+        taskId: id,
+        author,
+        preview: content.slice(0, 200), // Limit preview
+      })
+    } catch (logErr) {
+      // Non-fatal — just log the error
+      console.warn(`[Comments API] Failed to log comment added event:`, logErr)
+    }
+
     return NextResponse.json({ comment }, { status: 201 })
   } catch (error) {
     console.error("[Comments API] Error creating comment:", error)

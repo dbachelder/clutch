@@ -394,4 +394,19 @@ export default defineSchema({
     .index("by_role_model", ["role", "model"])
     .index("by_prompt_version", ["prompt_version_id"])
     .index("by_period", ["period", "period_start"]),
+
+  // Task Events - detailed audit trail for task state transitions and agent assignments
+  task_events: defineTable({
+    id: v.string(), // UUID primary key
+    task_id: v.string(), // UUID ref to tasks
+    project_id: v.string(), // UUID ref to projects
+    event_type: v.string(), // status_changed, agent_assigned, agent_completed, agent_reaped, pr_opened, pr_merged, comment_added
+    timestamp: v.number(),
+    actor: v.optional(v.string()), // session key, user id, or system
+    data: v.optional(v.string()), // JSON blob with event-specific fields
+  })
+    .index("by_uuid", ["id"])
+    .index("by_task", ["task_id"])
+    .index("by_project", ["project_id"])
+    .index("by_task_timestamp", ["task_id", "timestamp"]),
 })

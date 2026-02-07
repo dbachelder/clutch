@@ -188,6 +188,18 @@ async function processTask(ctx: AnalyzeContext, task: Task): Promise<TaskProcess
       timeoutSeconds: 600,
     })
 
+    // Log agent assignment event
+    try {
+      await ctx.convex.mutation(api.task_events.logAgentAssigned, {
+        taskId: task.id,
+        sessionKey: handle.sessionKey,
+        model: "sonnet",
+        role: "analyzer",
+      })
+    } catch (logError) {
+      console.error(`[AnalyzePhase] Failed to log agent assignment:`, logError)
+    }
+
     return {
       spawned: true,
       details: {
