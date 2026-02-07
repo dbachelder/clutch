@@ -1038,7 +1038,7 @@ export const updateAgentActivity = mutation({
         task_id: v.string(),
         agent_session_key: v.string(),
         agent_model: v.optional(v.string()),
-        agent_started_at: v.number(),
+        agent_started_at: v.optional(v.number()),
         agent_last_active_at: v.number(),
         agent_tokens_in: v.optional(v.number()),
         agent_tokens_out: v.optional(v.number()),
@@ -1055,16 +1055,21 @@ export const updateAgentActivity = mutation({
         .withIndex('by_uuid', (q) => q.eq('id', update.task_id))
         .unique()
       if (!task) continue
-      await ctx.db.patch(task._id, {
+
+      // Build patch object dynamically - only include fields that are provided
+      const patch: Record<string, unknown> = {
         agent_session_key: update.agent_session_key,
-        agent_model: update.agent_model,
-        agent_started_at: update.agent_started_at,
         agent_last_active_at: update.agent_last_active_at,
-        agent_tokens_in: update.agent_tokens_in,
-        agent_tokens_out: update.agent_tokens_out,
-        agent_output_preview: update.agent_output_preview,
         updated_at: Date.now(),
-      })
+      }
+      if (update.agent_model !== undefined) patch.agent_model = update.agent_model
+      if (update.agent_started_at !== undefined) patch.agent_started_at = update.agent_started_at
+      if (update.agent_tokens_in !== undefined) patch.agent_tokens_in = update.agent_tokens_in
+      if (update.agent_tokens_out !== undefined) patch.agent_tokens_out = update.agent_tokens_out
+      if (update.agent_output_preview !== undefined) patch.agent_output_preview = update.agent_output_preview
+      if (update.agent_retry_count !== undefined) patch.agent_retry_count = update.agent_retry_count
+
+      await ctx.db.patch(task._id, patch)
       updated++
     }
     return { updated }
