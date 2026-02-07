@@ -130,6 +130,17 @@ async function processTask(ctx: AnalyzeContext, task: Task): Promise<TaskProcess
     }
   }
 
+  // Check if this task was recently reaped — don't re-spawn
+  if (agents.isRecentlyReaped(task.id)) {
+    return {
+      spawned: false,
+      details: {
+        reason: "recently_reaped",
+        taskId: task.id,
+      },
+    }
+  }
+
   // Determine outcome based on status
   const outcome = determineOutcome(task)
 

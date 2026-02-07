@@ -155,6 +155,17 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
     }
   }
 
+  // Check if this task was recently reaped — don't re-spawn
+  if (agents.isRecentlyReaped(task.id)) {
+    return {
+      spawned: false,
+      details: {
+        reason: "recently_reaped",
+        taskId: task.id,
+      },
+    }
+  }
+
   // Check for open PR - use PR number if recorded, otherwise search by branch
   const pr = task.pr_number
     ? await getPRByNumber(task.pr_number)
