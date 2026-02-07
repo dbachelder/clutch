@@ -33,14 +33,6 @@ export interface SessionInfo {
   status: "active" | "idle" | "completed"
 }
 
-export interface SessionsPoller {
-  start(): void
-  stop(): void
-  hasActiveSession(taskId: string): boolean
-  getSession(taskId: string): SessionInfo | undefined
-  getAllSessions(): Map<string, SessionInfo>
-}
-
 export interface LogRunParams {
   projectId: string
   cycle: number
@@ -54,7 +46,6 @@ export interface LogRunParams {
 export interface PhaseContext {
   convex: import("convex/browser").ConvexHttpClient
   children: ChildManager
-  sessions: SessionsPoller
   config: WorkLoopConfig
   cycle: number
   log: (params: LogRunParams) => Promise<void>
