@@ -30,7 +30,7 @@ export function Column({
     <div className={`flex flex-col bg-[var(--bg-secondary)] rounded-lg border border-[var(--border)] min-h-[500px] ${
       isMobile 
         ? "w-full" 
-        : "w-[280px] flex-shrink-0 lg:w-auto lg:min-w-0"
+        : "w-[280px] flex-shrink-0 lg:w-full lg:min-w-[280px]"
     }`}>
       {/* Header */}
       <div className="p-3 border-b border-[var(--border)]">
