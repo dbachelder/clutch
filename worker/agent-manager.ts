@@ -62,10 +62,13 @@ export class AgentManager {
   private sessionFileReader: SessionFileReader
   /** Tombstones: taskId:role → reap timestamp. Prevents re-spawning recently reaped agents in the same role. */
   private tombstones = new Map<string, number>()
+  /** Timestamp when this loop started. Used to ignore stale session files from previous runs. */
+  private loopStartedAt: number
 
   constructor() {
     this.gateway = getGatewayClient()
     this.sessionFileReader = new SessionFileReader()
+    this.loopStartedAt = Date.now()
   }
 
   /**
@@ -179,6 +182,13 @@ export class AgentManager {
 
     for (const [taskId, handle] of this.agents) {
       const info = this.sessionFileReader.getSessionInfo(handle.sessionKey, staleMs)
+
+      // Ignore stale session files from previous loop runs
+      // This prevents false tombstones when the loop restarts
+      if (info && info.fileMtimeMs < this.loopStartedAt) {
+        continue
+      }
+
       let reason: "finished" | "stale" | null = null
       let outcomeUsage: AgentOutcome["usage"] = undefined
       let replyText = ""
