@@ -127,6 +127,70 @@ export const getById = query({
 })
 
 /**
+ * Get all signals for a specific task
+ */
+export const getByTask = query({
+  args: { taskId: v.string() },
+  handler: async (ctx, args): Promise<Signal[]> => {
+    const signals = await ctx.db
+      .query('signals')
+      .withIndex('by_task', (q) => q.eq('task_id', args.taskId))
+      .collect()
+
+    return signals
+      .sort((a, b) => a.created_at - b.created_at)
+      .map((s) => toSignal(s as Parameters<typeof toSignal>[0]))
+  },
+})
+
+/**
+ * Get tasks that have signals with responses (for re-queuing to PM)
+ * Returns tasks that:
+ * - Are in 'in_progress' status with role='pm'
+ * - Have at least one signal with a response that hasn't been processed
+ */
+export const getTasksWithRespondedSignals = query({
+  args: { projectId: v.string() },
+  handler: async (ctx, args): Promise<Array<{ taskId: string; respondedSignalIds: string[] }>> => {
+    // Get all signals for this project that have responses
+    const allSignals = await ctx.db.query('signals').collect()
+
+    // Group responded signals by task
+    const respondedByTask = new Map<string, string[]>()
+
+    for (const signal of allSignals) {
+      // Only consider signals that have been responded to
+      if (signal.responded_at && signal.response) {
+        const existing = respondedByTask.get(signal.task_id) ?? []
+        existing.push(signal.id)
+        respondedByTask.set(signal.task_id, existing)
+      }
+    }
+
+    // Check which tasks are in_progress with role=pm
+    const result: Array<{ taskId: string; respondedSignalIds: string[] }> = []
+
+    for (const [taskId, signalIds] of respondedByTask) {
+      const task = await ctx.db
+        .query('tasks')
+        .withIndex('by_uuid', (q) => q.eq('id', taskId))
+        .unique()
+
+      // Only include tasks that are in_progress with role=pm
+      // (meaning the PM agent is waiting for responses)
+      if (task &&
+          task.project_id === args.projectId &&
+          task.status === 'in_progress' &&
+          task.role === 'pm') {
+        result.push({ taskId, respondedSignalIds: signalIds })
+      }
+    }
+
+    return result
+  },
+})
+
+/**
  * Get pending (blocking and unresponded) signals count
  */
 export const getPendingCount = query({

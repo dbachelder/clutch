@@ -34,6 +34,7 @@ interface LogCycleCompleteParams {
     cleanup: boolean
     notify: boolean
     review: boolean
+    signals: boolean
     work: boolean
     analyze: boolean
   }

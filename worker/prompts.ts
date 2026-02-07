@@ -26,6 +26,8 @@ export interface PromptParams {
   repoDir: string
   /** The worktree directory for dev tasks */
   worktreeDir: string
+  /** Signal Q&A history (for PM tasks with user responses) */
+  signalResponses?: Array<{ question: string; response: string }>
   /** Optional image URLs for the PM to analyze */
   imageUrls?: string[]
 }
@@ -103,6 +105,76 @@ Then mark yourself done (the signal remains as the blocker):
 \`\`\`bash
 curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "done"}'
 \`\`\``
+}
+
+/**
+ * Build PM role instructions with signal Q&A context
+ * Used when the PM task has been re-queued after receiving user responses to signals
+ */
+function buildPmInstructionsWithSignals(
+  params: PromptParams,
+  signals: Array<{ question: string; response: string }>
+): string {
+  const signalContext = signals.length > 0
+    ? `
+## Previous Clarifying Questions & Answers
+
+The following questions were asked and answered during triage:
+
+${signals.map((s, i) => `**Q${i + 1}:** ${s.question}\n**A${i + 1}:** ${s.response}`).join('\n\n')}
+
+---
+`
+    : ''
+
+  return `## Task: ${params.taskTitle}
+
+**Read /home/dan/src/trap/AGENTS.md first.**
+
+Ticket ID: \`${params.taskId}\`
+Role: \`pm\`
+
+${params.taskDescription}
+
+${signalContext}---
+
+**Your job:** Analyze this ticket and break it down into actionable sub-tickets.
+
+**You have received answers to your clarifying questions (see above).** Use this information to finalize the ticket breakdown.
+
+**IMPORTANT:** Every sub-ticket MUST have:
+- \`role\` set (usually \`dev\`, or \`qa\`/\`research\` if appropriate)
+- Clear description with ## Summary, ## Implementation, ## Files, ## Acceptance Criteria
+- Proper priority (urgent/high/medium/low)
+
+**Create tickets:**
+\`\`\`bash
+curl -X POST http://localhost:3002/api/tasks -H 'Content-Type: application/json' -d '{
+  "project_id": "${params.projectId}",
+  "title": "<title>",
+  "description": "<markdown description>",
+  "status": "ready",
+  "priority": "<urgent|high|medium|low>",
+  "role": "dev",
+  "tags": "[\\"tag1\\", \"tag2\"]"
+}'
+\`\`\`
+
+**Create dependencies between tickets** (task cannot start until dependency is done):
+\`\`\`bash
+curl -X POST http://localhost:3002/api/tasks/<TASK_ID>/dependencies -H 'Content-Type: application/json' -d '{
+  "depends_on_id": "<DEPENDENCY_TASK_ID>"
+}'
+\`\`\`
+
+Use the task IDs from the POST responses to wire up the dependency chain. If ticket B depends on ticket A, create the dependency after both exist.
+
+**When done:** Mark this ticket done:
+\`\`\`bash
+curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "done"}'
+\`\`\`
+
+**DO NOT:** Create branches, write code, or create PRs. You are a PM.`
 }
 
 /**
@@ -283,8 +355,13 @@ curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type:
 export function buildPrompt(params: PromptParams): string {
   const roleInstructions = (() => {
     switch (params.role) {
-      case "pm":
+      case "pm": {
+        // If there are signal responses, use the enhanced prompt
+        if (params.signalResponses && params.signalResponses.length > 0) {
+          return buildPmInstructionsWithSignals(params, params.signalResponses)
+        }
         return buildPmInstructions(params)
+      }
       case "qa":
         return buildQaInstructions(params)
       case "research":

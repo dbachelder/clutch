@@ -17,6 +17,7 @@ import type { Project, WorkLoopPhase } from "../lib/types"
 import { runWork } from "./phases/work"
 import { runAnalyze } from "./phases/analyze"
 import { runNotify } from "./phases/notify"
+import { runSignals } from "./phases/signals"
 import { sessionFileReader } from "./session-file-reader"
 
 // ============================================
@@ -305,6 +306,35 @@ async function runProjectCycle(
     }
   )
 
+  // Update state to signals phase
+  await convex.mutation(api.workLoop.upsertState, {
+    project_id: project.id,
+    status: "running",
+    current_phase: "work",
+    current_cycle: cycle,
+    active_agents: agentManager.activeCount(project.id),
+    max_agents: project.work_loop_max_agents ?? 2,
+  })
+
+  // Phase 2.5: Signals (process signal responses and re-queue PM tasks)
+  const signalsResult = await runPhase(
+    convex,
+    project.id,
+    "work",
+    async () => {
+      const result = await runSignals({
+        convex,
+        cycle,
+        projectId: project.id,
+        log: (params) => logRun(convex, params),
+      })
+      return {
+        success: true,
+        actions: result.requeuedCount,
+      }
+    }
+  )
+
   // Update state to work phase
   await convex.mutation(api.workLoop.upsertState, {
     project_id: project.id,
@@ -373,7 +403,7 @@ async function runProjectCycle(
 
   // Calculate cycle duration and log completion
   const cycleDurationMs = Date.now() - cycleStart
-  const totalActions = cleanupResult.actions + notifyResult.actions + reviewResult.actions + workResult.actions + analyzeResult.actions
+  const totalActions = cleanupResult.actions + notifyResult.actions + reviewResult.actions + signalsResult.actions + workResult.actions + analyzeResult.actions
 
   await logCycleComplete(convex, {
     projectId: project.id,
@@ -384,6 +414,7 @@ async function runProjectCycle(
       cleanup: cleanupResult.success,
       notify: notifyResult.success,
       review: reviewResult.success,
+      signals: signalsResult.success,
       work: workResult.success,
       analyze: analyzeResult.success,
     },
