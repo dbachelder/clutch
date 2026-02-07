@@ -9,6 +9,7 @@
  */
 
 import { getGatewayClient, type GatewayRpcClient } from "./gateway-client"
+import { SessionFileReader } from "./session-file-reader"
 
 // ============================================
 // Types
@@ -57,9 +58,11 @@ export class AgentManager {
   private agents = new Map<string, AgentHandle>()
   private gateway: GatewayRpcClient
   private completedQueue: AgentOutcome[] = []
+  private sessionFileReader: SessionFileReader
 
   constructor() {
     this.gateway = getGatewayClient()
+    this.sessionFileReader = new SessionFileReader()
   }
 
   /**
@@ -136,20 +139,18 @@ export class AgentManager {
   }
 
   /**
-   * Reap finished and stale agents by checking gateway session list.
+   * Reap finished and stale agents by reading session JSONL files directly.
    *
-   * Two reap conditions:
-   * 1. **Finished**: Session key is no longer in the active sessions list.
-   *    The agent completed (or errored) and the session aged out.
-   * 2. **Stale**: Session is still "active" but `updatedAt` is older than
-   *    `staleMs`. The agent is stuck — kill the session and reap the handle.
+   * Uses SessionFileReader to detect completion via stopReason and staleness
+   * via file mtime, which is more reliable than the RPC sessions.list API.
    *
-   * Uses a wide session window (120 min) so we can capture usage from
-   * recently-finished sessions that are still in the list but no longer
-   * truly active (updatedAt stopped advancing).
+   * Three conditions:
+   * 1. **Done**: Last assistant message has stopReason === "stop" → reap as finished
+   * 2. **Stale**: File mtime is older than staleMs AND not done → reap as stale
+   * 3. **Working**: File mtime is recent OR stopReason === "toolUse" → leave alone
    *
    * @param staleMs - Milliseconds of inactivity before a session is considered stuck.
-   *                  Default: 15 minutes (900_000 ms).
+   *                  Default: 5 minutes (300_000 ms).
    */
   async reapFinished(staleMs = 5 * 60 * 1000): Promise<AgentOutcome[]> {
     if (this.agents.size === 0) return []
@@ -157,81 +158,79 @@ export class AgentManager {
     const reaped: AgentOutcome[] = []
     const now = Date.now()
 
-    try {
-      await this.gateway.connect()
+    for (const [taskId, handle] of this.agents) {
+      const info = this.sessionFileReader.getSessionInfo(handle.sessionKey, staleMs)
+      let reason: "finished" | "stale" | null = null
+      let outcomeUsage: AgentOutcome["usage"] = undefined
+      let replyText = ""
 
-      // Use a wide window (120 min) so recently-finished sessions still
-      // appear — we need them for usage data even if they stopped updating.
-      const sessions = await this.gateway.listSessions(120)
-      const sessionsByKey = new Map(sessions.map((s) => [s.key, s]))
-
-      for (const [taskId, handle] of this.agents) {
-        const session = sessionsByKey.get(handle.sessionKey)
-        let reason: "finished" | "stale" | null = null
-
-        if (!session) {
-          // Session completely gone from the list — it finished and aged out
-          reason = "finished"
-        } else {
-          // Session exists — check if it's stale
-          const lastActive = session.updatedAt ?? handle.spawnedAt
-          const idleMs = now - lastActive
-          const hasProducedOutput = (session.totalTokens ?? 0) > 0
-
-          // Don't reap agents that haven't produced any output yet —
-          // they may still be in their first turn (reading codebase, thinking).
-          // Use a much longer grace period for agents still on their first turn.
-          const effectiveStaleMs = hasProducedOutput ? staleMs : staleMs * 6
-
-          if (idleMs >= effectiveStaleMs) {
-            reason = "stale"
-
-            // Kill the stuck session on the gateway
-            try {
-              await this.gateway.deleteSession(handle.sessionKey)
-              console.log(
-                `[AgentManager] Killed stale session ${handle.sessionKey} ` +
-                `(idle ${Math.round(idleMs / 1000)}s, threshold ${Math.round(staleMs / 1000)}s)`,
-              )
-            } catch (killError) {
-              const msg = killError instanceof Error ? killError.message : String(killError)
-              console.warn(`[AgentManager] Failed to kill stale session ${handle.sessionKey}: ${msg}`)
-              // Still reap the handle — the session may be in a broken state
+      if (!info) {
+        // Session file not found — may have been cleaned up or never created
+        // Treat as finished (session is gone)
+        reason = "finished"
+        replyText = "completed"
+      } else if (info.isDone) {
+        // Session has stopReason === "stop" → completed successfully
+        reason = "finished"
+        replyText = info.lastAssistantMessage?.textPreview ?? "completed"
+        outcomeUsage = info.lastAssistantMessage
+          ? {
+              inputTokens: info.lastAssistantMessage.usage.input,
+              outputTokens: info.lastAssistantMessage.usage.output,
+              totalTokens: info.lastAssistantMessage.usage.total,
             }
-          }
-        }
+          : undefined
+      } else if (info.isStale) {
+        // File mtime is old and session is not done → stale
+        reason = "stale"
+        replyText = "stale_timeout"
+        outcomeUsage = info.lastAssistantMessage
+          ? {
+              inputTokens: info.lastAssistantMessage.usage.input,
+              outputTokens: info.lastAssistantMessage.usage.output,
+              totalTokens: info.lastAssistantMessage.usage.total,
+            }
+          : undefined
 
-        if (reason) {
-          const outcome: AgentOutcome = {
-            taskId,
-            sessionKey: handle.sessionKey,
-            success: reason === "finished",
-            reply: reason === "finished" ? "completed" : "stale_timeout",
-            error: reason === "stale" ? `Agent stale for >${Math.round(staleMs / 60_000)}min` : undefined,
-            durationMs: now - handle.spawnedAt,
-            usage: session
-              ? {
-                  inputTokens: session.inputTokens ?? 0,
-                  outputTokens: session.outputTokens ?? 0,
-                  totalTokens: session.totalTokens ?? 0,
-                }
-              : undefined,
-          }
-          reaped.push(outcome)
-          this.completedQueue.push(outcome)
-          this.agents.delete(taskId)
+        // Kill the stuck session on the gateway
+        try {
+          await this.gateway.deleteSession(handle.sessionKey)
+          console.log(
+            `[AgentManager] Killed stale session ${handle.sessionKey} ` +
+            `(mtime ${Math.round((now - info.fileMtimeMs) / 1000)}s ago, threshold ${Math.round(staleMs / 1000)}s)`,
+          )
+        } catch (killError) {
+          const msg = killError instanceof Error ? killError.message : String(killError)
+          console.warn(`[AgentManager] Failed to kill stale session ${handle.sessionKey}: ${msg}`)
+          // Still reap the handle — the session may be in a broken state
         }
+      } else {
+        // Session is still active (recent mtime or mid-tool-call)
+        // Leave it alone — don't reap
+        continue
       }
 
-      if (reaped.length > 0) {
-        console.log(
-          `[AgentManager] Reaped ${reaped.length} agent(s): ` +
-          reaped.map((r) => `${r.sessionKey} (${r.reply})`).join(", "),
-        )
+      if (reason) {
+        const outcome: AgentOutcome = {
+          taskId,
+          sessionKey: handle.sessionKey,
+          success: reason === "finished",
+          reply: replyText,
+          error: reason === "stale" ? `Agent stale for >${Math.round(staleMs / 60_000)}min` : undefined,
+          durationMs: now - handle.spawnedAt,
+          usage: outcomeUsage,
+        }
+        reaped.push(outcome)
+        this.completedQueue.push(outcome)
+        this.agents.delete(taskId)
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.warn(`[AgentManager] reapFinished failed: ${message}`)
+    }
+
+    if (reaped.length > 0) {
+      console.log(
+        `[AgentManager] Reaped ${reaped.length} agent(s): ` +
+        reaped.map((r) => `${r.sessionKey} (${r.reply})`).join(", "),
+      )
     }
 
     return reaped
