@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api"
 import type { AgentManager } from "../agent-manager"
 import type { WorkLoopConfig } from "../config"
 import type { Task } from "../../lib/types"
+import { handlePostMergeDeploy } from "./convex-deploy"
 
 // ============================================
 // Types
@@ -194,6 +195,9 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
             status: "done",
           })
           console.log(`[ReviewPhase] Auto-closed task ${task.id.slice(0, 8)} — PR #${task.pr_number} already merged`)
+
+          // Trigger Convex deploy if PR touched convex/ directory
+          await handlePostMergeDeploy(convex, task.pr_number, project, task.id)
         } catch {
           // Non-fatal
         }
@@ -432,16 +436,12 @@ ${task.description ? `**Description:**\n${task.description}\n` : ""}
 ## After Review
 
 ### If PR is clean (all checks pass):
-
-1. **Check if PR touches Convex files (before merging):**\n   \`\`\`bash\n   gh pr diff ${pr.number} --name-only | grep '^convex/' > /tmp/convex_files_${pr.number}.txt\n   if [ -s /tmp/convex_files_${pr.number}.txt ]; then\n     echo "Convex files will be changed:"\n     cat /tmp/convex_files_${pr.number}.txt\n   fi\n   \`\`\`
-
-2. **Approve and merge:**\n   \`\`\`bash\n   gh pr merge ${pr.number} --squash --delete-branch\n   \`\`\`
-
-3. **Deploy Convex if needed:**\n   Check if the project has a convex/ directory and the PR touched Convex files.\n   \`\`\`bash\n   if [ -d "${project.local_path}/convex" ] && [ -s /tmp/convex_files_${pr.number}.txt ]; then\n     echo "Deploying Convex changes..."\n     cd ${project.local_path} && npx convex deploy --yes 2>&1 | tee /tmp/convex_deploy_${pr.number}.log\n     DEPLOY_EXIT=${'$'}{PIPESTATUS[0]}\n     if [ $DEPLOY_EXIT -ne 0 ]; then\n       echo "ERROR: Convex deploy failed with exit code $DEPLOY_EXIT"\n       # Create high-priority alert ticket for deploy failure\n       curl -X POST http://localhost:3002/api/tasks \\\n         -H 'Content-Type: application/json' \\\n         -d "{\\"project_id\\": \\"${project.id}\\", \\"title\\": \\"URGENT: Convex deploy failed after merging PR #${pr.number}\\", \\"description\\": \\"Convex deployment failed after merging PR #${pr.number} for task ${task.id}.\\n\\nDeploy output:\\n\\"$(cat /tmp/convex_deploy_${pr.number}.log | sed 's/"/\\\\"/g')\\"\\", \\"priority\\": \\"urgent\\", \\"status\\": \\"backlog\\"}"\n       # Still mark original task as done since PR was merged\n     else\n       echo "Convex deploy successful"\n     fi\n   fi\n   \`\`\`
-
-4. **Update ticket status to done:**\n   \`\`\`bash\n   curl -X PATCH http://localhost:3002/api/tasks/${task.id} -H 'Content-Type: application/json' -d '{"status": "done"}'\n   \`\`\`
-
-5. **Clean up worktree:**\n   \`\`\`bash\n   cd ${project.local_path} && git worktree remove ${worktreePath}\n   \`\`\`
+1. **Approve and merge:**\n   \`\`\`bash\n   gh pr merge ${pr.number} --squash --delete-branch\n   \`\`\`
+2. **Check if PR touches convex/ directory:**\n   \`\`\`bash\n   gh pr diff ${pr.number} --name-only | grep "^convex/"\n   \`\`\`
+   If the above outputs any lines, the PR touches Convex files — deploy immediately:
+   \`\`\`bash\n   cd ${project.local_path} && npx convex deploy --yes\n   \`\`\`
+3. **Update ticket status to done:**\n   \`\`\`bash\n   curl -X PATCH http://localhost:3002/api/tasks/${task.id} -H 'Content-Type: application/json' -d '{"status": "done"}'\n   \`\`\`
+4. **Clean up worktree:**\n   \`\`\`bash\n   cd ${project.local_path} && git worktree remove ${worktreePath}\n   \`\`\`
 
 ### If PR needs changes:
 1. **Leave specific, actionable feedback:**\n   \`\`\`bash\n   gh pr comment ${pr.number} --body "Your detailed feedback here..."\n   \`\`\`
@@ -453,6 +453,7 @@ ${task.description ? `**Description:**\n${task.description}\n` : ""}
 - Be thorough but constructive in feedback
 - If you find architectural concerns or security issues, escalate rather than merging
 - If the PR has UI changes that need visual verification, note "needs browser QA" in your review
+- **CRITICAL:** If the PR touches files in \`convex/\`, you MUST run \`npx convex deploy --yes\` after merging. The web UI will crash if schema/functions are not deployed.
 
 Start by reading \`\${project.local_path}/AGENTS.md\` to understand project conventions, then proceed with the review.
 `
