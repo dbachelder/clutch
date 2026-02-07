@@ -10,7 +10,7 @@
 // ============================================
 
 export interface PromptParams {
-  /** The role of the agent (dev, pm, qa, research, reviewer) */
+  /** The role of the agent (dev, pm, qa, research, reviewer, fixer) */
   role: string
   /** The task ID */
   taskId: string
@@ -30,6 +30,8 @@ export interface PromptParams {
   signalResponses?: Array<{ question: string; response: string }>
   /** Optional image URLs for the PM to analyze */
   imageUrls?: string[]
+  /** Review comments for fixer tasks */
+  reviewComments?: string
 }
 
 // ============================================
@@ -345,6 +347,73 @@ curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type:
 }
 
 /**
+ * Build Fixer role instructions
+ * Fixers work on existing PR branches to address review feedback
+ */
+function buildFixerInstructions(params: PromptParams, reviewComments?: string): string {
+  return `## Task: ${params.taskTitle}
+
+**Read ${params.repoDir}/AGENTS.md first** (use: \`exec(command="cat ${params.repoDir}/AGENTS.md")\`).
+
+## Tool Usage (CRITICAL)
+- **\`read\` tool REQUIRES a \`path\` parameter.** Never call read() with no arguments.
+- **Use \`exec\` with \`cat\` to read files:** \`exec(command="cat /path/to/file.ts")\`
+- **Use \`rg\` to search code:** \`exec(command="rg 'pattern' ${params.worktreeDir}/app -t ts")\` (note: \`-t ts\` covers both .ts AND .tsx — do NOT use \`-t tsx\`, it doesn't exist)
+- **Use \`fd\` to find files:** \`exec(command="fd '\\.tsx$' ${params.worktreeDir}/app")\`
+- **Quote paths with brackets:** Next.js uses \`[slug]\` dirs — always quote these in shell: \`cat '${params.worktreeDir}/app/projects/[slug]/page.tsx'\`
+- **All work happens in your worktree:** \`${params.worktreeDir}\` (NOT in ${params.repoDir})
+
+Ticket ID: \`${params.taskId}\`
+Role: \`fixer\`
+
+${params.taskDescription}
+
+---
+
+## Review Feedback to Address
+
+${reviewComments || "(See the PR review comments for specific feedback to address)"}
+
+---
+
+**Your job:** Address the review feedback and push fixes to the existing PR.
+
+**Setup (already done):**
+The worktree is already set up at \`${params.worktreeDir}\` on the existing PR branch.
+
+**Work loop:**
+\`\`\`bash
+cd ${params.worktreeDir}
+
+# Pull latest in case reviewer made changes
+git pull
+
+# Make your fixes
+# ... edit files ...
+
+# Verify changes
+pnpm typecheck
+pnpm lint
+
+# Commit and push fixes
+git add -A
+git commit -m "fix: address review feedback"
+git push
+\`\`\`
+
+Then update ticket to in_review for re-review:
+\`\`\`bash
+curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "in_review"}'
+\`\`\`
+
+**If you encounter blockers:**
+\`\`\`bash
+# Post a comment about any issues
+curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "Blocker: <description of issue>"}'
+\`\`\``
+}
+
+/**
  * Build Dev role instructions (default)
  */
 function buildDevInstructions(params: PromptParams): string {
@@ -444,6 +513,8 @@ export function buildPrompt(params: PromptParams): string {
         return buildResearchInstructions(params)
       case "reviewer":
         return buildReviewerInstructions(params)
+      case "fixer":
+        return buildFixerInstructions(params, params.reviewComments)
       case "dev":
       default:
         return buildDevInstructions(params)

@@ -12,6 +12,49 @@ import type { WorkLoopConfig } from "../config"
 import type { LogRunParams } from "../logger"
 import type { Task, TaskPriority } from "../../lib/types"
 import { buildPrompt } from "../prompts"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
+
+// ============================================
+// Worktree Helpers
+// ============================================
+
+/**
+ * Get the worktree path for a task
+ */
+function getWorktreePath(project: ProjectInfo, task: Task): string {
+  const repoDir = project.local_path!
+  return `${repoDir}-worktrees/fix/${task.id.slice(0, 8)}`
+}
+
+/**
+ * Setup worktree for a fixer task
+ * Creates worktree from existing PR branch, cleaning up old one if present
+ */
+async function setupFixerWorktree(
+  project: ProjectInfo,
+  task: Task,
+  worktreeDir: string
+): Promise<void> {
+  const repoDir = project.local_path!
+  const branch = task.branch
+
+  if (!branch) {
+    throw new Error(`Fixer task ${task.id} has no branch field`)
+  }
+
+  // Remove existing worktree if present (reviewer may have cleaned it up)
+  try {
+    await execFileAsync("git", ["worktree", "remove", worktreeDir, "--force"], { cwd: repoDir })
+  } catch {
+    // Worktree didn't exist, that's fine
+  }
+
+  // Create worktree from existing branch
+  await execFileAsync("git", ["worktree", "add", worktreeDir, branch], { cwd: repoDir })
+}
 
 // ============================================
 // Types
@@ -74,6 +117,7 @@ const ROLE_MODEL_MAP: Record<string, string> = {
   reviewer: "sonnet",
   dev: "openrouter/pony-alpha",
   qa: "openrouter/pony-alpha",
+  fixer: "openrouter/pony-alpha",
 }
 
 /**
@@ -364,8 +408,66 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
     // --- 4. Load SOUL and build prompt ---
     const soulTemplate = await loadSoulTemplate(role)
     const repoDir = project.local_path!
-    const worktreesBase = `${repoDir}-worktrees`
-    const worktreeDir = `${worktreesBase}/fix/${task.id.slice(0, 8)}`
+    const worktreeDir = getWorktreePath(project, task)
+
+    // For fixer tasks, validate branch exists and setup worktree
+    if (role === "fixer") {
+      if (!task.branch) {
+        console.error(`[WorkPhase] Fixer task ${task.id} has no branch field, skipping`)
+        await log({
+          projectId: project.id,
+          cycle,
+          phase: "work",
+          action: "fixer_no_branch",
+          taskId: task.id,
+          details: { title: task.title },
+        })
+        // Move task back to ready since we can't process it
+        try {
+          await convex.mutation(api.tasks.move, {
+            id: task.id,
+            status: "ready",
+          })
+        } catch (moveError) {
+          console.error(`[WorkPhase] Failed to revert task status:`, moveError)
+        }
+        return { claimed: false }
+      }
+
+      // Setup worktree from existing PR branch
+      try {
+        await setupFixerWorktree(project, task, worktreeDir)
+        await log({
+          projectId: project.id,
+          cycle,
+          phase: "work",
+          action: "fixer_worktree_created",
+          taskId: task.id,
+          details: { branch: task.branch, worktreeDir },
+        })
+      } catch (worktreeError) {
+        const message = worktreeError instanceof Error ? worktreeError.message : String(worktreeError)
+        console.error(`[WorkPhase] Failed to setup fixer worktree:`, message)
+        await log({
+          projectId: project.id,
+          cycle,
+          phase: "work",
+          action: "fixer_worktree_failed",
+          taskId: task.id,
+          details: { error: message },
+        })
+        // Move task back to ready
+        try {
+          await convex.mutation(api.tasks.move, {
+            id: task.id,
+            status: "ready",
+          })
+        } catch (moveError) {
+          console.error(`[WorkPhase] Failed to revert task status:`, moveError)
+        }
+        return { claimed: false }
+      }
+    }
 
     // For PM tasks, fetch any signal Q&A history to include in the prompt
     let signalResponses: Array<{ question: string; response: string }> | undefined
@@ -387,6 +489,28 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
     // Extract image URLs for PM triage tasks
     const imageUrls = role === "pm" ? extractImageUrls(task.description) : undefined
 
+    // For fixer tasks, fetch review comments from task comments
+    let reviewComments: string | undefined
+    if (role === "fixer") {
+      try {
+        const comments = await convex.query(api.comments.getByTask, { taskId: task.id })
+        // Filter for reviewer feedback - look for comments about review or PR feedback
+        const reviewFeedback = comments
+          .filter((c) =>
+            c.author_type === "agent" &&
+            (c.content.toLowerCase().includes("review") ||
+             c.content.toLowerCase().includes("feedback") ||
+             c.content.toLowerCase().includes("issue") ||
+             c.content.toLowerCase().includes("fix"))
+          )
+          .map((c) => `- ${c.author}: ${c.content}`)
+          .join("\n")
+        reviewComments = reviewFeedback || "(See PR review comments for specific feedback)"
+      } catch {
+        reviewComments = "(See PR review comments for specific feedback)"
+      }
+    }
+
     const prompt = buildPrompt({
       role,
       taskId: task.id,
@@ -398,6 +522,7 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
       worktreeDir,
       signalResponses,
       imageUrls,
+      reviewComments,
     })
 
     // --- 5. Spawn agent via gateway RPC ---
