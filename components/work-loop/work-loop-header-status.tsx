@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { useWorkLoopState } from "@/lib/hooks/use-work-loop"
+import { useWorkLoopState, useActiveAgentCount } from "@/lib/hooks/use-work-loop"
 import { Pause, Play, RotateCw } from "lucide-react"
 import type { WorkLoopStatus } from "@/lib/types/work-loop"
 
@@ -13,6 +13,7 @@ interface WorkLoopHeaderStatusProps {
 
 export function WorkLoopHeaderStatus({ projectId, workLoopEnabled }: WorkLoopHeaderStatusProps) {
   const { state, isLoading } = useWorkLoopState(projectId)
+  const { count: activeAgentCount, isLoading: countLoading } = useActiveAgentCount(projectId)
   const [isUpdating, setIsUpdating] = useState(false)
 
   // Don't show if work loop is not enabled for this project
@@ -71,9 +72,9 @@ export function WorkLoopHeaderStatus({ projectId, workLoopEnabled }: WorkLoopHea
           ) : (
             <>
               <span className="capitalize">{state.status}</span>
-              {state.active_agents > 0 && (
+              {activeAgentCount > 0 && !countLoading && (
                 <span className="ml-1 text-[var(--text-muted)]">
-                  ({state.active_agents} agent{state.active_agents !== 1 ? "s" : ""})
+                  ({activeAgentCount} agent{activeAgentCount !== 1 ? "s" : ""})
                 </span>
               )}
             </>

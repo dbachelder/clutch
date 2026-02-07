@@ -134,11 +134,22 @@ export const getAllWithStats = query({
           .withIndex('by_project', (q) => q.eq('project_id', project.id))
           .unique()
 
+        // Count active agents from tasks (single source of truth)
+        const ACTIVE_AGENT_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
+        const now = Date.now()
+        const cutoffTime = now - ACTIVE_AGENT_THRESHOLD_MS
+        const activeAgentCount = tasks.filter((task) => {
+          if (!task.agent_session_key) return false
+          const lastActive = task.agent_last_active_at
+          if (!lastActive) return false
+          return lastActive >= cutoffTime
+        }).length
+
         return {
           ...toProject(project as Parameters<typeof toProject>[0]),
           task_count: tasks.length,
           status_counts: statusCounts,
-          active_agents: loopState?.active_agents ?? 0,
+          active_agents: activeAgentCount,
           work_loop_status: loopState?.status ?? (project.work_loop_enabled ? 'stopped' : 'disabled') as string,
           last_activity: lastActivity,
         }
