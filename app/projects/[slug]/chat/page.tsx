@@ -57,6 +57,7 @@ export default function ChatPage({ params }: PageProps) {
     messages,
     loadingMessages,
     typingIndicators,
+    hasMoreMessages,
     fetchChats,
     sendMessage: sendMessageToDb,
     setActiveChat,
@@ -388,6 +389,7 @@ export default function ChatPage({ params }: PageProps) {
                 chatLayout={project?.chat_layout || 'slack'}
                 activeCrons={activeCrons}
                 projectSlug={slug}
+                hasMore={hasMoreMessages[activeChat.id] ?? false}
               />
 
               <ChatInput
