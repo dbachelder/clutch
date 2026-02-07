@@ -226,7 +226,7 @@ async function runProjectCycle(
     current_phase: "cleanup",
     current_cycle: cycle,
     active_agents: agentManager.activeCount(project.id),
-    max_agents: project.work_loop_max_agents ?? 2,
+    max_agents: project.work_loop_max_agents ?? config.maxAgentsPerProject,
     last_cycle_at: cycleStart,
   })
 
@@ -259,7 +259,7 @@ async function runProjectCycle(
     current_phase: "review",
     current_cycle: cycle,
     active_agents: agentManager.activeCount(project.id),
-    max_agents: project.work_loop_max_agents ?? 2,
+    max_agents: project.work_loop_max_agents ?? config.maxAgentsPerProject,
   })
 
   // Phase 2: Review
@@ -287,7 +287,7 @@ async function runProjectCycle(
     current_phase: "work",
     current_cycle: cycle,
     active_agents: agentManager.activeCount(project.id),
-    max_agents: project.work_loop_max_agents ?? 2,
+    max_agents: project.work_loop_max_agents ?? config.maxAgentsPerProject,
   })
 
   // Phase 3: Work
@@ -320,7 +320,7 @@ async function runProjectCycle(
     current_phase: "analyze",
     current_cycle: cycle,
     active_agents: agentManager.activeCount(project.id),
-    max_agents: project.work_loop_max_agents ?? 2,
+    max_agents: project.work_loop_max_agents ?? config.maxAgentsPerProject,
   })
 
   // Phase 4: Analyze
@@ -370,7 +370,7 @@ async function runProjectCycle(
     current_phase: "idle",
     current_cycle: cycle,
     active_agents: agentManager.activeCount(project.id),
-    max_agents: project.work_loop_max_agents ?? 2,
+    max_agents: project.work_loop_max_agents ?? config.maxAgentsPerProject,
     last_cycle_at: Date.now(),
   })
 }
@@ -500,7 +500,7 @@ async function runLoop(): Promise<void> {
         current_phase: currentPhase,
         current_cycle: cycle,
         active_agents: agentManager.activeCount(project.id),
-        max_agents: project.work_loop_max_agents ?? 2,
+        max_agents: project.work_loop_max_agents ?? config.maxAgentsPerProject,
         last_cycle_at: Date.now(),
       })
     }
