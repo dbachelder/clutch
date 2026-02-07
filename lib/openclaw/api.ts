@@ -236,7 +236,7 @@ export async function getSessionPreview(
  * @param sessionKey - The session key to reset
  */
 export async function resetSession(sessionKey: string): Promise<void> {
-  await openclawRpc<void>('sessions.reset', { sessionKey });
+  await openclawRpc<void>('sessions.reset', { key: sessionKey });
 }
 
 /**
@@ -245,7 +245,7 @@ export async function resetSession(sessionKey: string): Promise<void> {
  * @param sessionKey - The session key to compact
  */
 export async function compactSession(sessionKey: string): Promise<void> {
-  await openclawRpc<void>('sessions.compact', { sessionKey });
+  await openclawRpc<void>('sessions.compact', { key: sessionKey });
 }
 
 /**
@@ -254,7 +254,7 @@ export async function compactSession(sessionKey: string): Promise<void> {
  * @param sessionKey - The session key to abort
  */
 export async function abortSession(sessionKey: string): Promise<void> {
-  await openclawRpc<void>('chat.abort', { sessionKey });
+  await openclawRpc<void>('chat.abort', { key: sessionKey });
 }
 
 // Alias for backward compatibility
