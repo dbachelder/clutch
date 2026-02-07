@@ -254,34 +254,79 @@ async function runProjectCycle(
         }
       } else {
         // Agent finished normally — check if it left the task in a bad state.
-        // We DON'T move it back to ready (that causes infinite re-dispatch loops
-        // where agents keep saying "already done" without updating the status).
-        // Instead, just log it so a human can investigate.
+        // Handle orphaned tasks: if agent finished without updating status, we need
+        // to recover the task based on what progress was made.
         try {
           const tasks = await convex.query(api.tasks.getByProject, {
             projectId: project.id,
             status: "in_progress",
           })
-          const orphan = tasks.find((t: { id: string }) => t.id === outcome.taskId)
+          const orphan = tasks.find((t: { id: string; agent_retry_count?: number | null; pr_number?: number | null; branch?: string | null }) => t.id === outcome.taskId)
           if (orphan) {
-            console.warn(
-              `[WorkLoop] Task ${outcome.taskId} still in_progress after agent finished — ` +
-              `agent may not have updated status. Leaving as-is (won't re-dispatch).`
-            )
-            await logRun(convex, {
-              projectId: project.id,
-              cycle,
-              phase: "cleanup",
-              action: "orphan_detected",
-              taskId: outcome.taskId,
-              details: {
-                reason: "agent_finished_without_status_update",
-                agentReply: outcome.reply?.slice(0, 200),
-              },
-            })
+            const retries = (orphan.agent_retry_count ?? 0) + 1
+            const MAX_RETRIES = 2 // Configurable threshold
+
+            if (retries > MAX_RETRIES) {
+              // Too many retries — move to backlog with explanatory comment
+              await convex.mutation(api.tasks.move, {
+                id: orphan.id,
+                status: "backlog",
+              })
+              await convex.mutation(api.comments.create, {
+                taskId: orphan.id,
+                author: "coordinator",
+                authorType: "coordinator",
+                content: `Agent failed to complete this task after ${retries} attempts. Moving to backlog for human review.`,
+                type: "status_change",
+              })
+              console.log(`[WorkLoop] Task ${outcome.taskId} exceeded retry limit (${MAX_RETRIES}), moved to backlog`)
+              await logRun(convex, {
+                projectId: project.id,
+                cycle,
+                phase: "cleanup",
+                action: "orphan_backlogged",
+                taskId: outcome.taskId,
+                details: { retries, reason: "max_retries_exceeded" },
+              })
+            } else if (orphan.pr_number || orphan.branch) {
+              // Agent made progress — move to in_review so reviewer can pick it up
+              await convex.mutation(api.tasks.move, {
+                id: orphan.id,
+                status: "in_review",
+              })
+              console.log(`[WorkLoop] Task ${outcome.taskId} has PR/branch, moved to in_review`)
+              await logRun(convex, {
+                projectId: project.id,
+                cycle,
+                phase: "cleanup",
+                action: "orphan_moved_to_review",
+                taskId: outcome.taskId,
+                details: { pr_number: orphan.pr_number, branch: orphan.branch },
+              })
+            } else {
+              // No progress — increment retry and move back to ready
+              await convex.mutation(api.tasks.update, {
+                id: orphan.id,
+                agent_retry_count: retries,
+              })
+              await convex.mutation(api.tasks.move, {
+                id: orphan.id,
+                status: "ready",
+              })
+              console.log(`[WorkLoop] Task ${outcome.taskId} moved back to ready (retry ${retries}/${MAX_RETRIES})`)
+              await logRun(convex, {
+                projectId: project.id,
+                cycle,
+                phase: "cleanup",
+                action: "orphan_requeued",
+                taskId: outcome.taskId,
+                details: { retries, maxRetries: MAX_RETRIES },
+              })
+            }
           }
-        } catch {
-          // Non-fatal
+        } catch (err) {
+          // Non-fatal — log and continue
+          console.warn(`[WorkLoop] Failed to handle orphan task ${outcome.taskId}:`, err)
         }
       }
     }

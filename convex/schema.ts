@@ -73,6 +73,7 @@ export default defineSchema({
     agent_tokens_in: v.optional(v.number()),
     agent_tokens_out: v.optional(v.number()),
     agent_output_preview: v.optional(v.string()), // ~500 chars max
+    agent_retry_count: v.optional(v.number()), // Track retry attempts for orphaned tasks
     // Git/PR tracking (written by dev agents)
     branch: v.optional(v.string()),
     pr_number: v.optional(v.number()),

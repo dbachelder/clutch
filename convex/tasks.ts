@@ -36,6 +36,7 @@ function toTask(doc: {
   agent_tokens_in?: number
   agent_tokens_out?: number
   agent_output_preview?: string
+  agent_retry_count?: number
   branch?: string
   pr_number?: number
   position: number
@@ -66,6 +67,7 @@ function toTask(doc: {
     agent_tokens_in: doc.agent_tokens_in ?? null,
     agent_tokens_out: doc.agent_tokens_out ?? null,
     agent_output_preview: doc.agent_output_preview ?? null,
+    agent_retry_count: doc.agent_retry_count ?? null,
     branch: doc.branch ?? null,
     pr_number: doc.pr_number ?? null,
     position: doc.position,
@@ -731,6 +733,7 @@ export const update = mutation({
     prompt_version_id: v.optional(v.string()),
     branch: v.optional(v.string()),
     pr_number: v.optional(v.number()),
+    agent_retry_count: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<Task> => {
     const existing = await ctx.db
@@ -767,6 +770,7 @@ export const update = mutation({
     if (args.prompt_version_id !== undefined) updates.prompt_version_id = args.prompt_version_id
     if (args.branch !== undefined) updates.branch = args.branch
     if (args.pr_number !== undefined) updates.pr_number = args.pr_number
+    if (args.agent_retry_count !== undefined) updates.agent_retry_count = args.agent_retry_count
 
     await ctx.db.patch(existing._id, updates)
 
@@ -873,6 +877,8 @@ export const move = mutation({
       agent_tokens_in: undefined,
       agent_tokens_out: undefined,
       agent_output_preview: undefined,
+      // Reset retry count when starting fresh (in_progress), otherwise preserve it
+      agent_retry_count: args.status === 'in_progress' ? 0 : existing.agent_retry_count,
     })
 
     const updated = await ctx.db.get(existing._id)
@@ -975,6 +981,7 @@ export const updateAgentActivity = mutation({
         agent_tokens_in: v.optional(v.number()),
         agent_tokens_out: v.optional(v.number()),
         agent_output_preview: v.optional(v.string()),
+        agent_retry_count: v.optional(v.number()),
       })
     ),
   },
@@ -1021,6 +1028,7 @@ export const clearAgentActivity = mutation({
       agent_tokens_in: undefined,
       agent_tokens_out: undefined,
       agent_output_preview: undefined,
+      agent_retry_count: undefined,
       updated_at: Date.now(),
     })
   },
