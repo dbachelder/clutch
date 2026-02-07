@@ -81,6 +81,8 @@ export interface Task {
   agent_retry_count: number | null
   branch: string | null
   pr_number: number | null
+  review_comments: string | null
+  review_count: number | null
   position: number
   created_at: number
   updated_at: number

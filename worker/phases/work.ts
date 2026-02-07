@@ -388,6 +388,9 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
     // Extract image URLs for PM triage tasks
     const imageUrls = role === "pm" ? extractImageUrls(task.description) : undefined
 
+    // For fixer tasks, pass review_comments to the prompt builder
+    const reviewComments = role === "fixer" ? task.review_comments : undefined
+
     const prompt = buildPrompt({
       role,
       taskId: task.id,
@@ -399,6 +402,7 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
       worktreeDir,
       signalResponses,
       imageUrls,
+      reviewComments,
     })
 
     // --- 5. Spawn agent via gateway RPC ---
