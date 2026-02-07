@@ -394,26 +394,30 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
             />
           ))}
         </div>
-        {/* Desktop: grid layout */}
-        <div className="hidden lg:grid w-full gap-4 pb-4" style={{
-          gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(280px, 1fr))`
-        }}>
-          {visibleColumns.map((col) => (
-            <Column
-              key={col.status}
-              status={col.status}
-              title={col.title}
-              color={col.color}
-              tasks={getTasksForColumn(col.status)}
-              onTaskClick={onTaskClick}
-              onAddTask={() => onAddTask(col.status)}
-              showAddButton={col.showAdd}
-              projectId={projectId}
-              totalCount={totalCounts[col.status]}
-              hasMore={hasMore[col.status]}
-              onLoadMore={() => loadMore(col.status)}
-            />
-          ))}
+        {/* Desktop: grid layout with horizontal scroll */}
+        <div className="hidden lg:block overflow-x-auto pb-4">
+          <div className="flex gap-4" style={{
+            width: 'max-content',
+            minWidth: '100%'
+          }}>
+            {visibleColumns.map((col) => (
+              <div key={col.status} style={{ width: '280px', flexShrink: 0 }}>
+                <Column
+                  status={col.status}
+                  title={col.title}
+                  color={col.color}
+                  tasks={getTasksForColumn(col.status)}
+                  onTaskClick={onTaskClick}
+                  onAddTask={() => onAddTask(col.status)}
+                  showAddButton={col.showAdd}
+                  projectId={projectId}
+                  totalCount={totalCounts[col.status]}
+                  hasMore={hasMore[col.status]}
+                  onLoadMore={() => loadMore(col.status)}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       </DragDropContext>
     </div>
