@@ -41,10 +41,14 @@ Never call `read()` with no arguments — it will fail. If you need to explore t
 fd "\.tsx$" /home/dan/src/trap/app
 
 # Search for code (rg is available — use it instead of grep)
+# NOTE: -t ts covers .ts AND .tsx. Do NOT use -t tsx (doesn't exist)
 rg "functionName" /home/dan/src/trap/app -t ts
 
 # Read a file
 cat /home/dan/src/trap/app/page.tsx
+
+# IMPORTANT: Quote paths with brackets (Next.js [slug] dirs)
+cat '/home/dan/src/trap/app/projects/[slug]/page.tsx'
 
 # List directory
 ls /home/dan/src/trap/app/

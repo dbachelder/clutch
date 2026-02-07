@@ -177,8 +177,9 @@ function buildReviewerInstructions(params: PromptParams): string {
 ## Tool Usage (CRITICAL)
 - **\`read\` tool REQUIRES a \`path\` parameter.** Never call read() with no arguments.
 - **Use \`exec\` with \`cat\` to read files:** \`exec(command="cat /path/to/file.ts")\`
-- **Use \`rg\` to search code:** \`exec(command="rg 'pattern' /path -t ts")\`
+- **Use \`rg\` to search code:** \`exec(command="rg 'pattern' /path -t ts")\` (note: \`-t ts\` covers both .ts AND .tsx — do NOT use \`-t tsx\`, it doesn't exist)
 - **Use \`fd\` to find files:** \`exec(command="fd '\\.tsx$' /path")\`
+- **Quote paths with brackets:** Next.js uses \`[slug]\` dirs — always quote these in shell: \`cat '/path/app/projects/[slug]/page.tsx'\`
 
 Ticket ID: \`${params.taskId}\`
 Role: \`reviewer\`
@@ -222,8 +223,9 @@ function buildDevInstructions(params: PromptParams): string {
 ## Tool Usage (CRITICAL)
 - **\`read\` tool REQUIRES a \`path\` parameter.** Never call read() with no arguments.
 - **Use \`exec\` with \`cat\` to read files:** \`exec(command="cat /path/to/file.ts")\`
-- **Use \`rg\` to search code:** \`exec(command="rg 'pattern' ${params.worktreeDir}/app -t ts")\`
+- **Use \`rg\` to search code:** \`exec(command="rg 'pattern' ${params.worktreeDir}/app -t ts")\` (note: \`-t ts\` covers both .ts AND .tsx — do NOT use \`-t tsx\`, it doesn't exist)
 - **Use \`fd\` to find files:** \`exec(command="fd '\\.tsx$' ${params.worktreeDir}/app")\`
+- **Quote paths with brackets:** Next.js uses \`[slug]\` dirs — always quote these in shell: \`cat '${params.worktreeDir}/app/projects/[slug]/page.tsx'\`
 - **All work happens in your worktree:** \`${params.worktreeDir}\` (NOT in /home/dan/src/trap)
 
 Ticket ID: \`${params.taskId}\`
