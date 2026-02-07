@@ -159,7 +159,28 @@ async function runProjectCycle(
   // Convert staleTaskMinutes from config into milliseconds for the reaper.
   const config = loadConfig()
   const staleMs = config.staleTaskMinutes * 60 * 1000
-  const reaped = await agentManager.reapFinished(staleMs)
+  const { reaped, activeUpdates } = await agentManager.reapFinished(staleMs)
+
+  // Update active agents' last_active_at timestamps in Convex
+  // This ensures the UI sidebar shows accurate "last active" times
+  if (activeUpdates.length > 0) {
+    try {
+      await convex.mutation(api.tasks.updateAgentActivity, {
+        updates: activeUpdates.map((u) => ({
+          task_id: u.task_id,
+          agent_session_key: u.agent_session_key,
+          agent_last_active_at: u.agent_last_active_at,
+          agent_output_preview: u.agent_output_preview,
+          agent_tokens_in: u.agent_tokens_in,
+          agent_tokens_out: u.agent_tokens_out,
+        })),
+      })
+    } catch (err) {
+      // Non-fatal — log and continue
+      console.warn(`[WorkLoop] Failed to update active agent activity: ${err}`)
+    }
+  }
+
   if (reaped.length > 0) {
     for (const outcome of reaped) {
       const isStale = outcome.reply === "stale_timeout"

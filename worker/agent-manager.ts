@@ -174,10 +174,28 @@ export class AgentManager {
    * @param staleMs - Milliseconds of inactivity before a session is considered stuck.
    *                  Default: 5 minutes (300_000 ms).
    */
-  async reapFinished(staleMs = 5 * 60 * 1000): Promise<AgentOutcome[]> {
-    if (this.agents.size === 0) return []
+  async reapFinished(staleMs = 5 * 60 * 1000): Promise<{
+    reaped: AgentOutcome[]
+    activeUpdates: Array<{
+      task_id: string
+      agent_session_key: string
+      agent_last_active_at: number
+      agent_output_preview?: string
+      agent_tokens_in?: number
+      agent_tokens_out?: number
+    }>
+  }> {
+    if (this.agents.size === 0) return { reaped: [], activeUpdates: [] }
 
     const reaped: AgentOutcome[] = []
+    const activeUpdates: Array<{
+      task_id: string
+      agent_session_key: string
+      agent_last_active_at: number
+      agent_output_preview?: string
+      agent_tokens_in?: number
+      agent_tokens_out?: number
+    }> = []
     const now = Date.now()
 
     for (const [taskId, handle] of this.agents) {
@@ -241,7 +259,15 @@ export class AgentManager {
         }
       } else {
         // Session is still active (recent mtime or mid-tool-call)
-        // Leave it alone — don't reap
+        // Collect update for active agent to refresh last_active_at in Convex
+        activeUpdates.push({
+          task_id: taskId,
+          agent_session_key: handle.sessionKey,
+          agent_last_active_at: info.fileMtimeMs,
+          agent_output_preview: info.lastAssistantMessage?.textPreview,
+          agent_tokens_in: info.lastAssistantMessage?.usage.input,
+          agent_tokens_out: info.lastAssistantMessage?.usage.output,
+        })
         continue
       }
 
@@ -270,7 +296,14 @@ export class AgentManager {
       )
     }
 
-    return reaped
+    if (activeUpdates.length > 0) {
+      console.log(
+        `[AgentManager] Active updates for ${activeUpdates.length} agent(s): ` +
+        activeUpdates.map((u) => `${u.agent_session_key}`).join(", "),
+      )
+    }
+
+    return { reaped, activeUpdates }
   }
 
   /**
