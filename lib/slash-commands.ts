@@ -315,7 +315,7 @@ async function handleModelCommand(
  * Handle /help - Show available commands
  */
 function handleHelpCommand(): SlashCommandResult {
-  const commands = Object.entries(SLASH_COMMANDS).map(([key, info]) => {
+  const commands = Object.entries(SLASH_COMMANDS).map(([, info]) => {
     return `- **${info.name}** - ${info.description}`;
   });
 
