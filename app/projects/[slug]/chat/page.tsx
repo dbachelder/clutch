@@ -424,7 +424,7 @@ export default function ChatPage({ params }: PageProps) {
       // The session has been reset - clear local messages via store
       // Note: The Convex sync will handle this automatically on next refresh
       // but we trigger a re-fetch by updating the chat store
-      clearStreamingMessage(activeChat.id)
+      // Streaming removed — Convex sync handles refresh automatically
     } else if (result.action === "refresh_session") {
       // Refresh session info (for /model command)
       // The session info effect will pick up the change automatically
