@@ -86,9 +86,25 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     in_progress: true,
     ready: true,
   })
-  
+
   // Recently shipped state
   const [recentlyShippedExpanded, setRecentlyShippedExpanded] = useState(true)
+
+  // Active agents section expanded state (persisted in localStorage)
+  const [activeAgentsExpanded, setActiveAgentsExpanded] = useState(true)
+
+  // Load active agents expanded state from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('trap:activeAgentsExpanded')
+    if (stored !== null) {
+      setActiveAgentsExpanded(stored === 'true')
+    }
+  }, [])
+
+  // Persist active agents expanded state to localStorage
+  useEffect(() => {
+    localStorage.setItem('trap:activeAgentsExpanded', String(activeAgentsExpanded))
+  }, [activeAgentsExpanded])
   
   // Task modal state
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
@@ -427,7 +443,16 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
       {/* Active Agents Section */}
       {activeAgentSessions.length > 0 && (
         <div className="p-3 border-b border-[var(--border)] bg-[var(--bg-secondary)]/20">
-          <div className="flex items-center gap-2 mb-2">
+          {/* Clickable header with chevron */}
+          <button
+            onClick={() => setActiveAgentsExpanded(!activeAgentsExpanded)}
+            className="w-full flex items-center gap-2 mb-2 hover:opacity-80 transition-opacity"
+          >
+            {activeAgentsExpanded ? (
+              <ChevronDown className="h-4 w-4 text-purple-400" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-purple-400" />
+            )}
             <svg className="h-4 w-4 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
               <line x1="3" y1="9" x2="21" y2="9"/>
@@ -437,8 +462,14 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
             <span className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">
               {activeAgentSessions.length}
             </span>
-          </div>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
+          </button>
+          {/* Collapsible agent list with smooth transition */}
+          <div
+            className={`
+              space-y-2 overflow-y-auto transition-all duration-300 ease-in-out
+              ${activeAgentsExpanded ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'}
+            `}
+          >
             {activeAgentSessions.map((session: Session) => {
               // Try to find associated task
               const task = sessionTaskMap.get(session.id) ||
