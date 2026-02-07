@@ -198,3 +198,5 @@ function formatLastActivity(lastActiveAt: number | null): string {
   if (hours < 24) return `${hours}h ago`
   return ">24h ago"
 }
+
+// formatTimestamp now imported from @/lib/utils

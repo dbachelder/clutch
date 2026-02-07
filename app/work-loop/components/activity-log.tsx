@@ -231,7 +231,9 @@ function CycleRow({ cycle, projectSlug, isExpanded, onToggle }: CycleRowProps) {
                 {formatTimeAgo(cycle.firstRunAt)}
               </span>
             </TooltipTrigger>
-            <TooltipContent>{formatTimestamp(cycle.firstRunAt)}</TooltipContent>
+            <TooltipContent>
+              {formatTimestamp(cycle.firstRunAt)}
+            </TooltipContent>
           </Tooltip>
 
           {/* Action count badge */}
@@ -323,6 +325,18 @@ function RunRow({ run, projectSlug }: RunRowProps) {
     <div className="flex items-center gap-3 px-4 py-2 hover:bg-muted/30 text-sm border-b last:border-b-0">
       {/* Indent to align with cycle chevron */}
       <div className="w-4 flex-shrink-0" />
+
+      {/* Timestamp */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="w-20 flex-shrink-0 text-xs text-muted-foreground cursor-help">
+            {formatTimestamp(run.created_at)}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          {new Date(run.created_at).toLocaleString()}
+        </TooltipContent>
+      </Tooltip>
 
       {/* Phase badge */}
       <div className="w-20 flex-shrink-0">
@@ -593,3 +607,5 @@ function formatDuration(ms: number): string {
   const remainingMinutes = minutes % 60
   return `${hours}h ${remainingMinutes}m`
 }
+
+// formatTimestamp now imported from @/lib/utils
