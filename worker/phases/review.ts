@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api"
 import type { AgentManager } from "../agent-manager"
 import type { WorkLoopConfig } from "../config"
 import type { Task } from "../../lib/types"
+import { handlePostMergeDeploy } from "./convex-deploy"
 
 // ============================================
 // Types
@@ -194,6 +195,9 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
             status: "done",
           })
           console.log(`[ReviewPhase] Auto-closed task ${task.id.slice(0, 8)} — PR #${task.pr_number} already merged`)
+
+          // Trigger Convex deploy if PR touched convex/ directory
+          await handlePostMergeDeploy(convex, task.pr_number, project, task.id)
         } catch {
           // Non-fatal
         }
@@ -433,8 +437,11 @@ ${task.description ? `**Description:**\n${task.description}\n` : ""}
 
 ### If PR is clean (all checks pass):
 1. **Approve and merge:**\n   \`\`\`bash\n   gh pr merge ${pr.number} --squash --delete-branch\n   \`\`\`
-2. **Update ticket status to done:**\n   \`\`\`bash\n   curl -X PATCH http://localhost:3002/api/tasks/${task.id} -H 'Content-Type: application/json' -d '{"status": "done"}'\n   \`\`\`
-3. **Clean up worktree:**\n   \`\`\`bash\n   cd ${project.local_path} && git worktree remove ${worktreePath}\n   \`\`\`
+2. **Check if PR touches convex/ directory:**\n   \`\`\`bash\n   gh pr diff ${pr.number} --name-only | grep "^convex/"\n   \`\`\`
+   If the above outputs any lines, the PR touches Convex files — deploy immediately:
+   \`\`\`bash\n   cd ${project.local_path} && npx convex deploy --yes\n   \`\`\`
+3. **Update ticket status to done:**\n   \`\`\`bash\n   curl -X PATCH http://localhost:3002/api/tasks/${task.id} -H 'Content-Type: application/json' -d '{"status": "done"}'\n   \`\`\`
+4. **Clean up worktree:**\n   \`\`\`bash\n   cd ${project.local_path} && git worktree remove ${worktreePath}\n   \`\`\`
 
 ### If PR needs changes:
 1. **Leave specific, actionable feedback:**\n   \`\`\`bash\n   gh pr comment ${pr.number} --body "Your detailed feedback here..."\n   \`\`\`
@@ -446,6 +453,7 @@ ${task.description ? `**Description:**\n${task.description}\n` : ""}
 - Be thorough but constructive in feedback
 - If you find architectural concerns or security issues, escalate rather than merging
 - If the PR has UI changes that need visual verification, note "needs browser QA" in your review
+- **CRITICAL:** If the PR touches files in \`convex/\`, you MUST run \`npx convex deploy --yes\` after merging. The web UI will crash if schema/functions are not deployed.
 
 Start by reading \`\${project.local_path}/AGENTS.md\` to understand project conventions, then proceed with the review.
 `
