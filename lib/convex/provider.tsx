@@ -18,7 +18,9 @@ export function ConvexProviderWrapper({ children }: ConvexProviderWrapperProps) 
   )
 
   if (!client) {
-    return <>{children}</>
+    // Keep the app rendering even if Convex is temporarily unavailable.
+    // Client-only pages/components will show their own loading state.
+    return <>{children}</>;
   }
 
   return <ConvexProvider client={client}>{children}</ConvexProvider>
