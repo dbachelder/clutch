@@ -4,10 +4,15 @@
  * Global Providers
  *
  * Wraps the app with all global context providers:
- * - SessionProvider: Manages the single session poller
+ * - ConvexProviderWrapper: Provides Convex React context (useQuery/useMutation)
+ * - SessionProvider: Mounts the single OpenClaw sessions poller
+ * - Toaster: Global toast UI
  */
 
+import React from "react";
+import { Toaster } from "sonner";
 import { SessionProvider } from "@/components/session-provider";
+import { ConvexProviderWrapper } from "@/lib/convex/provider";
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -16,7 +21,19 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <SessionProvider refreshIntervalMs={30000}>
-      {children}
+      <ConvexProviderWrapper>
+        {children}
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border)",
+              color: "var(--text-primary)",
+            },
+          }}
+        />
+      </ConvexProviderWrapper>
     </SessionProvider>
   );
 }
