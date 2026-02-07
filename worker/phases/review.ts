@@ -173,6 +173,31 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
     : findOpenPR(branchName)
 
   if (!pr) {
+    // If the task has a recorded PR number, check if it was already merged.
+    // Reviewers sometimes merge the PR but fail to update the task status.
+    if (task.pr_number) {
+      const merged = isPRMerged(task.pr_number)
+      if (merged) {
+        try {
+          await convex.mutation(api.tasks.move, {
+            id: task.id,
+            status: "done",
+          })
+          console.log(`[ReviewPhase] Auto-closed task ${task.id.slice(0, 8)} — PR #${task.pr_number} already merged`)
+        } catch {
+          // Non-fatal
+        }
+        return {
+          spawned: false,
+          details: {
+            reason: "pr_already_merged",
+            taskId: task.id,
+            prNumber: task.pr_number,
+          },
+        }
+      }
+    }
+
     return {
       spawned: false,
       details: {
@@ -291,6 +316,29 @@ function findOpenPR(branchName: string): PRInfo | null {
     const message = error instanceof Error ? error.message : String(error)
     console.warn(`[ReviewPhase] Failed to check PR for branch ${branchName}: ${message}`)
     return null
+  }
+}
+
+/**
+ * Check if a PR has been merged (not just closed).
+ * Used to auto-close tasks whose PR was merged but task status wasn't updated.
+ */
+function isPRMerged(prNumber: number): boolean {
+  try {
+    const result = execFileSync(
+      "gh",
+      ["pr", "view", String(prNumber), "--json", "state"],
+      {
+        encoding: "utf-8",
+        timeout: 10_000,
+        cwd: "/home/dan/src/trap",
+      }
+    )
+
+    const pr = JSON.parse(result) as { state: string }
+    return pr.state === "MERGED"
+  } catch {
+    return false
   }
 }
 
