@@ -428,6 +428,33 @@ export const getWithActiveAgents = query({
   },
 })
 
+/**
+ * Get the count of active agents for a project.
+ * Returns just the count (lightweight) instead of full task objects.
+ * An agent is considered active if it has activity within the last 15 minutes.
+ */
+export const activeAgentCount = query({
+  args: { projectId: v.string() },
+  handler: async (ctx, args): Promise<number> => {
+    const ACTIVE_AGENT_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
+    const now = Date.now()
+    const cutoffTime = now - ACTIVE_AGENT_THRESHOLD_MS
+
+    const tasks = await ctx.db
+      .query('tasks')
+      .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
+      .filter((q) => q.neq('agent_session_key', undefined))
+      .collect()
+
+    // Count only agents that are still active
+    return tasks.filter((task) => {
+      const lastActive = task.agent_last_active_at
+      if (!lastActive) return false
+      return lastActive >= cutoffTime
+    }).length
+  },
+})
+
 // Status thresholds for session derivation:
 // < 5min since last activity → running (actively working)
 // 5-15min → idle (paused but may resume)

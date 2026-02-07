@@ -133,3 +133,28 @@ export function useAgentHistory(
     error: null,
   }
 }
+
+/**
+ * Reactive Convex subscription for active agent count.
+ *
+ * Returns the count of currently active agents for a project.
+ * This is the single source of truth for active agent count.
+ */
+export function useActiveAgentCount(
+  projectId: string | null
+): {
+  count: number
+  isLoading: boolean
+  error: Error | null
+} {
+  const result = useQuery(
+    api.tasks.activeAgentCount,
+    projectId ? { projectId } : "skip"
+  )
+
+  return {
+    count: result ?? 0,
+    isLoading: result === undefined,
+    error: null,
+  }
+}

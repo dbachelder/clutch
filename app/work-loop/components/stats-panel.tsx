@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useWorkLoopState, useWorkLoopStats } from "@/lib/hooks/use-work-loop"
+import { useWorkLoopState, useWorkLoopStats, useActiveAgentCount } from "@/lib/hooks/use-work-loop"
 import { Activity, AlertCircle, Clock, Users } from "lucide-react"
 
 interface StatsPanelProps {
@@ -11,10 +11,12 @@ interface StatsPanelProps {
 export function StatsPanel({ projectId }: StatsPanelProps) {
   const { state, isLoading: stateLoading } = useWorkLoopState(projectId)
   const { stats, isLoading: statsLoading } = useWorkLoopStats(projectId)
+  const { count: activeAgentCount, isLoading: countLoading } = useActiveAgentCount(projectId)
 
-  if (stateLoading || statsLoading) {
+  if (stateLoading || statsLoading || countLoading) {
     return (
       <div className="space-y-4">
+        <StatsCardSkeleton />
         <StatsCardSkeleton />
         <StatsCardSkeleton />
         <StatsCardSkeleton />
@@ -95,7 +97,7 @@ export function StatsPanel({ projectId }: StatsPanelProps) {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
-            {state?.active_agents ?? 0}
+            {activeAgentCount}
             <span className="text-sm font-normal text-muted-foreground">
               {" "}/ {state?.max_agents ?? 0}
             </span>
