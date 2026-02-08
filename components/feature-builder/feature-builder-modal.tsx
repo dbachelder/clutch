@@ -41,6 +41,7 @@ import {
   RequirementsStep,
   DesignStep,
   ImplementationStep,
+  TaskBreakdownStep,
   TestingStep,
   ReviewStep,
   LaunchStep,
@@ -63,6 +64,7 @@ const INITIAL_DATA: FeatureBuilderData = {
   technicalApproach: "",
   implementationPlan: "",
   estimatedHours: 0,
+  taskBreakdown: null,
   testStrategy: "",
   testCases: [],
   reviewNotes: "",
@@ -138,6 +140,10 @@ export function FeatureBuilderModal({
         if (!data.implementationPlan.trim()) {
           newErrors.implementationPlan = "Implementation plan is required"
         }
+        break
+
+      case "breakdown":
+        // Breakdown is auto-generated but user can skip if needed
         break
 
       case "testing":
@@ -297,6 +303,14 @@ export function FeatureBuilderModal({
       case "implementation":
         return (
           <ImplementationStep
+            data={data}
+            onChange={updateData}
+            errors={errors}
+          />
+        )
+      case "breakdown":
+        return (
+          <TaskBreakdownStep
             data={data}
             onChange={updateData}
             errors={errors}
