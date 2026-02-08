@@ -39,6 +39,7 @@ export default function ChatPage({ params }: PageProps) {
   const [createTaskMessage, setCreateTaskMessage] = useState<ChatMessage | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [lastSentAt, setLastSentAt] = useState<number | null>(null)
 
   // Detect mobile screen size
   useEffect(() => {
@@ -258,6 +259,9 @@ export default function ChatPage({ params }: PageProps) {
     // Save user message to Convex
     await sendMessageToDb(activeChat.id, messageContent, "dan")
 
+    // Record send timestamp for pipeline status tracking
+    setLastSentAt(Date.now())
+
     // Show thinking indicator immediately (optimistic local update)
     void setTyping(activeChat.id, "ada", "thinking")
 
@@ -284,6 +288,7 @@ export default function ChatPage({ params }: PageProps) {
       console.error("[Chat] Failed to send to OpenClaw:", error)
       // Clear typing indicator on send failure (both local and Convex)
       void setTyping(activeChat.id, "ada", false)
+      setLastSentAt(null) // Clear lastSentAt on error
       void fetch(`/api/chats/${activeChat.id}/typing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -301,6 +306,7 @@ export default function ChatPage({ params }: PageProps) {
       console.error("[Chat] Failed to abort chat:", error)
     } finally {
       void setTyping(activeChat.id, "ada", false)
+      setLastSentAt(null)
       // Also clear Convex typing in case abort doesn't trigger agent_end cleanly
       void fetch(`/api/chats/${activeChat.id}/typing`, {
         method: "POST",
@@ -308,6 +314,18 @@ export default function ChatPage({ params }: PageProps) {
         body: JSON.stringify({ typing: false, author: "ada" }),
       })
       await sendMessageToDb(activeChat.id, "_Response cancelled by user_", "system")
+    }
+  }
+
+  const handleResetSession = async () => {
+    if (!activeChat?.session_key) return
+
+    try {
+      await resetSession(activeChat.session_key)
+      setLastSentAt(null)
+      await sendMessageToDb(activeChat.id, "_Session reset. Context cleared._", "system")
+    } catch (error) {
+      console.error("[Chat] Failed to reset session:", error)
     }
   }
 
@@ -353,6 +371,21 @@ export default function ChatPage({ params }: PageProps) {
   }
 
   const currentMessages = activeChat ? messages[activeChat.id] || [] : []
+
+  // Clear lastSentAt when agent response arrives (typing indicator clears)
+  useEffect(() => {
+    if (activeChat && lastSentAt) {
+      const isTyping = (typingIndicators[activeChat.id] || []).some(t => t.author === "ada")
+      // If we were waiting and now typing stopped, clear lastSentAt
+      if (!isTyping) {
+        // Check if we got new messages since sending
+        const lastMessage = currentMessages[currentMessages.length - 1]
+        if (lastMessage && lastMessage.author !== "dan" && lastMessage.created_at > lastSentAt) {
+          setLastSentAt(null)
+        }
+      }
+    }
+  }, [activeChat, typingIndicators, currentMessages, lastSentAt])
 
   // ==========================================================================
   // Render
@@ -430,9 +463,11 @@ export default function ChatPage({ params }: PageProps) {
                 onSend={handleSendMessage}
                 onStop={handleStopChat}
                 onSlashCommand={handleSlashCommand}
+                onReset={handleResetSession}
                 isAssistantTyping={activeChat ? (typingIndicators[activeChat.id] || []).some(t => t.author === "ada") : false}
                 sessionKey={sessionKey}
                 projectId={projectId ?? undefined}
+                lastSentAt={lastSentAt}
               />
             </>
           ) : (

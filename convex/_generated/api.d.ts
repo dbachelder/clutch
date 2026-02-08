@@ -13,6 +13,7 @@ import type * as analytics from "../analytics.js";
 import type * as chats from "../chats.js";
 import type * as comments from "../comments.js";
 import type * as events from "../events.js";
+import type * as featureBuilder from "../featureBuilder.js";
 import type * as gate from "../gate.js";
 import type * as metrics from "../metrics.js";
 import type * as modelAnalytics from "../modelAnalytics.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   chats: typeof chats;
   comments: typeof comments;
   events: typeof events;
+  featureBuilder: typeof featureBuilder;
   gate: typeof gate;
   metrics: typeof metrics;
   modelAnalytics: typeof modelAnalytics;
