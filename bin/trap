@@ -591,7 +591,7 @@ cmd_cleanup_stuck() {
   if [[ "$fix" == true ]]; then
     # Get stuck tickets first
     local response
-    response=$(trap_api "GET" "/api/cleanup/stuck-tickets" "projectId=${project_id}")
+    response=$(trap_api "GET" "/api/cleanup/stuck-tickets" "" "projectId=${project_id}")
     
     if [[ "$raw" == true ]]; then
       echo "$response" | jq .
@@ -615,7 +615,7 @@ cmd_cleanup_stuck() {
     done
   else
     local response
-    response=$(trap_api "GET" "/api/cleanup/stuck-tickets" "projectId=${project_id}")
+    response=$(trap_api "GET" "/api/cleanup/stuck-tickets" "" "projectId=${project_id}")
     
     if [[ "$raw" == true ]]; then
       echo "$response" | jq .
