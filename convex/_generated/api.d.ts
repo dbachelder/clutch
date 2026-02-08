@@ -23,6 +23,7 @@ import type * as promptMetrics from "../promptMetrics.js";
 import type * as promptVersions from "../promptVersions.js";
 import type * as roadmap from "../roadmap.js";
 import type * as seed from "../seed.js";
+import type * as sessions from "../sessions.js";
 import type * as signals from "../signals.js";
 import type * as stuckTickets from "../stuckTickets.js";
 import type * as taskAnalyses from "../taskAnalyses.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   promptVersions: typeof promptVersions;
   roadmap: typeof roadmap;
   seed: typeof seed;
+  sessions: typeof sessions;
   signals: typeof signals;
   stuckTickets: typeof stuckTickets;
   taskAnalyses: typeof taskAnalyses;
