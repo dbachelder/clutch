@@ -71,8 +71,8 @@ export default function BoardPage({ params }: PageProps) {
   }
 
   return (
-    <>
-      <Board 
+    <div className="flex-1 flex flex-col min-h-0">
+      <Board
         projectId={project.id}
         onTaskClick={handleTaskClick}
         onAddTask={handleAddTask}
@@ -90,6 +90,6 @@ export default function BoardPage({ params }: PageProps) {
         open={taskModalOpen}
         onOpenChange={setTaskModalOpen}
       />
-    </>
+    </div>
   )
 }

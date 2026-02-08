@@ -259,13 +259,21 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
 
   if (isLoading) {
     return (
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {COLUMNS.map((col) => (
-          <div 
-            key={col.status}
-            className="bg-[var(--bg-secondary)] rounded-lg border border-[var(--border)] min-h-[500px] w-[280px] flex-shrink-0 animate-pulse"
-          />
-        ))}
+      <div className="flex-1 flex flex-col min-h-0 space-y-6">
+        {/* Loading header */}
+        <div className="flex items-center justify-between flex-shrink-0">
+          <div className="h-7 w-20 bg-[var(--bg-secondary)] rounded animate-pulse" />
+          <div className="h-9 w-32 bg-[var(--bg-secondary)] rounded animate-pulse" />
+        </div>
+        {/* Loading columns */}
+        <div className="flex-1 flex gap-4 min-h-0 overflow-x-auto pb-4">
+          {COLUMNS.map((col) => (
+            <div
+              key={col.status}
+              className="flex-1 min-w-[280px] bg-[var(--bg-secondary)] rounded-lg border border-[var(--border)] animate-pulse"
+            />
+          ))}
+        </div>
       </div>
     )
   }
@@ -291,9 +299,9 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
 
   // Desktop view
   return (
-    <div className="space-y-6">
+    <div className="flex-1 flex flex-col min-h-0 space-y-6">
       {/* Board Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">
             Board
@@ -378,7 +386,7 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
       {/* Board Columns */}
       <DragDropContext onDragEnd={handleDragEnd}>
         {/* Mobile: horizontal scroll flex layout */}
-        <div className="flex lg:hidden gap-4 overflow-x-auto pb-4">
+        <div className="flex lg:hidden gap-4 overflow-x-auto pb-4 flex-shrink-0">
           {visibleColumns.map((col) => (
             <Column
               key={col.status}
@@ -397,30 +405,24 @@ export function Board({ projectId, onTaskClick, onAddTask }: BoardProps) {
             />
           ))}
         </div>
-        {/* Desktop: grid layout with horizontal scroll */}
-        <div className="hidden lg:block overflow-x-auto pb-4">
-          <div className="flex gap-4 items-start" style={{
-            width: 'max-content',
-            minWidth: '100%'
-          }}>
-            {visibleColumns.map((col) => (
-              <div key={col.status} style={{ width: '280px', flexShrink: 0 }}>
-                <Column
-                  status={col.status}
-                  title={col.title}
-                  color={col.color}
-                  tasks={getTasksForColumn(col.status)}
-                  onTaskClick={onTaskClick}
-                  onAddTask={() => onAddTask(col.status)}
-                  showAddButton={col.showAdd}
-                  projectId={projectId}
-                  totalCount={totalCounts[col.status]}
-                  hasMore={hasMore[col.status]}
-                  onLoadMore={() => loadMore(col.status)}
-                />
-              </div>
-            ))}
-          </div>
+        {/* Desktop: flex layout with horizontal scroll, columns fill width */}
+        <div className="hidden lg:flex flex-1 min-h-0 gap-4 overflow-x-auto pb-4">
+          {visibleColumns.map((col) => (
+            <Column
+              key={col.status}
+              status={col.status}
+              title={col.title}
+              color={col.color}
+              tasks={getTasksForColumn(col.status)}
+              onTaskClick={onTaskClick}
+              onAddTask={() => onAddTask(col.status)}
+              showAddButton={col.showAdd}
+              projectId={projectId}
+              totalCount={totalCounts[col.status]}
+              hasMore={hasMore[col.status]}
+              onLoadMore={() => loadMore(col.status)}
+            />
+          ))}
         </div>
       </DragDropContext>
     </div>
