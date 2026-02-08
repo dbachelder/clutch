@@ -596,4 +596,57 @@ export default defineSchema({
     .index("by_project", ["project_id"])
     .index("by_project_period", ["project_id", "period", "period_start"])
     .index("by_period", ["period", "period_start"]),
+
+  // Sessions - OpenClaw session metadata synced from JSONL files
+  sessions: defineTable({
+    id: v.string(), // session key (e.g., "agent:main:main")
+    session_id: v.string(), // UUID from sessions.json
+    name: v.string(), // Human-readable name
+    type: v.union(
+      v.literal("main"),
+      v.literal("chat"),
+      v.literal("agent"),
+      v.literal("cron")
+    ),
+    status: v.union(
+      v.literal("active"),
+      v.literal("completed"),
+      v.literal("stale")
+    ),
+    model: v.string(), // model identifier
+    project_slug: v.optional(v.string()), // for chat/agent types
+    task_id: v.optional(v.string()), // associated task if applicable
+    // Token usage from last assistant message
+    tokens_input: v.optional(v.number()),
+    tokens_output: v.optional(v.number()),
+    tokens_cache_read: v.optional(v.number()),
+    tokens_cache_write: v.optional(v.number()),
+    tokens_total: v.optional(v.number()),
+    // Cost tracking
+    cost_input: v.optional(v.number()),
+    cost_output: v.optional(v.number()),
+    cost_cache_read: v.optional(v.number()),
+    cost_cache_write: v.optional(v.number()),
+    cost_total: v.optional(v.number()),
+    // File tracking
+    file_path: v.optional(v.string()), // path to JSONL file
+    file_mtime_ms: v.optional(v.number()), // last file modification time
+    // Timestamps
+    created_at: v.number(),
+    updated_at: v.number(),
+    completed_at: v.optional(v.number()),
+    last_activity_at: v.optional(v.number()),
+    // Stop reason / completion status
+    stop_reason: v.optional(v.string()), // "stop", "error", etc.
+    is_terminal_error: v.optional(v.boolean()),
+    // Output preview (last assistant message text)
+    output_preview: v.optional(v.string()),
+  })
+    .index("by_session_key", ["id"])
+    .index("by_session_id", ["session_id"])
+    .index("by_type", ["type"])
+    .index("by_status", ["status"])
+    .index("by_project_slug", ["project_slug"])
+    .index("by_task_id", ["task_id"])
+    .index("by_updated", ["updated_at"]),
 })

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Trap production server + work loop (separate processes)
+# Trap production server + work loop + session watcher (separate processes)
 #
 # Usage:
-#   ./run.sh start     - build + start server + work loop
+#   ./run.sh start     - build + start server + work loop + session watcher
 #   ./run.sh stop      - stop everything
 #   ./run.sh restart   - stop + start
 #   ./run.sh watch     - start + auto-rebuild on main changes
@@ -10,6 +10,8 @@
 #   ./run.sh logs      - tail server log
 #   ./run.sh loop-logs - tail work loop log
 #   ./run.sh loop-restart - restart just the work loop
+#   ./run.sh watcher-logs - tail session watcher log
+#   ./run.sh watcher-restart - restart just the session watcher
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -18,9 +20,11 @@ PORT="${PORT:-3002}"
 SERVER_LOG="/tmp/trap-prod.log"
 LOOP_LOG="/tmp/trap-loop.log"
 BRIDGE_LOG="/tmp/trap-bridge.log"
+WATCHER_LOG="/tmp/trap-session-watcher.log"
 SERVER_PID="/tmp/trap-server.pid"
 LOOP_PID="/tmp/trap-loop.pid"
 BRIDGE_PID="/tmp/trap-bridge.pid"
+WATCHER_PID="/tmp/trap-session-watcher.pid"
 
 build() {
   echo "[trap] Building..."
@@ -119,6 +123,24 @@ stop_bridge() {
   fi
 }
 
+start_watcher() {
+  stop_watcher 2>/dev/null || true
+  echo "[trap] Starting session watcher (separate process)"
+  load_env
+  setsid nohup volta run npx tsx worker/session-watcher.ts > "$WATCHER_LOG" 2>&1 &
+  echo $! > "$WATCHER_PID"
+  echo "[trap] Watcher PID $(cat "$WATCHER_PID"), log: $WATCHER_LOG"
+}
+
+stop_watcher() {
+  if [[ -f "$WATCHER_PID" ]]; then
+    local pid
+    pid=$(cat "$WATCHER_PID")
+    kill_tree "$pid" "$WATCHER_PID"
+    echo "[trap] Stopped watcher PID $pid"
+  fi
+}
+
 status() {
   echo "=== Trap Status ==="
   if [[ -f "$SERVER_PID" ]] && kill -0 "$(cat "$SERVER_PID")" 2>/dev/null; then
@@ -136,10 +158,15 @@ status() {
   else
     echo "Bridge: STOPPED"
   fi
+  if [[ -f "$WATCHER_PID" ]] && kill -0 "$(cat "$WATCHER_PID")" 2>/dev/null; then
+    echo "Watcher: RUNNING (PID $(cat "$WATCHER_PID"))"
+  else
+    echo "Watcher: STOPPED"
+  fi
 
   # Detect orphaned processes (trap-related processes not in any tracked process group)
   local tracked_pgids=""
-  for pidfile in "$SERVER_PID" "$LOOP_PID" "$BRIDGE_PID"; do
+  for pidfile in "$SERVER_PID" "$LOOP_PID" "$BRIDGE_PID" "$WATCHER_PID"; do
     [[ -f "$pidfile" ]] && {
       local p; p=$(cat "$pidfile")
       kill -0 "$p" 2>/dev/null && tracked_pgids+=" $(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' ')"
@@ -152,7 +179,7 @@ status() {
       [[ "$pgid" == "$tpg" ]] && { is_tracked=true; break; }
     done
     $is_tracked || orphan_pids+=" $pid"
-  done < <(ps aux | grep -E '/home/dan/src/trap.*(loop|bridge|next)' | grep -v grep | awk '{print $2}' | while read -r p; do
+  done < <(ps aux | grep -E '/home/dan/src/trap.*(loop|bridge|next|session-watcher)' | grep -v grep | awk '{print $2}' | while read -r p; do
     echo "$p $(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' ')"
   done)
   if [[ -n "${orphan_pids// /}" ]]; then
@@ -170,6 +197,7 @@ watch_and_rebuild() {
   start_server
   start_bridge
   start_loop
+  start_watcher
 
   echo "[trap] Watching for git changes on main..."
   local last_hash
@@ -193,6 +221,8 @@ watch_and_rebuild() {
           start_bridge
           stop_loop
           start_loop
+          stop_watcher
+          start_watcher
           echo "[trap] Restarted at $(date '+%H:%M:%S')"
         else
           echo "[trap] BUILD FAILED — server still running old version"
@@ -208,7 +238,7 @@ clean() {
   # Kill ALL trap-related processes, tracked or not
   echo "[trap] Killing all trap-related processes..."
   local pids
-  pids=$(ps aux | grep -E 'trap.*(loop|bridge|next|chat-bridge)' | grep -v grep | awk '{print $2}')
+  pids=$(ps aux | grep -E 'trap.*(loop|bridge|next|chat-bridge|session-watcher)' | grep -v grep | awk '{print $2}')
   if [[ -n "$pids" ]]; then
     echo "$pids" | xargs kill 2>/dev/null || true
     sleep 1
@@ -217,7 +247,7 @@ clean() {
   else
     echo "[trap] No trap processes found"
   fi
-  rm -f "$SERVER_PID" "$LOOP_PID" "$BRIDGE_PID"
+  rm -f "$SERVER_PID" "$LOOP_PID" "$BRIDGE_PID" "$WATCHER_PID"
   fuser -k "$PORT/tcp" 2>/dev/null || true
   echo "[trap] Clean complete"
 }
@@ -228,14 +258,17 @@ case "${1:-status}" in
     start_server
     start_bridge
     start_loop
+    start_watcher
     ;;
   stop)
     stop_loop
+    stop_watcher
     stop_bridge
     stop_server
     ;;
   restart)
     stop_loop
+    stop_watcher
     stop_bridge
     stop_server
     sleep 1
@@ -243,9 +276,10 @@ case "${1:-status}" in
     start_server
     start_bridge
     start_loop
+    start_watcher
     ;;
   watch)
-    trap 'stop_loop; stop_bridge; stop_server; exit 0' INT TERM
+    trap 'stop_loop; stop_watcher; stop_bridge; stop_server; exit 0' INT TERM
     watch_and_rebuild
     ;;
   status)
@@ -264,11 +298,21 @@ case "${1:-status}" in
   loop-stop)
     stop_loop
     ;;
+  watcher-logs|watcher-log)
+    tail -f "$WATCHER_LOG"
+    ;;
+  watcher-restart)
+    stop_watcher
+    start_watcher
+    ;;
+  watcher-stop)
+    stop_watcher
+    ;;
   clean)
     clean
     ;;
   *)
-    echo "Usage: $0 {start|stop|restart|watch|status|logs|loop-logs|loop-restart|loop-stop|clean}"
+    echo "Usage: $0 {start|stop|restart|watch|status|logs|loop-logs|loop-restart|loop-stop|watcher-logs|watcher-restart|watcher-stop|clean}"
     exit 1
     ;;
 esac

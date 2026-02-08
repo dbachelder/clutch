@@ -1,13 +1,15 @@
 import { v } from "convex/values"
 import { query, mutation } from "./_generated/server"
 import type { GenericMutationCtx } from "convex/server"
+import type { DataModel } from "./_generated/dataModel"
 
 // Query to get active sessions for a project
 export const getActiveSessions = query({
   args: {
     project_id: v.string(),
   },
-  returns: v.array(v.any()),
+  // NOTE: omit `returns` so Convex can infer the output type from the handler.
+  // (v.any() optional validators cause TS issues with newer convex typings)
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderSessions")
@@ -24,7 +26,7 @@ export const getSession = query({
   args: {
     id: v.string(),
   },
-  returns: v.optional(v.any()),
+  // NOTE: omit `returns` so Convex can infer the output type from the handler.
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderSessions")
@@ -39,7 +41,7 @@ export const getRecentSessions = query({
     project_id: v.string(),
     limit: v.optional(v.number()),
   },
-  returns: v.array(v.any()),
+  // NOTE: omit `returns` so Convex can infer the output type from the handler.
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderSessions")
@@ -221,7 +223,7 @@ export const errorSession = mutation({
 
 // Helper to update analytics - uses GenericMutationCtx for proper typing
 async function updateAnalytics(
-  ctx: GenericMutationCtx<Record<string, unknown>>,
+  ctx: GenericMutationCtx<DataModel>,
   projectId: string,
   outcome: "completed" | "cancelled" | "error",
   durationMs: number,
@@ -286,7 +288,7 @@ export const getAnalytics = query({
     project_id: v.string(),
     period: v.union(v.literal("day"), v.literal("week"), v.literal("month"), v.literal("all_time")),
   },
-  returns: v.optional(v.any()),
+  // NOTE: omit `returns` so Convex can infer the output type from the handler.
   handler: async (ctx, args) => {
     const periodStart = getPeriodStart(args.period)
     const id = `${args.project_id}:${args.period}:${periodStart}`
@@ -304,7 +306,7 @@ export const getAnalyticsHistory = query({
     project_id: v.string(),
     days: v.optional(v.number()),
   },
-  returns: v.array(v.any()),
+  // NOTE: omit `returns` so Convex can infer the output type from the handler.
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderAnalytics")
