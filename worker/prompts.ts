@@ -277,12 +277,16 @@ ${params.taskDescription}
 3. Verify lint: \`cd ${params.worktreeDir} && pnpm lint\`
 4. **You do NOT have browser access.** If UI changes need visual verification, note it in your review comment
 
+**Pre-commit Rules:** If you need to make any commits (e.g., fixing issues before merge), **NEVER use \`--no-verify\`.** Fix all pre-commit errors properly.
+
 **If approved:**
 \`\`\`bash
 gh pr merge <number> --squash --delete-branch
 curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "done"}'
 cd ${params.repoDir} && git worktree remove ${params.worktreeDir} --force 2>/dev/null || true
 \`\`\`
+
+**If lint/typecheck fails:** That counts as a review failure. The PR is not ready. Do NOT merge with errors — move to blocked.
 
 **If issues found:** Leave a PR comment, move ticket to blocked:
 \`\`\`bash
@@ -345,11 +349,18 @@ curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type:
  curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "Started work. Branch: \`${branchName}\`, worktree: \`${params.worktreeDir}\`"}'
 \`\`\`
 
+## Pre-commit Rules (MANDATORY)
+- **NEVER use \`--no-verify\` on git commit.** Pre-commit hooks exist for a reason.
+- If pre-commit checks fail (lint, typecheck, tests), **fix the errors** before committing.
+- If a pre-commit failure is in code you didn't touch, fix it anyway — leave the codebase cleaner than you found it.
+- Do NOT skip, disable, or work around pre-commit hooks under any circumstances.
+
 **After implementation, push and create PR:**
 \`\`\`bash
 cd ${params.worktreeDir}
 git add -A
 git commit -m "feat: <description>"
+# If commit fails due to pre-commit hooks, fix ALL errors and retry. Do NOT use --no-verify.
 git push -u origin ${branchName}
 \`\`\`
 
