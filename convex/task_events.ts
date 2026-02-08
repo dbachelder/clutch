@@ -14,6 +14,7 @@ export type TaskEventType =
   | "pr_opened"
   | "pr_merged"
   | "comment_added"
+  | "discarded"
 
 export interface TaskEvent {
   id: string
@@ -64,6 +65,14 @@ export interface PRMergedData {
 export interface CommentAddedData {
   author: string
   preview: string
+}
+
+export interface DiscardedData {
+  reason: string
+  agent_session_key?: string
+  worktree_removed: boolean
+  branch_deleted: boolean
+  pr_closed?: number
 }
 
 // ============================================
@@ -228,7 +237,8 @@ export const create = mutation({
       v.literal('pr_merged'),
       v.literal('comment_added'),
       v.literal('triage_sent'),
-      v.literal('triage_escalated')
+      v.literal('triage_escalated'),
+      v.literal('discarded')
     ),
     actor: v.optional(v.string()),
     data: v.optional(v.string()), // JSON string
@@ -520,6 +530,43 @@ export const logCommentAdded = mutation({
       event_type: 'comment_added',
       timestamp: Date.now(),
       actor: args.author,
+      data: JSON.stringify(data),
+    }
+  },
+})
+
+/**
+ * Log a discarded event (task force-stopped and work discarded)
+ */
+export const logDiscarded = mutation({
+  args: {
+    taskId: v.string(),
+    reason: v.string(),
+    actor: v.string(),
+    agentSessionKey: v.optional(v.string()),
+    worktreeRemoved: v.boolean(),
+    branchDeleted: v.boolean(),
+    prClosed: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<TaskEvent | null> => {
+    const data: DiscardedData = {
+      reason: args.reason,
+      agent_session_key: args.agentSessionKey,
+      worktree_removed: args.worktreeRemoved,
+      branch_deleted: args.branchDeleted,
+      pr_closed: args.prClosed,
+    }
+
+    const id = await logTaskEvent(ctx, args.taskId, 'discarded', args.actor, data)
+    if (!id) return null
+
+    return {
+      id,
+      task_id: args.taskId,
+      project_id: '',
+      event_type: 'discarded',
+      timestamp: Date.now(),
+      actor: args.actor,
       data: JSON.stringify(data),
     }
   },

@@ -46,6 +46,7 @@ function toTask(doc: {
   pr_number?: number
   review_comments?: string
   review_count?: number
+  resolution?: 'completed' | 'discarded' | 'merged'
   position: number
   created_at: number
   updated_at: number
@@ -84,6 +85,7 @@ function toTask(doc: {
     pr_number: doc.pr_number ?? null,
     review_comments: doc.review_comments ?? null,
     review_count: doc.review_count ?? null,
+    resolution: doc.resolution ?? null,
     position: doc.position,
     created_at: doc.created_at,
     updated_at: doc.updated_at,
@@ -812,6 +814,11 @@ export const update = mutation({
     pr_number: v.optional(v.number()),
     review_comments: v.optional(v.string()),
     review_count: v.optional(v.number()),
+    resolution: v.optional(v.union(
+      v.literal('completed'),
+      v.literal('discarded'),
+      v.literal('merged')
+    )),
     agent_retry_count: v.optional(v.number()),
     triage_sent_at: v.optional(v.number()),
     auto_triage_count: v.optional(v.number()),
@@ -855,6 +862,7 @@ export const update = mutation({
     if (args.pr_number !== undefined) updates.pr_number = args.pr_number
     if (args.review_comments !== undefined) updates.review_comments = args.review_comments
     if (args.review_count !== undefined) updates.review_count = args.review_count
+    if (args.resolution !== undefined) updates.resolution = args.resolution
     if (args.agent_retry_count !== undefined) updates.agent_retry_count = args.agent_retry_count
     if (args.triage_sent_at !== undefined) updates.triage_sent_at = args.triage_sent_at
     if (args.auto_triage_count !== undefined) updates.auto_triage_count = args.auto_triage_count
@@ -892,6 +900,11 @@ export const move = mutation({
       v.literal('done')
     ),
     position: v.optional(v.number()),
+    resolution: v.optional(v.union(
+      v.literal('completed'),
+      v.literal('discarded'),
+      v.literal('merged')
+    )),
   },
   handler: async (ctx, args): Promise<Task> => {
     const existing = await ctx.db
@@ -962,7 +975,7 @@ export const move = mutation({
 
     const wasCompleted = existing.status !== 'done' && args.status === 'done'
 
-    await ctx.db.patch(existing._id, {
+    const patchData: Record<string, unknown> = {
       status: args.status,
       position: newPosition,
       updated_at: now,
@@ -978,7 +991,14 @@ export const move = mutation({
       agent_output_preview: undefined,
       // Reset retry count when starting fresh (in_progress), otherwise preserve it
       agent_retry_count: args.status === 'in_progress' ? 0 : existing.agent_retry_count,
-    })
+    }
+
+    // Set resolution if provided and task is being moved to done
+    if (args.resolution !== undefined && args.status === 'done') {
+      patchData.resolution = args.resolution
+    }
+
+    await ctx.db.patch(existing._id, patchData)
 
     const updated = await ctx.db.get(existing._id)
     if (!updated) {
