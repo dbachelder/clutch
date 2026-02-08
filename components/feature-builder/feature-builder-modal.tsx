@@ -33,6 +33,7 @@ import {
   isLastStep,
   getNextStep,
   getPreviousStep,
+  hasV1Requirements,
 } from "./feature-builder-types"
 import { StepIndicator } from "./step-indicator"
 import {
@@ -88,74 +89,80 @@ export function FeatureBuilderModal({
   const projects = useQuery(api.projects.getAll, {})
 
   const updateData = useCallback((updates: Partial<FeatureBuilderData>) => {
-    setData(prev => ({ ...prev, ...updates }))
+    setData((prev) => ({ ...prev, ...updates }))
     setHasChanges(true)
     // Clear errors for updated fields
-    setErrors(prev => {
+    setErrors((prev) => {
       const newErrors = { ...prev }
-      Object.keys(updates).forEach(key => {
+      Object.keys(updates).forEach((key) => {
         delete newErrors[key]
       })
       return newErrors
     })
   }, [])
 
-  const validateStep = useCallback((step: FeatureBuilderStep): boolean => {
-    const newErrors: Record<string, string> = {}
+  const validateStep = useCallback(
+    (step: FeatureBuilderStep): boolean => {
+      const newErrors: Record<string, string> = {}
 
-    switch (step) {
-      case "overview":
-        if (!data.projectId) {
-          newErrors.projectId = "Please select a project"
-        }
-        if (!data.name.trim()) {
-          newErrors.name = "Feature name is required"
-        } else if (data.name.length < 3) {
-          newErrors.name = "Name must be at least 3 characters"
-        }
-        if (!data.description.trim()) {
-          newErrors.description = "Description is required"
-        } else if (data.description.length < 10) {
-          newErrors.description = "Description must be at least 10 characters"
-        }
-        break
+      switch (step) {
+        case "overview":
+          if (!data.projectId) {
+            newErrors.projectId = "Please select a project"
+          }
+          if (!data.name.trim()) {
+            newErrors.name = "Feature name is required"
+          } else if (data.name.length < 3) {
+            newErrors.name = "Name must be at least 3 characters"
+          }
+          if (!data.description.trim()) {
+            newErrors.description = "Description is required"
+          } else if (data.description.length < 10) {
+            newErrors.description = "Description must be at least 10 characters"
+          }
+          break
 
-      case "research":
-        // Research is auto-started and optional - user can continue even if incomplete
-        break
+        case "research":
+          // Research is auto-started and optional - user can continue even if incomplete
+          break
 
-      case "requirements":
-        if (data.requirements.length === 0) {
-          newErrors.requirements = "At least one requirement is required"
-        }
-        break
+        case "requirements":
+          if (data.requirements.length === 0) {
+            newErrors.requirements = "At least one requirement is required"
+          } else if (!hasV1Requirements(data.requirements)) {
+            newErrors.requirements =
+              "At least one V1 (Must Have) requirement is required"
+          }
+          break
 
-      case "design":
-        // Design is optional but recommended
-        break
+        case "design":
+          // Design is optional but recommended
+          break
 
-      case "implementation":
-        if (!data.implementationPlan.trim()) {
-          newErrors.implementationPlan = "Implementation plan is required"
-        }
-        break
+        case "implementation":
+          if (!data.implementationPlan.trim()) {
+            newErrors.implementationPlan = "Implementation plan is required"
+          }
+          break
 
-      case "testing":
-        // Testing is optional but recommended
-        break
+        case "testing":
+          // Testing is optional but recommended
+          break
 
-      case "review":
-        // Review step has no required fields
-        break
+        case "review":
+          // Review step has no required fields
+          break
 
-      case "launch":
-        // Launch step validates via checklist
-        break
-    }
+        case "launch":
+          // Launch step validates via checklist
+          break
+      }
 
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }, [data])
+      setErrors(newErrors)
+      return Object.keys(newErrors).length === 0
+    },
+    [data]
+  )
 
   const handleNext = useCallback(() => {
     if (!validateStep(currentStep)) {
@@ -164,7 +171,7 @@ export function FeatureBuilderModal({
 
     // Mark current step as completed
     if (!completedSteps.includes(currentStep)) {
-      setCompletedSteps(prev => [...prev, currentStep])
+      setCompletedSteps((prev) => [...prev, currentStep])
     }
 
     const nextStep = getNextStep(currentStep)
@@ -180,22 +187,28 @@ export function FeatureBuilderModal({
     }
   }, [currentStep])
 
-  const handleStepClick = useCallback((step: FeatureBuilderStep) => {
-    // Only allow navigation to completed steps or the next available step
-    const stepConfig = getStepConfig(step)
-    const currentConfig = getStepConfig(currentStep)
-    
-    if (
-      completedSteps.includes(step) ||
-      stepConfig.index === currentConfig.index + 1
-    ) {
-      // Validate current step before allowing navigation
-      if (stepConfig.index > currentConfig.index && !validateStep(currentStep)) {
-        return
+  const handleStepClick = useCallback(
+    (step: FeatureBuilderStep) => {
+      // Only allow navigation to completed steps or the next available step
+      const stepConfig = getStepConfig(step)
+      const currentConfig = getStepConfig(currentStep)
+
+      if (
+        completedSteps.includes(step) ||
+        stepConfig.index === currentConfig.index + 1
+      ) {
+        // Validate current step before allowing navigation
+        if (
+          stepConfig.index > currentConfig.index &&
+          !validateStep(currentStep)
+        ) {
+          return
+        }
+        setCurrentStep(step)
       }
-      setCurrentStep(step)
-    }
-  }, [currentStep, completedSteps, validateStep])
+    },
+    [currentStep, completedSteps, validateStep]
+  )
 
   const handleCancel = useCallback(() => {
     if (hasChanges && !isSubmitting) {
@@ -236,10 +249,10 @@ export function FeatureBuilderModal({
     try {
       // TODO: Call API to create feature ticket
       // await createFeatureTicket(data)
-      
+
       // For now, just simulate success
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
       onOpenChange(false)
       // Reset state
       setTimeout(() => {
@@ -258,7 +271,11 @@ export function FeatureBuilderModal({
   }, [currentStep, defaultProjectId, onOpenChange, validateStep])
 
   const renderStepContent = () => {
-    const projectList = projects?.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })) || []
+    const projectList =
+      projects?.map((p: { id: string; name: string }) => ({
+        id: p.id,
+        name: p.name,
+      })) || []
 
     switch (currentStep) {
       case "overview":
@@ -282,17 +299,15 @@ export function FeatureBuilderModal({
         return (
           <RequirementsStep
             data={data}
+            featureName={data.name}
+            projectId={data.projectId}
             onChange={updateData}
             errors={errors}
           />
         )
       case "design":
         return (
-          <DesignStep
-            data={data}
-            onChange={updateData}
-            errors={errors}
-          />
+          <DesignStep data={data} onChange={updateData} errors={errors} />
         )
       case "implementation":
         return (
@@ -304,20 +319,10 @@ export function FeatureBuilderModal({
         )
       case "testing":
         return (
-          <TestingStep
-            data={data}
-            onChange={updateData}
-            errors={errors}
-          />
+          <TestingStep data={data} onChange={updateData} errors={errors} />
         )
       case "review":
-        return (
-          <ReviewStep
-            data={data}
-            fullData={data}
-            onChange={updateData}
-          />
-        )
+        return <ReviewStep data={data} fullData={data} onChange={updateData} />
       case "launch":
         return (
           <LaunchStep
@@ -337,8 +342,8 @@ export function FeatureBuilderModal({
   return (
     <>
       <Dialog open={open} onOpenChange={handleCancel}>
-        <DialogContent 
-          className="sm:max-w-2xl max-h-[90vh] p-0 gap-0 overflow-hidden"
+        <DialogContent
+          className="sm:max-w-3xl max-h-[90vh] p-0 gap-0 overflow-hidden"
           showCloseButton={false}
         >
           {/* Header */}
@@ -377,7 +382,7 @@ export function FeatureBuilderModal({
           {/* Content */}
           <div className="px-6 py-6 overflow-y-auto max-h-[50vh]">
             {renderStepContent()}
-            
+
             {errors.submit && (
               <div className="mt-4 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3">
                 {errors.submit}
@@ -408,7 +413,7 @@ export function FeatureBuilderModal({
               >
                 Cancel
               </Button>
-              
+
               {isLastStep(currentStep) ? (
                 <Button
                   onClick={handleSubmit}
@@ -443,19 +448,26 @@ export function FeatureBuilderModal({
       </Dialog>
 
       {/* Cancel Confirmation */}
-      <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+      <AlertDialog
+        open={showCancelConfirm}
+        onOpenChange={setShowCancelConfirm}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Discard changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              You have unsaved changes in the Feature Builder. Are you sure you want to discard them?
+              You have unsaved changes in the Feature Builder. Are you sure you
+              want to discard them?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowCancelConfirm(false)}>
               Keep Editing
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmCancel} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={handleConfirmCancel}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Discard Changes
             </AlertDialogAction>
           </AlertDialogFooter>
