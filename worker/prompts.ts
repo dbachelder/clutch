@@ -413,12 +413,13 @@ ${params.taskDescription}${commentsSection}
 4. **After resolving conflicts:**
    \`\`\`bash
    git add -A
-   git rebase --continue
+   # Headless-safe: avoid editor prompts (no TTY)
+   GIT_EDITOR=true EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase --continue
    \`\`\`
    
    If rebase shows "No changes - did you forget to use 'git add'?", use:
    \`\`\`bash
-   git rebase --skip
+   GIT_EDITOR=true EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase --skip
    \`\`\`
 
 5. **Verify the resolution:**
