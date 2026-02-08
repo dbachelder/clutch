@@ -71,10 +71,10 @@ function sortTasks(tasks: Task[]): Task[] {
 const ROLE_MODEL_MAP: Record<string, string> = {
   pm: "sonnet",
   research: "sonnet",
-  reviewer: "sonnet",
-  dev: "openrouter/pony-alpha",
-  qa: "openrouter/pony-alpha",
-  fixer: "openrouter/pony-alpha",
+  reviewer: "moonshot/kimi-for-coding",
+  dev: "moonshot/kimi-for-coding",
+  qa: "moonshot/kimi-for-coding",
+  fixer: "moonshot/kimi-for-coding",
 }
 
 /**
