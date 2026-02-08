@@ -444,7 +444,7 @@ export function ChatInput({
         />
       </div>
 
-      <p className="text-xs text-[var(--text-muted)] hidden md:block mt-1">
+      <p className="text-sm text-[var(--text-muted)] hidden md:block mt-1 leading-tight">
         Press Enter to send, Shift+Enter for newline • Paste images with Cmd+V • Use /help for commands
       </p>
     </div>
