@@ -237,6 +237,24 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
     }
   }
 
+  // Check if PR has merge conflicts — skip review until author resolves
+  const mergeableStatus = getPRMergeableStatus(pr.number, project)
+
+  if (mergeableStatus === "CONFLICTING") {
+    console.log(`[ReviewPhase] Skipping task ${task.id.slice(0, 8)} — PR #${pr.number} has merge conflicts`)
+    return {
+      spawned: false,
+      details: {
+        reason: "pr_has_conflicts",
+        taskId: task.id,
+        prNumber: pr.number,
+      },
+    }
+  }
+
+  // UNKNOWN is treated as reviewable (GitHub sometimes returns this briefly)
+  // MERGEABLE is obviously fine to review
+
   // Spawn reviewer via gateway RPC
   // Use actual branch name for worktree path (handles descriptive suffixes)
   const worktreesBase = `${project.local_path}-worktrees`
@@ -534,6 +552,31 @@ function getPRByNumber(prNumber: number, project: ProjectInfo): PRInfo | null {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.warn(`[ReviewPhase] Failed to get PR #${prNumber}: ${message}`)
+    return null
+  }
+}
+
+/**
+ * Check if a PR has merge conflicts.
+ * Returns "CONFLICTING" | "MERGEABLE" | "UNKNOWN" | null (on error)
+ */
+function getPRMergeableStatus(prNumber: number, project: ProjectInfo): string | null {
+  try {
+    const result = execFileSync(
+      "gh",
+      ["pr", "view", String(prNumber), "--json", "mergeable"],
+      {
+        encoding: "utf-8",
+        timeout: 10_000,
+        cwd: project.local_path!,
+      }
+    )
+
+    const pr = JSON.parse(result) as { mergeable: string }
+    return pr.mergeable
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[ReviewPhase] Failed to check mergeable status for PR #${prNumber}: ${message}`)
     return null
   }
 }
