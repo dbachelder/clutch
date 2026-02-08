@@ -85,6 +85,12 @@ export default defineSchema({
     // Review cycle tracking
     review_comments: v.optional(v.string()), // Reviewer feedback for fixer
     review_count: v.optional(v.number()), // Number of review cycles completed
+    // Resolution tracking (for done tasks)
+    resolution: v.optional(v.union(
+      v.literal('completed'),
+      v.literal('discarded'),
+      v.literal('merged')
+    )), // How the task was completed
     position: v.number(),
     created_at: v.number(),
     updated_at: v.number(),

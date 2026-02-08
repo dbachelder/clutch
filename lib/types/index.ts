@@ -88,6 +88,7 @@ export interface Task {
   pr_number: number | null
   review_comments: string | null
   review_count: number | null
+  resolution: 'completed' | 'discarded' | 'merged' | null
   position: number
   created_at: number
   updated_at: number

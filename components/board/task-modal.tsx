@@ -1,8 +1,19 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { X, Trash2, Clock, Calendar, MessageSquare, Send, Loader2, Link2, CheckCircle2, Circle, Plus, BarChart3, Pencil, History } from "lucide-react"
+import { X, Trash2, Clock, Calendar, MessageSquare, Send, Loader2, Link2, CheckCircle2, Circle, Plus, BarChart3, Pencil, History, OctagonX } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { useUpdateTask, useDeleteTask } from "@/lib/stores/task-store"
 import { CommentThread } from "./comment-thread"
@@ -64,6 +75,7 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
   const [requiresHumanReview, setRequiresHumanReview] = useState(false)
   const [tags, setTags] = useState("")
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [aborting, setAborting] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Comments state
@@ -240,6 +252,32 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
     await deleteTaskMutation(task.id)
     onDelete?.(task.id)
     onOpenChange(false)
+  }
+
+  const handleAbort = async () => {
+    if (!task) return
+
+    setAborting(true)
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/abort`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ triggeredBy: "dan" }),
+      })
+
+      if (response.ok) {
+        // Refresh comments to show the abort comment
+        fetchComments(task.id)
+        // Close the modal
+        onOpenChange(false)
+      } else {
+        const data = await response.json()
+        console.error("Abort failed:", data.error)
+        alert(`Failed to abort task: ${data.error}`)
+      }
+    } finally {
+      setAborting(false)
+    }
   }
 
   const handleDispatch = async () => {
@@ -777,7 +815,53 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
 
           {/* Footer */}
           <div className="flex items-center justify-between p-4 border-t border-[var(--border)]">
-            <div>
+            <div className="flex items-center gap-4">
+              {/* Abort & Discard button - only for in_progress tasks */}
+              {status === "in_progress" && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      disabled={aborting}
+                      className="flex items-center gap-2 text-sm text-amber-500 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {aborting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <OctagonX className="h-4 w-4" />
+                      )}
+                      Abort & Discard
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Abort and Discard Task?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure? This will kill the agent session and delete all work.
+                        <br /><br />
+                        This action will:
+                        <ul className="list-disc list-inside mt-2 space-y-1">
+                          <li>Terminate the running agent session</li>
+                          <li>Delete the worktree and branch</li>
+                          <li>Close any open PR</li>
+                          <li>Mark the task as done (discarded)</li>
+                        </ul>
+                        <br />
+                        This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleAbort}
+                        className="bg-red-500 hover:bg-red-600"
+                      >
+                        Yes, Abort & Discard
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+
               {!showDeleteConfirm ? (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
