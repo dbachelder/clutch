@@ -405,6 +405,33 @@ export const getWithDependencies = query({
 })
 
 /**
+ * Session data for an active agent (from sessions table)
+ */
+export interface ActiveAgentSession {
+  session_key: string
+  model: string | null
+  provider: string | null
+  status: string
+  tokens_input: number | null
+  tokens_output: number | null
+  tokens_total: number | null
+  cost_total: number | null
+  last_active_at: number | null
+  output_preview: string | null
+  stop_reason: string | null
+  created_at: number | null
+  updated_at: number
+}
+
+/**
+ * Task with active agent session data (joined from sessions table)
+ */
+export interface TaskWithAgentSession {
+  task: Task
+  session: ActiveAgentSession | null
+}
+
+/**
  * Get tasks with active agents for a project
  * Returns tasks that have an agent_session_key set.
  * Note: Agent activity status should now be determined from sessions table
@@ -422,6 +449,64 @@ export const getWithActiveAgents = query({
     return tasks
       .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
       .map((t) => toTask(t as Parameters<typeof toTask>[0]))
+  },
+})
+
+/**
+ * Get tasks with active agents INCLUDING their session data.
+ * This joins tasks with the sessions table to provide full agent details.
+ * Returns tasks with session data (model, tokens, timing, status).
+ */
+export const getWithActiveAgentSessions = query({
+  args: { projectId: v.string() },
+  handler: async (ctx, args): Promise<TaskWithAgentSession[]> => {
+    // Get tasks with agent_session_key
+    const tasks = await ctx.db
+      .query('tasks')
+      .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
+      .filter((q) => q.neq('agent_session_key', null))
+      .collect()
+
+    // Sort by most recently updated first
+    const sortedTasks = tasks.sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
+
+    // Fetch session data for each task
+    const results: TaskWithAgentSession[] = []
+
+    for (const task of sortedTasks) {
+      const taskObj = toTask(task as Parameters<typeof toTask>[0])
+      let session: ActiveAgentSession | null = null
+
+      // Look up session by session_key
+      if (task.agent_session_key) {
+        const sessionDoc = await ctx.db
+          .query('sessions')
+          .withIndex('by_session_key', (q) => q.eq('session_key', task.agent_session_key!))
+          .unique()
+
+        if (sessionDoc) {
+          session = {
+            session_key: sessionDoc.session_key ?? sessionDoc.id ?? "",
+            model: sessionDoc.model ?? null,
+            provider: sessionDoc.provider ?? null,
+            status: sessionDoc.status ?? 'idle',
+            tokens_input: sessionDoc.tokens_input ?? null,
+            tokens_output: sessionDoc.tokens_output ?? null,
+            tokens_total: sessionDoc.tokens_total ?? null,
+            cost_total: sessionDoc.cost_total ?? null,
+            last_active_at: sessionDoc.last_active_at ?? null,
+            output_preview: sessionDoc.output_preview ?? null,
+            stop_reason: sessionDoc.stop_reason ?? null,
+            created_at: sessionDoc.created_at ?? null,
+            updated_at: sessionDoc.updated_at,
+          }
+        }
+      }
+
+      results.push({ task: taskObj, session })
+    }
+
+    return results
   },
 })
 

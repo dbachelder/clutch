@@ -8,6 +8,7 @@ import type {
   WorkLoopStats,
 } from "@/lib/types/work-loop"
 import type { Task } from "@/lib/types"
+import type { TaskWithAgentSession } from "@/convex/tasks"
 
 /**
  * Reactive Convex subscription for work loop state.
@@ -104,6 +105,32 @@ export function useActiveAgentTasks(
 
   return {
     tasks: result ?? null,
+    isLoading: result === undefined,
+    error: null,
+  }
+}
+
+/**
+ * Reactive Convex subscription for tasks with active agents INCLUDING session data.
+ *
+ * Returns tasks with their associated session details (model, tokens, timing, status)
+ * from the Convex sessions table. This is the preferred hook for displaying
+ * active agent information in the UI.
+ */
+export function useActiveAgentSessions(
+  projectId: string | null
+): {
+  data: TaskWithAgentSession[] | null
+  isLoading: boolean
+  error: Error | null
+} {
+  const result = useQuery(
+    api.tasks.getWithActiveAgentSessions,
+    projectId ? { projectId } : "skip"
+  )
+
+  return {
+    data: result ?? null,
     isLoading: result === undefined,
     error: null,
   }
