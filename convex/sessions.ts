@@ -259,12 +259,12 @@ export const list = query({
     } else if (args.status) {
       sessions = await ctx.db
         .query('sessions')
-        .withIndex('by_status', (q) => q.eq('status', args.status))
+        .withIndex('by_status', (q) => q.eq('status', args.status!))
         .collect()
     } else if (args.sessionType) {
       sessions = await ctx.db
         .query('sessions')
-        .withIndex('by_type', (q) => q.eq('session_type', args.sessionType))
+        .withIndex('by_type', (q) => q.eq('session_type', args.sessionType!))
         .collect()
     } else {
       sessions = await ctx.db.query('sessions').collect()
@@ -272,11 +272,11 @@ export const list = query({
 
     // Apply additional filters in memory
     if (args.status && args.projectSlug) {
-      sessions = sessions.filter((s) => s.status === args.status)
+      sessions = sessions.filter((s) => s.status === args.status!)
     }
     if (args.sessionType) {
       if (args.projectSlug || args.status) {
-        sessions = sessions.filter((s) => s.session_type === args.sessionType)
+        sessions = sessions.filter((s) => s.session_type === args.sessionType!)
       }
     }
 
