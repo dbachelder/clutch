@@ -316,8 +316,9 @@ function formatTokens(tokens: number): string {
 async function cmdAgentsList(convex: ConvexHttpClient, project: ProjectInfo): Promise<void> {
   console.log(`\nActive agents for project: ${project.slug}\n`)
 
-  const sessions = await convex.query(api.tasks.getAgentSessions, {
-    projectId: project.id,
+  // Use sessions table API instead of deprecated tasks.getAgentSessions
+  const sessions = await convex.query(api.sessions.getForProject, {
+    projectSlug: project.slug,
     limit: 50,
   })
 
@@ -327,18 +328,20 @@ async function cmdAgentsList(convex: ConvexHttpClient, project: ProjectInfo): Pr
   }
 
   // Header
-  console.log("Session Key                          Status   Model              Task               Tokens   Age")
+  console.log("Session Key                          Status   Model              Task ID            Tokens   Age")
   console.log("-".repeat(120))
 
-  for (const session of sessions as AgentSession[]) {
-    const statusIcon = session.status === "running" ? "*" : session.status === "idle" ? "~" : "o"
-    const shortKey = session.id.length > 36 ? session.id.slice(0, 33) + "..." : session.id.padEnd(36)
-    const model = session.model.slice(0, 18).padEnd(18)
-    const taskTitle = session.task.title.slice(0, 18).padEnd(18)
-    const tokens = formatTokens(session.tokens.total).padStart(6)
-    const age = formatTimeAgo(new Date(session.updatedAt).getTime()).padStart(8)
+  for (const session of sessions) {
+    const statusIcon = session.status === "active" ? "*" : session.status === "idle" ? "~" : "o"
+    const shortKey = (session.session_key || session.id).length > 36 
+      ? (session.session_key || session.id).slice(0, 33) + "..." 
+      : (session.session_key || session.id).padEnd(36)
+    const model = (session.model || "unknown").slice(0, 18).padEnd(18)
+    const taskId = (session.task_id || "N/A").slice(0, 18).padEnd(18)
+    const tokens = formatTokens(session.tokens_total || 0).padStart(6)
+    const age = formatTimeAgo(session.updated_at).padStart(8)
 
-    console.log(`${shortKey} ${statusIcon} ${session.status.padEnd(7)} ${model} ${taskTitle} ${tokens} ${age}`)
+    console.log(`${shortKey} ${statusIcon} ${session.status.padEnd(7)} ${model} ${taskId} ${tokens} ${age}`)
   }
 
   console.log(`\n${sessions.length} session(s) total`)
@@ -347,45 +350,50 @@ async function cmdAgentsList(convex: ConvexHttpClient, project: ProjectInfo): Pr
 async function cmdAgentsGet(convex: ConvexHttpClient, sessionKey: string): Promise<void> {
   console.log(`\nFetching agent details for: ${sessionKey}\n`)
 
-  // Get all sessions and find the matching one
-  const sessions = await convex.query(api.tasks.getAllAgentSessions, { limit: 100 })
-  const session = (sessions as AgentSession[] | undefined)?.find((s) => s.id === sessionKey)
+  // Use sessions table API instead of deprecated tasks.getAllAgentSessions
+  const session = await convex.query(api.sessions.get, { sessionKey })
 
   if (!session) {
     console.error(`Agent with session key "${sessionKey}" not found.`)
     process.exit(1)
   }
 
-  // Get task details
-  const taskDetails = await convex.query(api.tasks.getById, { id: session.task.id })
+  // Get task details if task_id is present
+  let taskDetails = null
+  if (session.task_id) {
+    taskDetails = await convex.query(api.tasks.getById, { id: session.task_id })
+  }
 
   console.log("Agent Session")
-  console.log(`  Session Key: ${session.id}`)
-  console.log(`  Type:        ${session.type}`)
-  console.log(`  Model:       ${session.model}`)
+  console.log(`  Session Key: ${session.session_key}`)
+  console.log(`  Type:        ${session.session_type}`)
+  console.log(`  Model:       ${session.model || "unknown"}`)
   console.log(`  Status:      ${session.status}`)
   console.log("")
   console.log("Task")
-  console.log(`  ID:          ${session.task.id}`)
-  console.log(`  Title:       ${session.task.title}`)
-  console.log(`  Status:      ${session.task.status}`)
+  console.log(`  ID:          ${session.task_id || "N/A"}`)
+  if (taskDetails) {
+    console.log(`  Title:       ${taskDetails.task.title || "Untitled"}`)
+    console.log(`  Status:      ${taskDetails.task.status || "unknown"}`)
+  }
   console.log("")
   console.log("Activity")
-  console.log(`  Created:     ${session.createdAt}`)
-  console.log(`  Updated:     ${session.updatedAt}`)
-  if (session.completedAt) {
-    console.log(`  Completed:   ${session.completedAt}`)
+  console.log(`  Created:     ${session.created_at ? new Date(session.created_at).toISOString() : "N/A"}`)
+  console.log(`  Updated:     ${new Date(session.updated_at).toISOString()}`)
+  if (session.completed_at) {
+    console.log(`  Completed:   ${new Date(session.completed_at).toISOString()}`)
   }
   console.log("")
   console.log("Tokens")
-  console.log(`  Input:       ${formatTokens(session.tokens.input)}`)
-  console.log(`  Output:      ${formatTokens(session.tokens.output)}`)
-  console.log(`  Total:       ${formatTokens(session.tokens.total)}`)
+  console.log(`  Input:       ${formatTokens(session.tokens_input || 0)}`)
+  console.log(`  Output:      ${formatTokens(session.tokens_output || 0)}`)
+  console.log(`  Total:       ${formatTokens(session.tokens_total || 0)}`)
 
-  if (taskDetails?.task?.agent_output_preview) {
+  // Use output_preview from sessions table instead of agent_output_preview from tasks
+  if (session.output_preview) {
     console.log("")
     console.log("Last Output Preview")
-    const preview = taskDetails.task.agent_output_preview.slice(0, 500)
+    const preview = session.output_preview.slice(0, 500)
     console.log(`  ${preview.replace(/\n/g, "\n  ")}`)
   }
 }

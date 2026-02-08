@@ -126,7 +126,6 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
       taskId: task.id,
       details: {
         agentSessionKey: task.agent_session_key,
-        agentModel: task.agent_model,
       },
     })
     actions++

@@ -7,7 +7,7 @@
  * All functions work in both client and server contexts.
  *
  * NOTE: Session listing via HTTP has been removed. Sessions are now fetched
- * reactively from Convex via useAgentSessions hook. This file now only
+ * reactively from Convex via sessions table queries. This file now only
  * contains session action operations (reset, compact, cancel, preview).
  */
 
@@ -27,19 +27,19 @@ export type { GatewayStatus } from './rpc';
 
 /**
  * @deprecated Sessions are now fetched reactively from Convex.
- * Use useAgentSessions hook from @/lib/hooks/use-agent-sessions instead.
+ * Use Convex sessions table queries (api.sessions.list) instead.
  */
 export async function listSessions(): Promise<{ sessions: Session[]; total: number }> {
-  console.warn('[openclaw/api] listSessions is deprecated. Use useAgentSessions from @/lib/hooks/use-agent-sessions');
+  console.warn('[openclaw/api] listSessions is deprecated. Use Convex sessions table queries (api.sessions.list)');
   return { sessions: [], total: 0 };
 }
 
 /**
  * @deprecated Sessions are now fetched reactively from Convex.
- * Use useAgentSessions hook from @/lib/hooks/use-agent-sessions instead.
+ * Use Convex sessions table queries (api.sessions.list) instead.
  */
 export async function listSessionsWithEffectiveModel(): Promise<{ sessions: Session[]; total: number }> {
-  console.warn('[openclaw/api] listSessionsWithEffectiveModel is deprecated. Use useAgentSessions from @/lib/hooks/use-agent-sessions');
+  console.warn('[openclaw/api] listSessionsWithEffectiveModel is deprecated. Use Convex sessions table queries (api.sessions.list)');
   return { sessions: [], total: 0 };
 }
 

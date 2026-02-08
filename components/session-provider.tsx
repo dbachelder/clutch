@@ -10,7 +10,7 @@
  * components have access to real-time session data without polling.
  */
 
-import { ConvexSessionSync } from "@/components/convex-session-sync";
+// ConvexSessionSync component removed - direct Convex queries used instead
 
 interface SessionProviderProps {
   children: React.ReactNode;
@@ -23,11 +23,9 @@ export function SessionProvider({
   /** @deprecated No longer used */
   refreshIntervalMs: _refreshIntervalMs,
 }: SessionProviderProps) {
-  // ConvexSessionSync subscribes to Convex and syncs to zustand store
-  // No polling needed - Convex provides reactive updates
+  // Sessions now queried directly via Convex hooks where needed
   return (
     <>
-      <ConvexSessionSync />
       {children}
     </>
   );
@@ -36,12 +34,12 @@ export function SessionProvider({
 /**
  * Hook for components to read session data from the shared store.
  *
- * @deprecated Use useAgentSessions from @/lib/hooks/use-agent-sessions instead for direct Convex access,
+ * @deprecated Components should use direct Convex session queries instead,
  * or continue using useSessionStore for zustand access. The data now comes from Convex, not HTTP.
  */
 export function useSessionData() {
   // This is now a no-op - SessionProvider handles sync automatically
-  // Components should use useSessionStore directly or useAgentSessions for Convex
+  // Components should use direct Convex session queries for reactive updates
   return {
     sessions: [],
     isLoading: false,

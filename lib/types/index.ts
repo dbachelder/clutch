@@ -72,12 +72,6 @@ export interface Task {
   dispatch_requested_at: number | null
   dispatch_requested_by: string | null
   agent_session_key: string | null
-  agent_model: string | null
-  agent_started_at: number | null
-  agent_last_active_at: number | null
-  agent_tokens_in: number | null
-  agent_tokens_out: number | null
-  agent_output_preview: string | null
   agent_retry_count: number | null
   triage_sent_at: number | null
   triage_acked_at: number | null

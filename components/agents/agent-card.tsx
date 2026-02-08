@@ -112,12 +112,12 @@ export function AgentCard({ task, projectSlug }: AgentCardProps) {
 
   // Calculate metrics from session data (not task denormalized fields)
   const metrics = useMemo(() => {
-    // Use session data if available, fall back to task data for migration period
-    const createdAt = session?.created_at ?? task.agent_started_at
-    const updatedAt = session?.last_active_at ?? session?.updated_at ?? task.agent_last_active_at ?? createdAt
-    const totalTokens = session?.tokens_total ?? task.agent_tokens_in ?? 0
+    // Use session data only - sessions table is now source of truth
+    const createdAt = session?.created_at
+    const updatedAt = session?.last_active_at ?? session?.updated_at
+    const totalTokens = session?.tokens_total ?? 0
     const cost = session?.cost_total
-    const model = session?.model ?? task.agent_model
+    const model = session?.model
 
     // Context window varies by model, use 200k as default
     const contextWindow = 200000
@@ -139,7 +139,7 @@ export function AgentCard({ task, projectSlug }: AgentCardProps) {
       model,
       status: session?.status ?? 'idle',
     }
-  }, [session, task, now])
+  }, [session, now])
 
   // Determine link URL
   const taskUrl = useMemo(() => {

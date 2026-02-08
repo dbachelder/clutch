@@ -143,9 +143,9 @@ export const costSummary = query({
       ? tasks.filter((t) => t.created_at >= cutoff)
       : tasks
 
-    // Filter to tasks that have cost data (completed tasks with tokens)
+    // Filter to tasks that have cost data (completed tasks with accumulated cost)
     const tasksWithCost = filteredTasks.filter(
-      (t) => t.agent_tokens_in !== undefined && t.agent_tokens_out !== undefined
+      (t) => (t as { cost_total?: number }).cost_total !== undefined && (t as { cost_total?: number }).cost_total! > 0
     )
 
     // Calculate totals
@@ -168,9 +168,7 @@ export const costSummary = query({
     }
 
     for (const task of tasksWithCost) {
-      const tokensIn = task.agent_tokens_in ?? 0
-      const tokensOut = task.agent_tokens_out ?? 0
-      const cost = calculateCost(tokensIn, tokensOut)
+      const cost = (task as { cost_total?: number }).cost_total ?? 0
 
       totalCost += cost
 
@@ -466,8 +464,9 @@ export const throughput = query({
       buckets[bucketKey].count++
 
       // Add cost if available
-      if (task.agent_tokens_in !== undefined && task.agent_tokens_out !== undefined) {
-        buckets[bucketKey].cost += calculateCost(task.agent_tokens_in, task.agent_tokens_out)
+      const taskCost = (task as { cost_total?: number }).cost_total
+      if (taskCost !== undefined && taskCost > 0) {
+        buckets[bucketKey].cost += taskCost
       }
     }
 

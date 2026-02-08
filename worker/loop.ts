@@ -214,27 +214,9 @@ async function runProjectCycle(
   // Convert staleTaskMinutes from config into milliseconds for the reaper.
   const config = loadConfig()
   const staleMs = config.staleTaskMinutes * 60 * 1000
-  const { reaped, activeUpdates } = await agentManager.reapFinished(staleMs)
+  const { reaped } = await agentManager.reapFinished(staleMs)
 
-  // Update active agents' last_active_at timestamps in Convex
-  // This ensures the UI sidebar shows accurate "last active" times
-  if (activeUpdates.length > 0) {
-    try {
-      await convex.mutation(api.tasks.updateAgentActivity, {
-        updates: activeUpdates.map((u) => ({
-          task_id: u.task_id,
-          agent_session_key: u.agent_session_key,
-          agent_last_active_at: u.agent_last_active_at,
-          agent_output_preview: u.agent_output_preview,
-          agent_tokens_in: u.agent_tokens_in,
-          agent_tokens_out: u.agent_tokens_out,
-        })),
-      })
-    } catch (err) {
-      // Non-fatal — log and continue
-      console.warn(`[WorkLoop] Failed to update active agent activity: ${err}`)
-    }
-  }
+  // Note: Active agent activity is now tracked via sessions table, not tasks
 
   if (reaped.length > 0) {
     for (const outcome of reaped) {
@@ -262,9 +244,9 @@ async function runProjectCycle(
 
       if (!isStale && outcome.usage) {
         try {
-          // Get the task to find the model used
-          const task = await convex.query(api.tasks.getById, { id: outcome.taskId })
-          const model = task?.task?.agent_model
+          // Get the model from session info (more reliable than task fields)
+          const sessionInfo = sessionFileReader.getSessionInfo(outcome.sessionKey)
+          const model = sessionInfo?.lastAssistantMessage?.model
 
           if (model) {
             // Get pricing for this model
@@ -334,31 +316,7 @@ async function runProjectCycle(
         }
       }
 
-      // For finished agents (not stale), write accurate JSONL-sourced data to Convex
-      // before clearing. This captures the real model, token counts, and output preview.
-      if (!isStale) {
-        const sessionInfo = sessionFileReader.getSessionInfo(outcome.sessionKey)
-        if (sessionInfo?.lastAssistantMessage) {
-          try {
-            const startedAt = Date.now() - outcome.durationMs
-            await convex.mutation(api.tasks.updateAgentActivity, {
-              updates: [{
-                task_id: outcome.taskId,
-                agent_session_key: outcome.sessionKey,
-                agent_model: sessionInfo.lastAssistantMessage.model,
-                agent_started_at: startedAt,
-                agent_last_active_at: sessionInfo.fileMtimeMs,
-                agent_tokens_in: sessionInfo.lastAssistantMessage.usage.input,
-                agent_tokens_out: sessionInfo.lastAssistantMessage.usage.output,
-                agent_output_preview: sessionInfo.lastAssistantMessage.textPreview,
-              }],
-            })
-          } catch (err) {
-            // Non-fatal — log and continue to clear
-            console.warn(`[WorkLoop] Failed to write JSONL data for ${outcome.taskId}: ${err}`)
-          }
-        }
-      }
+      // Note: Agent session data is now tracked in sessions table, not tasks
 
       // Clear agent fields on the task
       try {
