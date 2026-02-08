@@ -24,6 +24,8 @@ export function FailureHeatmap({ analyses }: FailureHeatmapProps) {
       const roleMap = counts.get(a.role)!
 
       for (const mode of a.failure_modes) {
+        // Skip invalid bracket characters that may be stored due to data parsing issues
+        if (mode === '[' || mode === ']') continue
         allCategories.add(mode)
         roleMap.set(mode, (roleMap.get(mode) ?? 0) + 1)
       }

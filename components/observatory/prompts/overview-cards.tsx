@@ -197,6 +197,8 @@ function computeTopFailureMode(analyses: AnalysisRecord[]): { mode: string; coun
   for (const a of analyses) {
     if (a.failure_modes.length === 0) continue
     for (const mode of a.failure_modes) {
+      // Skip invalid bracket characters that may be stored due to data parsing issues
+      if (mode === '[' || mode === ']') continue
       counts.set(mode, (counts.get(mode) ?? 0) + 1)
     }
   }
