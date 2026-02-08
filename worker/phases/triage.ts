@@ -330,7 +330,7 @@ async function escalateTask(
               `**ID:** \`${task.id}\``,
               `**Project:** ${project.name}`,
               `**Reason:** ${reason}`,
-              `**Last agent:** ${task.agent_model ?? "unknown"}`,
+              `**Last agent session:** ${task.agent_session_key ?? "none"}`,
               ``,
               `I couldn't resolve this after ${triageCount} retries. Please review and either:`,
               `1. Fix it yourself (unblock/reassign/split via triage API)`,

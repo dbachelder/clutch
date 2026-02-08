@@ -30,6 +30,23 @@ interface JSONLRecord {
   message?: {
     role: string
     content: Array<{ type: string; text?: string }> | string
+    model?: string
+    provider?: string
+    stopReason?: string
+    usage?: {
+      input?: number
+      output?: number
+      cacheRead?: number
+      cacheWrite?: number
+      totalTokens?: number
+      cost?: {
+        input?: number
+        output?: number
+        cacheRead?: number
+        cacheWrite?: number
+        total?: number
+      }
+    }
   }
   toolName?: string
   toolCallId?: string
@@ -113,17 +130,32 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     
     let sessionInfo: {
       model?: string
+      provider?: string
       startTime?: string
       endTime?: string
       stopReason?: string
       tokensIn?: number
       tokensOut?: number
-    } = {}
+      tokensCacheRead?: number
+      tokensCacheWrite?: number
+      costTotal?: number
+    } = {
+      tokensIn: 0,
+      tokensOut: 0,
+      tokensCacheRead: 0,
+      tokensCacheWrite: 0,
+      costTotal: 0,
+    }
     
     for (const line of lines) {
       try {
         const record = JSON.parse(line) as JSONLRecord
-        
+
+        // Track end time as the last timestamp we see
+        if (record.timestamp) {
+          sessionInfo.endTime = record.timestamp
+        }
+
         // Handle different record types based on 'type' field
         switch (record.type) {
           case "session":
@@ -132,11 +164,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               startTime: record.timestamp,
             }
             break
-            
+
           case "model_change":
-            if (record.model) {
-              sessionInfo.model = record.model
-            }
+            if (record.model) sessionInfo.model = record.model
+            if (record.provider) sessionInfo.provider = record.provider
             break
             
           case "human":
@@ -154,19 +185,41 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               timestamp: record.timestamp,
               model: record.model,
             })
+
+            if (record.model) sessionInfo.model = record.model
+            if (record.provider) sessionInfo.provider = record.provider
+            if (record.stopReason) sessionInfo.stopReason = record.stopReason
+            if (typeof record.tokensIn === "number") sessionInfo.tokensIn = (sessionInfo.tokensIn || 0) + record.tokensIn
+            if (typeof record.tokensOut === "number") sessionInfo.tokensOut = (sessionInfo.tokensOut || 0) + record.tokensOut
             break
             
           case "message":
             // Handle nested message format
             if (record.message) {
-              const role = record.message.role === "user" ? "user" : 
+              const role = record.message.role === "user" ? "user" :
                           record.message.role === "assistant" ? "assistant" : "system"
               messages.push({
                 role,
                 content: extractContentText(record.message.content) || "",
                 timestamp: record.timestamp,
-                model: record.model,
+                model: record.message.model || record.model,
               })
+
+              // Accumulate usage from assistant messages
+              if (record.message.role === "assistant") {
+                if (record.message.model) sessionInfo.model = record.message.model
+                if (record.message.provider) sessionInfo.provider = record.message.provider
+                if (record.message.stopReason) sessionInfo.stopReason = record.message.stopReason
+
+                const usage = record.message.usage
+                if (usage) {
+                  sessionInfo.tokensIn = (sessionInfo.tokensIn || 0) + (usage.input || 0)
+                  sessionInfo.tokensOut = (sessionInfo.tokensOut || 0) + (usage.output || 0)
+                  sessionInfo.tokensCacheRead = (sessionInfo.tokensCacheRead || 0) + (usage.cacheRead || 0)
+                  sessionInfo.tokensCacheWrite = (sessionInfo.tokensCacheWrite || 0) + (usage.cacheWrite || 0)
+                  sessionInfo.costTotal = (sessionInfo.costTotal || 0) + (usage.cost?.total || 0)
+                }
+              }
             }
             break
             
