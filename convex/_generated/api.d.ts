@@ -9,6 +9,7 @@
  */
 
 import type * as _helpers from "../_helpers.js";
+import type * as analytics from "../analytics.js";
 import type * as chats from "../chats.js";
 import type * as comments from "../comments.js";
 import type * as events from "../events.js";
@@ -37,6 +38,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   _helpers: typeof _helpers;
+  analytics: typeof analytics;
   chats: typeof chats;
   comments: typeof comments;
   events: typeof events;
