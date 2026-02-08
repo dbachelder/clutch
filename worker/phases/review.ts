@@ -514,12 +514,24 @@ ${commentsSection}
 ## After Review
 
 ### If PR is clean (all checks pass):
-1. **Approve and merge:**\n   \`\`\`bash\n   gh pr merge ${pr.number} --squash --delete-branch\n   \`\`\`
-2. **Check if PR touches convex/ directory:**\n   \`\`\`bash\n   gh pr diff ${pr.number} --name-only | grep "^convex/"\n   \`\`\`
+
+**CRITICAL: You MUST merge the PR. Approving alone is NOT sufficient.**
+
+1. **Merge the PR (this also approves it):**\n   \`\`\`bash\n   gh pr merge ${pr.number} --squash --delete-branch\n   \`\`\`
+   - **DO NOT use** \`gh pr review --approve\` alone — that only approves without merging
+   - \`gh pr merge\` will both approve AND merge in one command
+   - If merge fails, fix the issue and retry — do not finish without merging
+
+2. **Verify the merge succeeded:**\n   \`\`\`bash\n   gh pr view ${pr.number} --json state | grep MERGED\n   \`\`\`
+   If the above does NOT output "MERGED", the PR is still open — retry step 1.
+
+3. **Check if PR touches convex/ directory:**\n   \`\`\`bash\n   gh pr diff ${pr.number} --name-only | grep "^convex/"\n   \`\`\`
    If the above outputs any lines, the PR touches Convex files — deploy immediately:
    \`\`\`bash\n   cd ${project.local_path} && npx convex deploy --yes\n   \`\`\`
-3. **Update ticket status to done:**\n   \`\`\`bash\n   curl -X PATCH http://localhost:3002/api/tasks/${task.id} -H 'Content-Type: application/json' -d '{"status": "done"}'\n   \`\`\`
-4. **Clean up worktree:**\n   \`\`\`bash\n   cd ${project.local_path} && git worktree remove ${worktreePath}\n   \`\`\`
+
+4. **Update ticket status to done:**\n   \`\`\`bash\n   curl -X PATCH http://localhost:3002/api/tasks/${task.id} -H 'Content-Type: application/json' -d '{"status": "done"}'\n   \`\`\`
+
+5. **Clean up worktree:**\n   \`\`\`bash\n   cd ${project.local_path} && git worktree remove ${worktreePath}\n   \`\`\`
 
 ### If PR needs changes:
 1. **Leave specific, actionable feedback:**\n   \`\`\`bash\n   gh pr comment ${pr.number} --body "Your detailed feedback here..."\n   \`\`\`
