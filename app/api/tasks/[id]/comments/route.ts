@@ -41,7 +41,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const {
     content,
-    author = "dan",
+    author = "unknown",
     author_type = "human",
     type = "message",
   } = body

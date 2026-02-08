@@ -181,7 +181,7 @@ export function NewIssueDialog({
         fullDescription += "\n\n"
       }
       fullDescription += uploadedImages
-        .map((img) => `![image](/api${img.uploadedUrl})`)
+        .map((img) => `![image](${img.uploadedUrl})`)
         .join("\n")
     }
 

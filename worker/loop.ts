@@ -326,11 +326,15 @@ async function runProjectCycle(
             id: outcome.taskId,
             status: "blocked",
           })
+          const agentOutput = outcome.reply?.slice(0, 500)
+          const blockReason = agentOutput
+            ? `Agent finished but task still in_progress. Moving to blocked for triage.\n\n**Agent's last output:**\n> ${agentOutput}`
+            : `Agent finished but task still in_progress (no output captured). Moving to blocked for triage.`
           await convex.mutation(api.comments.create, {
             taskId: outcome.taskId,
             author: "work-loop",
             authorType: "coordinator",
-            content: `Agent finished but task still in_progress. Moving to blocked for triage.`,
+            content: blockReason,
             type: "status_change",
           })
           console.log(`[WorkLoop] Task ${outcome.taskId.slice(0, 8)} moved to blocked (finished while in_progress)`)
@@ -349,11 +353,15 @@ async function runProjectCycle(
             id: outcome.taskId,
             status: "blocked",
           })
+          const reviewerOutput = outcome.reply?.slice(0, 500)
+          const reviewBlockReason = reviewerOutput
+            ? `Reviewer finished without merging. Moving to blocked for triage.\n\n**Reviewer's last output:**\n> ${reviewerOutput}`
+            : `Reviewer finished without merging (no output captured). Moving to blocked for triage.`
           await convex.mutation(api.comments.create, {
             taskId: outcome.taskId,
             author: "work-loop",
             authorType: "coordinator",
-            content: `Reviewer finished without merging. Moving to blocked for triage.`,
+            content: reviewBlockReason,
             type: "status_change",
           })
           console.log(`[WorkLoop] Task ${outcome.taskId.slice(0, 8)} moved to blocked (reviewer didn't merge)`)

@@ -226,7 +226,7 @@ ${params.taskDescription}
 
 Write findings as a comment on the ticket:
 \`\`\`bash
-curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "<findings>"}'
+curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "<findings>", "author": "agent", "author_type": "agent"}'
 \`\`\`
 
 ## Completion Contract (REQUIRED)
@@ -348,7 +348,7 @@ cd ${params.worktreeDir}
 curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"branch": "${branchName}"}'
 
 # Post progress comment
- curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "Started work. Branch: \`${branchName}\`, worktree: \`${params.worktreeDir}\`"}'
+ curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "Started work. Branch: \`${branchName}\`, worktree: \`${params.worktreeDir}\`", "author": "agent", "author_type": "agent"}'
 \`\`\`
 
 ## Pre-commit Rules (MANDATORY)
@@ -377,7 +377,7 @@ PR_TITLE="<title>"
 curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d "{\"pr_number\": $PR_NUMBER}"
 
 # Post progress comment
-curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d "{\"content\": \"Implementation complete. PR #$PR_NUMBER opened: $PR_TITLE\"}"
+curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d "{\"content\": \"Implementation complete. PR #$PR_NUMBER opened: $PR_TITLE\", \"author\": \"agent\", \"author_type\": \"agent\"}"
 \`\`\`
 
 Then update ticket to in_review:
