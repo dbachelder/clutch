@@ -5,7 +5,6 @@ After=network.target
 
 [Service]
 Type=simple
-User=dan
 WorkingDirectory=/home/dan/src/trap
 EnvironmentFile=/home/dan/src/trap/.env.local
 Environment=NODE_ENV=production
