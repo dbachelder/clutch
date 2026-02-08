@@ -1,0 +1,18 @@
+[Unit]
+Description=Trap Chat Bridge
+After=network.target trap-server.service
+Requires=trap-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dan/src/trap
+EnvironmentFile=/home/dan/src/trap/.env.local
+ExecStart=/home/dan/.volta/bin/volta run npx tsx worker/chat-bridge.ts
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trap-bridge
+
+[Install]
+WantedBy=default.target

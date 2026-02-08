@@ -1,274 +1,244 @@
 #!/usr/bin/env bash
-# Trap production server + work loop (separate processes)
+# Trap production server + work loop (systemd-managed)
 #
 # Usage:
-#   ./run.sh start     - build + start server + work loop
-#   ./run.sh stop      - stop everything
-#   ./run.sh restart   - stop + start
-#   ./run.sh watch     - start + auto-rebuild on main changes
-#   ./run.sh status    - show what's running
-#   ./run.sh logs      - tail server log
-#   ./run.sh loop-logs - tail work loop log
-#   ./run.sh loop-restart - restart just the work loop
+#   ./run.sh install     - install systemd user services (run once)
+#   ./run.sh start       - start all services
+#   ./run.sh stop        - stop all services
+#   ./run.sh restart     - restart all services
+#   ./run.sh status      - show service status
+#   ./run.sh logs        - tail server logs (journald)
+#   ./run.sh loop-logs   - tail work loop logs (journald)
+#   ./run.sh bridge-logs - tail chat bridge logs (journald)
 
 set -euo pipefail
 cd "$(dirname "$0")"
 
 PORT="${PORT:-3002}"
-SERVER_LOG="/tmp/trap-prod.log"
-LOOP_LOG="/tmp/trap-loop.log"
-BRIDGE_LOG="/tmp/trap-bridge.log"
-SERVER_PID="/tmp/trap-server.pid"
-LOOP_PID="/tmp/trap-loop.pid"
-BRIDGE_PID="/tmp/trap-bridge.pid"
+SYSTEMD_DIR="$HOME/.config/systemd/user"
 
-build() {
-  echo "[trap] Building..."
-  pnpm build 2>&1 | tail -5
-  echo "[trap] Build complete"
-}
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-kill_tree() {
-  # Kill a process and all its descendants via process group
-  local pid="$1"
-  local pidfile="${2:-}"
-  if ! kill -0 "$pid" 2>/dev/null; then
-    [[ -n "$pidfile" ]] && rm -f "$pidfile"
-    return 0
-  fi
-  # Try graceful TERM to the whole process group first
-  local pgid
-  pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
-  if [[ -n "$pgid" && "$pgid" != "0" ]]; then
-    kill -- "-$pgid" 2>/dev/null || true
-  else
-    kill "$pid" 2>/dev/null || true
-  fi
-  sleep 1
-  # Force kill any survivors
-  if [[ -n "$pgid" && "$pgid" != "0" ]]; then
-    kill -9 -- "-$pgid" 2>/dev/null || true
-  fi
-  kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
-  [[ -n "$pidfile" ]] && rm -f "$pidfile"
-}
-
-start_server() {
-  stop_server 2>/dev/null || true
-  echo "[trap] Starting production server on port $PORT"
-  NODE_ENV=production setsid nohup volta run node ./node_modules/next/dist/bin/next start -p "$PORT" > "$SERVER_LOG" 2>&1 &
-  echo $! > "$SERVER_PID"
-  echo "[trap] Server PID $(cat "$SERVER_PID"), log: $SERVER_LOG"
-}
-
-stop_server() {
-  if [[ -f "$SERVER_PID" ]]; then
-    local pid
-    pid=$(cat "$SERVER_PID")
-    kill_tree "$pid" "$SERVER_PID"
-    echo "[trap] Stopped server PID $pid"
-  fi
-  fuser -k "$PORT/tcp" 2>/dev/null || true
-}
-
-load_env() {
-  if [[ -f .env.local ]]; then
-    set -a
-    source <(grep -v '^#' .env.local)
-    set +a
-  fi
-}
-
-start_loop() {
-  stop_loop 2>/dev/null || true
-  if grep -q "WORK_LOOP_ENABLED=true" .env.local 2>/dev/null; then
-    echo "[trap] Starting work loop (separate process)"
-    load_env
-    setsid nohup volta run npx tsx worker/loop.ts > "$LOOP_LOG" 2>&1 &
-    echo $! > "$LOOP_PID"
-    echo "[trap] Loop PID $(cat "$LOOP_PID"), log: $LOOP_LOG"
-  else
-    echo "[trap] Work loop disabled (WORK_LOOP_ENABLED != true)"
-  fi
-}
-
-stop_loop() {
-  if [[ -f "$LOOP_PID" ]]; then
-    local pid
-    pid=$(cat "$LOOP_PID")
-    kill_tree "$pid" "$LOOP_PID"
-    echo "[trap] Stopped loop PID $pid"
-  fi
-}
-
-start_bridge() {
-  stop_bridge 2>/dev/null || true
-  echo "[trap] Starting chat bridge (separate process)"
-  load_env
-  setsid nohup volta run npx tsx worker/chat-bridge.ts > "$BRIDGE_LOG" 2>&1 &
-  echo $! > "$BRIDGE_PID"
-  echo "[trap] Bridge PID $(cat "$BRIDGE_PID"), log: $BRIDGE_LOG"
-}
-
-stop_bridge() {
-  if [[ -f "$BRIDGE_PID" ]]; then
-    local pid
-    pid=$(cat "$BRIDGE_PID")
-    kill_tree "$pid" "$BRIDGE_PID"
-    echo "[trap] Stopped bridge PID $pid"
-  fi
-}
-
-status() {
-  echo "=== Trap Status ==="
-  if [[ -f "$SERVER_PID" ]] && kill -0 "$(cat "$SERVER_PID")" 2>/dev/null; then
-    echo "Server: RUNNING (PID $(cat "$SERVER_PID"), port $PORT)"
-  else
-    echo "Server: STOPPED"
-  fi
-  if [[ -f "$LOOP_PID" ]] && kill -0 "$(cat "$LOOP_PID")" 2>/dev/null; then
-    echo "Loop:   RUNNING (PID $(cat "$LOOP_PID"))"
-  else
-    echo "Loop:   STOPPED"
-  fi
-  if [[ -f "$BRIDGE_PID" ]] && kill -0 "$(cat "$BRIDGE_PID")" 2>/dev/null; then
-    echo "Bridge: RUNNING (PID $(cat "$BRIDGE_PID"))"
-  else
-    echo "Bridge: STOPPED"
-  fi
-
-  # Detect orphaned processes (trap-related processes not in any tracked process group)
-  local tracked_pgids=""
-  for pidfile in "$SERVER_PID" "$LOOP_PID" "$BRIDGE_PID"; do
-    [[ -f "$pidfile" ]] && {
-      local p; p=$(cat "$pidfile")
-      kill -0 "$p" 2>/dev/null && tracked_pgids+=" $(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' ')"
-    }
-  done
-  local orphan_pids=""
-  while read -r pid pgid; do
-    local is_tracked=false
-    for tpg in $tracked_pgids; do
-      [[ "$pgid" == "$tpg" ]] && { is_tracked=true; break; }
-    done
-    $is_tracked || orphan_pids+=" $pid"
-  done < <(ps aux | grep -E '/home/dan/src/trap.*(loop|bridge|next)' | grep -v grep | awk '{print $2}' | while read -r p; do
-    echo "$p $(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' ')"
-  done)
-  if [[ -n "${orphan_pids// /}" ]]; then
-    echo ""
-    echo "⚠️  ORPHANS detected:$orphan_pids"
-    echo "   Run: ./run.sh clean"
-  fi
-
+install_services() {
+  echo -e "${GREEN}[trap] Installing systemd user services...${NC}"
+  
+  mkdir -p "$SYSTEMD_DIR"
+  
+  # Copy service files
+  cp systemd/trap-server.service "$SYSTEMD_DIR/"
+  cp systemd/trap-loop.service "$SYSTEMD_DIR/"
+  cp systemd/trap-bridge.service "$SYSTEMD_DIR/"
+  
+  # Reload systemd
+  systemctl --user daemon-reload
+  
+  echo -e "${GREEN}[trap] Services installed. Enable them to start on boot:${NC}"
+  echo "  systemctl --user enable trap-server trap-loop trap-bridge"
   echo ""
-  grep "WORK_LOOP" .env.local 2>/dev/null || echo "(no work loop config)"
+  echo -e "${GREEN}[trap] Or use:${NC}"
+  echo "  ./run.sh start --enable"
 }
 
-watch_and_rebuild() {
-  build
-  start_server
-  start_bridge
-  start_loop
+start_services() {
+  local enable_flag="${1:-}"
+  
+  # Check if services are installed
+  if [[ ! -f "$SYSTEMD_DIR/trap-server.service" ]]; then
+    echo -e "${YELLOW}[trap] Services not installed. Installing first...${NC}"
+    install_services
+  fi
+  
+  echo -e "${GREEN}[trap] Starting services...${NC}"
+  
+  if [[ "$enable_flag" == "--enable" ]]; then
+    systemctl --user enable --now trap-server trap-loop trap-bridge
+    echo -e "${GREEN}[trap] Services started and enabled for boot${NC}"
+  else
+    systemctl --user start trap-server trap-loop trap-bridge
+    echo -e "${GREEN}[trap] Services started${NC}"
+  fi
+  
+  sleep 2
+  status_services
+}
 
-  echo "[trap] Watching for git changes on main..."
-  local last_hash
-  last_hash=$(git rev-parse HEAD)
+stop_services() {
+  echo -e "${YELLOW}[trap] Stopping services...${NC}"
+  systemctl --user stop trap-loop trap-bridge trap-server 2>/dev/null || true
+  echo -e "${GREEN}[trap] Services stopped${NC}"
+}
 
-  while true; do
-    sleep 15
-    git fetch origin main --quiet 2>/dev/null || continue
-    local remote_hash
-    remote_hash=$(git rev-parse origin/main 2>/dev/null || echo "$last_hash")
+restart_services() {
+  echo -e "${GREEN}[trap] Restarting services...${NC}"
+  systemctl --user restart trap-server trap-loop trap-bridge
+  sleep 2
+  status_services
+}
 
-    if [[ "$remote_hash" != "$last_hash" ]]; then
-      echo "[trap] main updated: ${last_hash:0:7} → ${remote_hash:0:7}"
-      if git pull --ff-only --quiet 2>/dev/null; then
-        last_hash="$remote_hash"
-        echo "[trap] Rebuilding..."
-        if build; then
-          stop_server
-          start_server
-          stop_bridge
-          start_bridge
-          stop_loop
-          start_loop
-          echo "[trap] Restarted at $(date '+%H:%M:%S')"
-        else
-          echo "[trap] BUILD FAILED — server still running old version"
-        fi
-      else
-        echo "[trap] Pull failed (dirty state?), skipping"
-      fi
+status_services() {
+  echo ""
+  echo "=== Trap Service Status ==="
+  echo ""
+  
+  local services=("trap-server" "trap-loop" "trap-bridge")
+  local all_running=true
+  
+  for service in "${services[@]}"; do
+    if systemctl --user is-active --quiet "$service" 2>/dev/null; then
+      local status_color="$GREEN"
+      local status_text="RUNNING"
+    else
+      local status_color="$RED"
+      local status_text="STOPPED"
+      all_running=false
+    fi
+    
+    printf "${status_color}%-15s${NC} %s\n" "$service:" "$status_text"
+    
+    # Show additional info if running
+    if systemctl --user is-active --quiet "$service" 2>/dev/null; then
+      local pid
+      pid=$(systemctl --user show -p MainPID --value "$service" 2>/dev/null || echo "?")
+      local uptime
+      uptime=$(systemctl --user show -p ActiveEnterTimestamp --value "$service" 2>/dev/null | cut -d' ' -f4- || echo "?")
+      echo "  PID: $pid | Since: $uptime"
     fi
   done
+  
+  echo ""
+  
+  if $all_running; then
+    echo -e "${GREEN}All services running${NC}"
+  else
+    echo -e "${YELLOW}Some services not running. Check logs with: ./run.sh logs${NC}"
+  fi
 }
 
-clean() {
-  # Kill ALL trap-related processes, tracked or not
-  echo "[trap] Killing all trap-related processes..."
+show_logs() {
+  local service="${1:-trap-server}"
+  echo "Tailing logs for $service (Ctrl+C to exit)..."
+  journalctl --user -u "$service" -f
+}
+
+show_all_logs() {
+  echo "Tailing logs for all trap services (Ctrl+C to exit)..."
+  journalctl --user -u trap-server -u trap-loop -u trap-bridge -f
+}
+
+clean_legacy() {
+  # Kill any legacy background processes (from old run.sh versions)
+  echo -e "${YELLOW}[trap] Cleaning up legacy processes...${NC}"
+  
   local pids
-  pids=$(ps aux | grep -E 'trap.*(loop|bridge|next|chat-bridge)' | grep -v grep | awk '{print $2}')
+  pids=$(ps aux | grep -E 'trap.*(loop|bridge|next|chat-bridge)' | grep -v grep | grep -v systemd | awk '{print $2}' || true)
   if [[ -n "$pids" ]]; then
     echo "$pids" | xargs kill 2>/dev/null || true
     sleep 1
     echo "$pids" | xargs kill -9 2>/dev/null || true
-    echo "[trap] Killed: $pids"
+    echo -e "${GREEN}[trap] Killed legacy processes: $pids${NC}"
   else
-    echo "[trap] No trap processes found"
+    echo -e "${GREEN}[trap] No legacy processes found${NC}"
   fi
-  rm -f "$SERVER_PID" "$LOOP_PID" "$BRIDGE_PID"
-  fuser -k "$PORT/tcp" 2>/dev/null || true
-  echo "[trap] Clean complete"
+  
+  # Clean up old PID files
+  rm -f /tmp/trap-*.pid /tmp/trap-*.log
 }
 
+# Legacy commands for backward compatibility
+build() {
+  echo -e "${GREEN}[trap] Building...${NC}"
+  pnpm build 2>&1 | tail -5
+  echo -e "${GREEN}[trap] Build complete${NC}"
+}
+
+# Migration helper
+migrate() {
+  echo -e "${YELLOW}[trap] Migrating from legacy run.sh to systemd...${NC}"
+  clean_legacy
+  install_services
+  start_services --enable
+  echo ""
+  echo -e "${GREEN}[trap] Migration complete!${NC}"
+  echo "Services are now managed by systemd and will survive gateway restarts."
+}
+
+# Main command handler
 case "${1:-status}" in
+  install)
+    install_services
+    ;;
   start)
-    build
-    start_server
-    start_bridge
-    start_loop
+    start_services "${2:-}"
     ;;
   stop)
-    stop_loop
-    stop_bridge
-    stop_server
+    stop_services
     ;;
   restart)
-    stop_loop
-    stop_bridge
-    stop_server
-    sleep 1
-    build
-    start_server
-    start_bridge
-    start_loop
-    ;;
-  watch)
-    trap 'stop_loop; stop_bridge; stop_server; exit 0' INT TERM
-    watch_and_rebuild
+    restart_services
     ;;
   status)
-    status
+    status_services
     ;;
   logs|log)
-    tail -f "$SERVER_LOG"
+    show_logs "trap-server"
     ;;
   loop-logs|loop-log)
-    tail -f "$LOOP_LOG"
+    show_logs "trap-loop"
     ;;
-  loop-restart)
-    stop_loop
-    start_loop
+  bridge-logs|bridge-log)
+    show_logs "trap-bridge"
     ;;
-  loop-stop)
-    stop_loop
+  all-logs)
+    show_all_logs
     ;;
   clean)
-    clean
+    clean_legacy
+    ;;
+  migrate)
+    migrate
+    ;;
+  build)
+    build
+    ;;
+  # Legacy aliases for compatibility
+  watch)
+    echo -e "${YELLOW}[trap] 'watch' mode deprecated. Use systemd timers or restart manually.${NC}"
+    echo "To restart: ./run.sh restart"
+    exit 1
+    ;;
+  loop-restart)
+    systemctl --user restart trap-loop
+    echo -e "${GREEN}[trap] Work loop restarted${NC}"
+    ;;
+  loop-stop)
+    systemctl --user stop trap-loop
+    echo -e "${GREEN}[trap] Work loop stopped${NC}"
     ;;
   *)
-    echo "Usage: $0 {start|stop|restart|watch|status|logs|loop-logs|loop-restart|loop-stop|clean}"
+    echo "Usage: $0 {install|start|stop|restart|status|logs|loop-logs|bridge-logs|all-logs|migrate|clean|build}"
+    echo ""
+    echo "Commands:"
+    echo "  install      - Install systemd user services"
+    echo "  start        - Start all services"
+    echo "  start --enable - Start and enable for boot"
+    echo "  stop         - Stop all services"
+    echo "  restart      - Restart all services"
+    echo "  status       - Show service status"
+    echo "  logs         - Tail server logs (journald)"
+    echo "  loop-logs    - Tail work loop logs"
+    echo "  bridge-logs  - Tail chat bridge logs"
+    echo "  all-logs     - Tail all service logs"
+    echo "  migrate      - Migrate from legacy run.sh to systemd"
+    echo "  clean        - Clean up legacy processes"
+    echo "  build        - Build the Next.js app"
+    echo ""
+    echo "Systemd commands (direct):"
+    echo "  systemctl --user {start|stop|restart|status} trap-{server,loop,bridge}"
+    echo "  journalctl --user -u trap-server -f"
     exit 1
     ;;
 esac

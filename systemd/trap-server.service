@@ -1,0 +1,19 @@
+[Unit]
+Description=Trap Next.js Server (port 3002)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dan/src/trap
+EnvironmentFile=/home/dan/src/trap/.env.local
+Environment="NODE_ENV=production"
+Environment="PORT=3002"
+ExecStart=/home/dan/.volta/bin/volta run node ./node_modules/next/dist/bin/next start -p 3002
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trap-server
+
+[Install]
+WantedBy=default.target
