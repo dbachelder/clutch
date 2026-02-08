@@ -135,15 +135,8 @@ export const getAllWithStats = query({
           .unique()
 
         // Count active agents from tasks (single source of truth)
-        const ACTIVE_AGENT_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
-        const now = Date.now()
-        const cutoffTime = now - ACTIVE_AGENT_THRESHOLD_MS
-        const activeAgentCount = tasks.filter((task) => {
-          if (!task.agent_session_key) return false
-          const lastActive = task.agent_last_active_at
-          if (!lastActive) return false
-          return lastActive >= cutoffTime
-        }).length
+        // Note: Active agent count now comes from sessions table
+        const activeAgentCount = tasks.filter((task) => !!task.agent_session_key).length
 
         return {
           ...toProject(project as Parameters<typeof toProject>[0]),

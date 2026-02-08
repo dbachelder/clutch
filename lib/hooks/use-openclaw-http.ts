@@ -21,10 +21,10 @@ export { openclawApi };
 
 /**
  * @deprecated Session list with polling has been removed.
- * Use useAgentSessions from @/lib/hooks/use-agent-sessions for reactive session data.
+ * Use Convex sessions table queries (api.sessions.list) for reactive session data.
  */
 export function useSessionList(_refreshIntervalMs = 30000, _shouldPoll = false) {
-  console.warn('[use-openclaw-http] useSessionList is deprecated. Use useAgentSessions from @/lib/hooks/use-agent-sessions');
+  console.warn('[use-openclaw-http] useSessionList is deprecated. Use Convex sessions table queries (api.sessions.list)');
 
   return {
     sessions: [],
@@ -131,19 +131,19 @@ export function useOpenClawHttpRpc() {
   const [connecting] = useState(false);
 
   /**
-   * @deprecated Use useAgentSessions from @/lib/hooks/use-agent-sessions
+   * @deprecated Use Convex sessions table queries (api.sessions.list)
    */
   const listSessions = useCallback(async (): Promise<{ sessions: []; total: number }> => {
-    console.warn('[useOpenClawHttpRpc] listSessions is deprecated. Use useAgentSessions hook');
+    console.warn('[useOpenClawHttpRpc] listSessions is deprecated. Use Convex sessions table queries (api.sessions.list)');
     return { sessions: [], total: 0 };
   }, []);
 
   /**
-   * @deprecated Use useAgentSessions from @/lib/hooks/use-agent-sessions
+   * @deprecated Use Convex sessions table queries (api.sessions.list)
    */
   const listSessionsWithEffectiveModel = useCallback(
     async (): Promise<{ sessions: []; total: number }> => {
-      console.warn('[useOpenClawHttpRpc] listSessionsWithEffectiveModel is deprecated. Use useAgentSessions hook');
+      console.warn('[useOpenClawHttpRpc] listSessionsWithEffectiveModel is deprecated. Use Convex sessions table queries');
       return { sessions: [], total: 0 };
     },
     []
@@ -247,7 +247,7 @@ export function useOpenClawHttpRpc() {
 async function rpcCall<T>(method: string, params?: Record<string, unknown>): Promise<T> {
   switch (method) {
     case "sessions.list":
-      console.warn('[rpcCall] sessions.list is deprecated. Use useAgentSessions hook');
+      console.warn('[rpcCall] sessions.list is deprecated. Use Convex sessions table queries');
       return { sessions: [], total: 0 } as unknown as T;
     case "sessions.preview":
       return (await openclawApi.getSessionPreview(

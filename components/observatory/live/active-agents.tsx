@@ -26,11 +26,12 @@ export function ActiveAgents({ projectId, projectSlug, projectName }: ActiveAgen
       taskId: task.id,
       taskTitle: task.title?.trim() || `Untitled Task ${index + 1}`,
       role: task.role ?? "dev",
-      model: task.agent_model ?? "unknown",
-      duration: formatDuration(task.agent_started_at),
-      durationTimestamp: task.agent_started_at,
-      lastActivity: formatLastActivity(task.agent_last_active_at),
-      lastActivityTimestamp: task.agent_last_active_at,
+      // Note: Agent details (model, timing) now come from sessions table
+      model: "unknown",
+      duration: "",
+      durationTimestamp: null,
+      lastActivity: "active",
+      lastActivityTimestamp: null,
       projectName: projectName,
     }))
   }, [tasks, projectName])

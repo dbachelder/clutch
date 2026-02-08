@@ -77,7 +77,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     // Find corresponding tasks
     return allTasks.filter((t) => t.agent_session_key && sessionTaskIds.has(t.id))
   }, [agentSessions, allTasks])
-  
+
   // Section expansion state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     in_review: true,
@@ -119,11 +119,11 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
   useEffect(() => {
     localStorage.setItem('trap:blockedExpanded', String(blockedExpanded))
   }, [blockedExpanded])
-  
+
   // Task modal state
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
-  
+
   // New issue dialog state
   const [newIssueDialogOpen, setNewIssueDialogOpen] = useState(false)
 
@@ -220,13 +220,13 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
 
   useEffect(() => {
     if (!isMobile || !isOpen) return
-    
+
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && onClose) {
         onClose()
       }
     }
-    
+
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [isMobile, isOpen, onClose])
@@ -235,7 +235,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     const date = new Date(timestamp)
     const now = new Date()
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-    
+
     if (diffDays === 0) {
       return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     } else if (diffDays === 1) {
@@ -258,13 +258,13 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
 
   const formatRelativeTime = (timestamp: number | null) => {
     if (!timestamp) return "recently"
-    
+
     const now = Date.now()
     const diffMs = now - timestamp
     const diffMinutes = Math.floor(diffMs / (1000 * 60))
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-    
+
     if (diffMinutes < 1) return "just now"
     if (diffMinutes < 60) return `${diffMinutes}m ago`
     if (diffHours < 24) return `${diffHours}h ago`
@@ -275,7 +275,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
 
   // Mobile backdrop
   const backdrop = isMobile && isOpen && onClose && (
-    <div 
+    <div
       className="fixed inset-0 bg-black/50 z-40 lg:hidden"
       onClick={onClose}
     />
@@ -287,7 +287,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
   const sidebarContent = (
     <div className={`
       flex flex-col h-full
-      ${isMobile 
+      ${isMobile
         ? `fixed top-0 left-0 z-50 w-80 max-w-[85vw] bg-[var(--bg-primary)] border-r border-[var(--border)] transform transition-transform duration-300 ${
             isOpen ? 'translate-x-0' : '-translate-x-full'
           } lg:relative lg:w-64 lg:transform-none lg:transition-none lg:z-auto`
@@ -310,7 +310,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
           )}
         </div>
       </div>
-      
+
       {/* Chat list */}
       <div className="overflow-y-auto" style={{ maxHeight: 'calc(50vh - 100px)' }}>
         {isLoading ? (
@@ -345,11 +345,11 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
         ) : (
           chats.map((chat) => {
             const isActive = activeChat?.id === chat.id
-            const authorColor = chat.lastMessage 
+            const authorColor = chat.lastMessage
               ? AUTHOR_COLORS[chat.lastMessage.author] || "#52525b"
               : "#52525b"
             const isDeleting = deletingChatId === chat.id
-            
+
             return (
               <div
                 key={chat.id}
@@ -360,11 +360,11 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                 }`}
               >
                 <div className="flex items-start gap-2 p-3">
-                  <div 
+                  <div
                     className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
                     style={{ backgroundColor: authorColor }}
                   />
-                  
+
                   <button
                     onClick={() => handleChatSelect(chat)}
                     className="flex-1 text-left focus:outline-none min-h-[40px] touch-manipulation min-w-0"
@@ -377,7 +377,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                           {chat.title}
                         </span>
                       </div>
-                      
+
                       {chat.lastMessage && (
                         <p className="text-xs text-[var(--text-muted)] truncate mt-0.5 max-w-full">
                           {chat.lastMessage.author}: {chat.lastMessage.content}
@@ -385,13 +385,13 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                       )}
                     </div>
                   </button>
-                  
+
                   {chat.lastMessage && (
                     <div className="flex-shrink-0 text-xs text-[var(--text-muted)] pt-0.5">
                       {formatTime(chat.lastMessage.created_at)}
                     </div>
                   )}
-                  
+
                   <div className="flex-shrink-0 flex items-center">
                     {!isDeleting ? (
                       <button
@@ -429,7 +429,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
           })
         )}
       </div>
-      
+
       {/* New chat and issue buttons */}
       <div className="p-2 border-b border-[var(--border)] space-y-2">
         <Button
@@ -576,7 +576,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
             )}
           </div>
           {projectSlug && (
-            <Link 
+            <Link
               href={`/projects/${projectSlug}/board`}
               className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center gap-1"
               title="Open board"
@@ -641,7 +641,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
         ) : (
           workQueueSections.map((section) => {
             if (section.tasks.length === 0) return null
-            
+
             return (
               <div key={section.status} className="border-b border-[var(--border)]">
                 {/* Section header */}
@@ -710,7 +710,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
             )
           })
         )}
-        
+
         {/* Recently Shipped section */}
         {recentlyShipped.length > 0 && (
           <>
@@ -729,7 +729,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                 <span className="font-medium text-[var(--text-primary)] text-sm">Recently Shipped</span>
               </button>
             </div>
-            
+
             {/* Recently shipped tasks */}
             {recentlyShippedExpanded && (
               <div className="border-b border-[var(--border)]">

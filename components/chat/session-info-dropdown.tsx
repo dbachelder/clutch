@@ -213,10 +213,8 @@ export function SessionInfoDropdown({
   // Check if there are any active agents
   const hasActiveAgents = activeAgents && activeAgents.length > 0
 
-  // Calculate total tokens across all agents for this project
-  const totalAgentTokens = activeAgents?.reduce((sum, agent) => {
-    return sum + (agent.agent_tokens_in || 0) + (agent.agent_tokens_out || 0)
-  }, 0) || 0
+  // Note: Token data now comes from sessions table
+  const totalAgentTokens = 0
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -436,9 +434,7 @@ export function SessionInfoDropdown({
               ) : hasActiveAgents ? (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {activeAgents.map((agent: Task) => {
-                    const stale = isAgentStale(agent.agent_last_active_at)
-                    const agentTotalTokens = (agent.agent_tokens_in || 0) + (agent.agent_tokens_out || 0)
-
+                    // Note: Agent details now in sessions table
                     return (
                       <div
                         key={agent.id}
@@ -454,11 +450,7 @@ export function SessionInfoDropdown({
                               {agent.title}
                             </Link>
                           </div>
-                          {stale && (
-                            <span title="Agent may be stale">
-                              <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
-                            </span>
-                          )}
+                          {/* Staleness now tracked in sessions table */}
                         </div>
 
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -468,32 +460,15 @@ export function SessionInfoDropdown({
                           >
                             {agent.role || 'dev'}
                           </Badge>
-                          {agent.agent_model && (
-                            <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                              {formatModelShort(agent.agent_model)}
-                            </span>
-                          )}
+                          {/* Model info now in sessions table */}
                         </div>
 
                         <div className="flex items-center gap-3 mt-1.5 text-[10px] text-[var(--text-muted)]">
-                          {agent.agent_started_at && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {formatDuration(agent.agent_started_at)}
-                            </span>
-                          )}
-                          {agent.agent_last_active_at && (
-                            <span className={`flex items-center gap-1 ${stale ? 'text-amber-400' : 'text-green-400'}`}>
-                              <Activity className="h-3 w-3" />
-                              {stale ? 'Stale' : 'Active'}
-                            </span>
-                          )}
-                          {agentTotalTokens > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Cpu className="h-3 w-3" />
-                              {formatTokenCount(agentTotalTokens)}
-                            </span>
-                          )}
+                          {/* Agent timing now in sessions table */}
+                          <span className="flex items-center gap-1 text-green-400">
+                            <Activity className="h-3 w-3" />
+                            Active
+                          </span>
                         </div>
                       </div>
                     )

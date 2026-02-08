@@ -333,16 +333,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
           id: task.id,
           session_id: handle.sessionKey,
         })
-        await convex.mutation(api.tasks.updateAgentActivity, {
-          updates: [{
-            task_id: task.id,
-            agent_session_key: handle.sessionKey,
-            agent_model: "kimi",
-            agent_started_at: handle.spawnedAt,
-            agent_last_active_at: handle.spawnedAt,
-            agent_retry_count: retryCount + 1,
-          }],
-        })
+        // Note: Agent activity is now tracked in sessions table
         // Log agent assignment event
         await convex.mutation(api.task_events.logAgentAssigned, {
           taskId: task.id,
@@ -430,15 +421,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
         id: task.id,
         session_id: handle.sessionKey,
       })
-      await convex.mutation(api.tasks.updateAgentActivity, {
-        updates: [{
-          task_id: task.id,
-          agent_session_key: handle.sessionKey,
-          agent_model: "sonnet",
-          agent_started_at: handle.spawnedAt,
-          agent_last_active_at: handle.spawnedAt,
-        }],
-      })
+      // Note: Agent activity is now tracked in sessions table
       // Log agent assignment event
       await convex.mutation(api.task_events.logAgentAssigned, {
         taskId: task.id,

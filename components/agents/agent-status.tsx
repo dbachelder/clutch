@@ -124,7 +124,8 @@ export function AgentStatus({
   // Don't render if no agent
   if (!hasAgent) return null
 
-  const stale = isAgentStale(task.agent_last_active_at)
+  // Note: Agent status details now come from sessions table
+  const stale = false // Simplified - sessions table tracks staleness
   const modelColor = getModelColor(stale)
 
   if (variant === "compact") {
@@ -132,32 +133,16 @@ export function AgentStatus({
     return (
       <div className={`flex items-center gap-1 mt-0.5 ${className}`}>
         {showIcon && (
-          <span className="text-xs" title={stale ? "Agent stale" : "Agent active"}>
-            {stale ? "⚠" : "🤖"}
+          <span className="text-xs" title="Agent active">
+            {"🤖"}
           </span>
         )}
         <span className={`text-xs ${stale ? "text-amber-500" : "text-[var(--text-muted)]"}`}>
           {task.role || "agent"}
-          {task.agent_model && (
-            <>
-              {" · "}
-              <span style={{ color: modelColor }}>
-                {formatModelShort(task.agent_model)}
-              </span>
-            </>
-          )}
-          {task.agent_started_at && (
-            <>
-              {" · "}
-              {formatDuration(task.agent_started_at)}
-            </>
-          )}
+          {/* Model info now in sessions table */}
           <>
             {" · "}
-            {stale
-              ? `stale (no activity ${formatLastActivity(task.agent_last_active_at).replace(" ago", "")})`
-              : `↻ ${formatLastActivity(task.agent_last_active_at)}`
-            }
+            active
           </>
         </span>
       </div>
@@ -173,17 +158,9 @@ export function AgentStatus({
         />
       )}
       <span className="font-medium text-[var(--text-secondary)]">
-        {formatModelShort(task.agent_model)}
+        {/* Model info now in sessions table */}
+        agent
       </span>
-      {task.agent_last_active_at && (
-        <span 
-          className="font-medium"
-          style={{ color: modelColor }}
-          title="Time since last token output"
-        >
-          · {formatDuration(task.agent_last_active_at)}
-        </span>
-      )}
     </div>
   )
 }

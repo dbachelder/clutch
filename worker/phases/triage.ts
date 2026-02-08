@@ -43,7 +43,6 @@ interface BlockedTask {
   description: string | null
   role: string | null
   agent_session_key: string | null
-  agent_model: string | null
   agent_retry_count: number | null
   auto_triage_count: number | null
   triage_sent_at: number | null
@@ -414,7 +413,7 @@ async function buildTriageMessage(
   sections.push(`## Agent Context`)
   sections.push(``)
   sections.push(`**Session Key:** ${task.agent_session_key ?? "N/A"}`)
-  sections.push(`**Model Used:** ${task.agent_model ?? "default"}`)
+  // Note: Model info now comes from sessions table
   sections.push(`**Previous Attempts:** ${task.agent_retry_count ?? 0}`)
 
   if (lastAgentComment) {

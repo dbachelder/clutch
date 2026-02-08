@@ -31,12 +31,6 @@ function toTask(doc: {
   dispatch_requested_at?: number
   dispatch_requested_by?: string
   agent_session_key?: string
-  agent_model?: string
-  agent_started_at?: number
-  agent_last_active_at?: number
-  agent_tokens_in?: number
-  agent_tokens_out?: number
-  agent_output_preview?: string
   agent_retry_count?: number
   triage_sent_at?: number
   triage_acked_at?: number
@@ -70,12 +64,7 @@ function toTask(doc: {
     dispatch_requested_at: doc.dispatch_requested_at ?? null,
     dispatch_requested_by: doc.dispatch_requested_by ?? null,
     agent_session_key: doc.agent_session_key ?? null,
-    agent_model: doc.agent_model ?? null,
-    agent_started_at: doc.agent_started_at ?? null,
-    agent_last_active_at: doc.agent_last_active_at ?? null,
-    agent_tokens_in: doc.agent_tokens_in ?? null,
-    agent_tokens_out: doc.agent_tokens_out ?? null,
-    agent_output_preview: doc.agent_output_preview ?? null,
+    // Note: agent session fields removed - now in sessions table
     agent_retry_count: doc.agent_retry_count ?? null,
     triage_sent_at: (doc as { triage_sent_at?: number }).triage_sent_at ?? null,
     triage_acked_at: (doc as { triage_acked_at?: number }).triage_acked_at ?? null,
@@ -417,261 +406,48 @@ export const getWithDependencies = query({
 
 /**
  * Get tasks with active agents for a project
- * Returns tasks that have an agent_session_key set and are still active.
- * An agent is considered active if:
- * - It has activity within the last 15 minutes (ACTIVE_AGENT_THRESHOLD_MS), OR
- * - The task is in 'in_progress' or 'in_review' status with a recent agent session
+ * Returns tasks that have an agent_session_key set.
+ * Note: Agent activity status should now be determined from sessions table
  */
 export const getWithActiveAgents = query({
   args: { projectId: v.string() },
   handler: async (ctx, args): Promise<Task[]> => {
-    const ACTIVE_AGENT_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
-    const now = Date.now()
-    const cutoffTime = now - ACTIVE_AGENT_THRESHOLD_MS
-
     const tasks = await ctx.db
       .query('tasks')
       .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
       .filter((q) => q.neq('agent_session_key', null))
       .collect()
 
-    // Filter to only include agents that are still active
-    const activeTasks = tasks.filter((task) => {
-      // Must have a last activity timestamp
-      const lastActive = task.agent_last_active_at
-      if (!lastActive) return false
-
-      // Only include if active within threshold
-      return lastActive >= cutoffTime
-    })
-
-    // Sort by most recently active first
-    return activeTasks
-      .sort((a, b) => (b.agent_last_active_at ?? 0) - (a.agent_last_active_at ?? 0))
+    // Sort by most recently updated first
+    return tasks
+      .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
       .map((t) => toTask(t as Parameters<typeof toTask>[0]))
   },
 })
 
 /**
- * Get the count of active agents for a project.
+ * Get the count of agents for a project.
  * Returns just the count (lightweight) instead of full task objects.
- * An agent is considered active if it has activity within the last 15 minutes.
+ * Note: Active status should now be determined from sessions table
  */
 export const activeAgentCount = query({
   args: { projectId: v.string() },
   handler: async (ctx, args): Promise<number> => {
-    const ACTIVE_AGENT_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
-    const now = Date.now()
-    const cutoffTime = now - ACTIVE_AGENT_THRESHOLD_MS
-
     const tasks = await ctx.db
       .query('tasks')
       .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
       .filter((q) => q.neq('agent_session_key', null))
       .collect()
 
-    // Count only agents that are still active
-    return tasks.filter((task) => {
-      const lastActive = task.agent_last_active_at
-      if (!lastActive) return false
-      return lastActive >= cutoffTime
-    }).length
-  },
-})
-
-// Status thresholds for session derivation:
-// < 5min since last activity → running (actively working)
-// 5-15min → idle (paused but may resume)
-// > 15min → completed (done, no longer active)
-const IDLE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
-const COMPLETED_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
-
-type SessionStatus = 'running' | 'idle' | 'completed'
-type SessionType = 'main' | 'isolated' | 'subagent'
-
-/**
- * Agent session information derived from task data
- * Mirrors the Session type from lib/types/session.ts but derived from Convex task data
- */
-export interface AgentSession {
-  id: string // agent_session_key
-  name: string // derived from session key or task title
-  type: SessionType
-  model: string
-  status: SessionStatus
-  createdAt: string // agent_started_at
-  updatedAt: string // agent_last_active_at
-  completedAt?: string // set if status is completed
-  tokens: {
-    input: number
-    output: number
-    total: number
-  }
-  task: {
-    id: string
-    title: string
-    status: TaskStatus
-  }
-}
-
-function deriveSessionStatus(lastActiveAt: number | undefined): SessionStatus {
-  if (!lastActiveAt) return 'completed'
-  const timeSinceActivity = Date.now() - lastActiveAt
-  if (timeSinceActivity < IDLE_THRESHOLD_MS) return 'running'
-  if (timeSinceActivity >= COMPLETED_THRESHOLD_MS) return 'completed'
-  return 'idle'
-}
-
-function mapSessionType(sessionKey: string): SessionType {
-  if (!sessionKey) return 'main'
-  if (sessionKey.includes(':isolated:')) return 'isolated'
-  if (sessionKey.includes(':subagent:')) return 'subagent'
-  return 'main'
-}
-
-function extractSessionName(sessionKey: string, taskTitle: string): string {
-  // Guard against empty/falsy session keys
-  if (!sessionKey) return taskTitle
-  // Try to extract meaningful name from session key
-  const parts = sessionKey.split(':')
-  const lastPart = parts[parts.length - 1]
-  // If last part looks like a task ID prefix, use task title
-  if (lastPart && lastPart.length >= 8 && /^[a-f0-9]+$/.test(lastPart)) {
-    return taskTitle
-  }
-  return lastPart || taskTitle
-}
-
-/**
- * Get agent sessions for a project
- * Returns sessions derived from tasks that have agent_session_key set
- * This replaces the openclaw sessions CLI for the Sessions tab
- */
-export const getAgentSessions = query({
-  args: {
-    projectId: v.string(),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<AgentSession[]> => {
-    const tasks = await ctx.db
-      .query('tasks')
-      .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
-      .filter((q) => q.neq('agent_session_key', null))
-      .collect()
-
-    // Sort by most recently active first
-    const sortedTasks = tasks.sort(
-      (a, b) => (b.agent_last_active_at ?? 0) - (a.agent_last_active_at ?? 0)
-    )
-
-    // Apply limit if provided
-    const limitedTasks = args.limit && args.limit > 0
-      ? sortedTasks.slice(0, args.limit)
-      : sortedTasks
-
-    // Filter out tasks with empty/falsy agent_session_key
-    const validTasks = limitedTasks.filter((t) => t.agent_session_key)
-
-    // Map tasks to session-like objects
-    return validTasks.map((task) => {
-      const sessionKey = task.agent_session_key!
-      const startedAt = task.agent_started_at ?? Date.now()
-      const lastActiveAt = task.agent_last_active_at ?? startedAt
-      const status = deriveSessionStatus(lastActiveAt)
-
-      const tokensIn = task.agent_tokens_in ?? 0
-      const tokensOut = task.agent_tokens_out ?? 0
-
-      return {
-        id: sessionKey,
-        name: extractSessionName(sessionKey, task.title),
-        type: mapSessionType(sessionKey),
-        model: task.agent_model ?? 'unknown',
-        status,
-        createdAt: new Date(startedAt).toISOString(),
-        updatedAt: new Date(lastActiveAt).toISOString(),
-        completedAt: status === 'completed' ? new Date(lastActiveAt).toISOString() : undefined,
-        tokens: {
-          input: tokensIn,
-          output: tokensOut,
-          total: tokensIn + tokensOut,
-        },
-        task: {
-          id: task.id,
-          title: task.title,
-          status: task.status as TaskStatus,
-        },
-      }
-    })
-  },
-})
-
-/**
- * Get agent sessions from ALL projects
- * Returns sessions derived from tasks that have agent_session_key set across all projects
- * Used for global session monitoring (e.g., Sessions page sidebar)
- */
-export const getAllAgentSessions = query({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<AgentSession[]> => {
-    const tasks = await ctx.db
-      .query('tasks')
-      .filter((q) => q.neq('agent_session_key', null))
-      .collect()
-
-    // Sort by most recently active first
-    const sortedTasks = tasks.sort(
-      (a, b) => (b.agent_last_active_at ?? 0) - (a.agent_last_active_at ?? 0)
-    )
-
-    // Apply limit if provided
-    const limitedTasks = args.limit && args.limit > 0
-      ? sortedTasks.slice(0, args.limit)
-      : sortedTasks
-
-    // Filter out tasks with empty/falsy agent_session_key
-    const validTasks = limitedTasks.filter((t) => t.agent_session_key)
-
-    // Map tasks to session-like objects
-    return validTasks.map((task) => {
-      const sessionKey = task.agent_session_key!
-      const startedAt = task.agent_started_at ?? Date.now()
-      const lastActiveAt = task.agent_last_active_at ?? startedAt
-      const status = deriveSessionStatus(lastActiveAt)
-
-      const tokensIn = task.agent_tokens_in ?? 0
-      const tokensOut = task.agent_tokens_out ?? 0
-
-      return {
-        id: sessionKey,
-        name: extractSessionName(sessionKey, task.title),
-        type: mapSessionType(sessionKey),
-        model: task.agent_model ?? 'unknown',
-        status,
-        createdAt: new Date(startedAt).toISOString(),
-        updatedAt: new Date(lastActiveAt).toISOString(),
-        completedAt: status === 'completed' ? new Date(lastActiveAt).toISOString() : undefined,
-        tokens: {
-          input: tokensIn,
-          output: tokensOut,
-          total: tokensIn + tokensOut,
-        },
-        task: {
-          id: task.id,
-          title: task.title,
-          status: task.status as TaskStatus,
-        },
-      }
-    })
+    return tasks.length
   },
 })
 
 /**
  * Get agent activity history for a project
- * Returns all tasks that have been worked on by agents (have agent_started_at)
+ * Returns all tasks that have been worked on by agents (have agent_session_key)
  * Used by the Agents page to show agent analytics grouped by role
+ * Note: Agent session details now come from sessions table, not tasks
  */
 export const getAgentHistory = query({
   args: { projectId: v.string() },
@@ -679,12 +455,12 @@ export const getAgentHistory = query({
     const tasks = await ctx.db
       .query('tasks')
       .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
-      .filter((q) => q.neq('agent_started_at', null))
+      .filter((q) => q.neq('agent_session_key', null))
       .collect()
 
-    // Sort by most recently started first
+    // Sort by most recently updated first (since agent_started_at is removed)
     return tasks
-      .sort((a, b) => (b.agent_started_at ?? 0) - (a.agent_started_at ?? 0))
+      .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
       .map((t) => toTask(t as Parameters<typeof toTask>[0]))
   },
 })
@@ -987,12 +763,6 @@ export const move = mutation({
       // Clear stale agent fields when status changes —
       // new agent (if any) will write its own info after spawn
       agent_session_key: undefined,
-      agent_model: undefined,
-      agent_started_at: undefined,
-      agent_last_active_at: undefined,
-      agent_tokens_in: undefined,
-      agent_tokens_out: undefined,
-      agent_output_preview: undefined,
       // Reset retry count when starting fresh (in_progress), otherwise preserve it
       agent_retry_count: args.status === 'in_progress' ? 0 : existing.agent_retry_count,
       // Reset triage state when unblocking (moving to ready)
@@ -1103,55 +873,6 @@ export const deleteTask = mutation({
 })
 
 /**
- * Batch update agent activity on tasks.
- * Called by the work loop each cycle to sync live agent status into Convex.
- */
-export const updateAgentActivity = mutation({
-  args: {
-    updates: v.array(
-      v.object({
-        task_id: v.string(),
-        agent_session_key: v.string(),
-        agent_model: v.optional(v.string()),
-        agent_started_at: v.optional(v.number()),
-        agent_last_active_at: v.number(),
-        agent_tokens_in: v.optional(v.number()),
-        agent_tokens_out: v.optional(v.number()),
-        agent_output_preview: v.optional(v.string()),
-        agent_retry_count: v.optional(v.number()),
-      })
-    ),
-  },
-  handler: async (ctx, args): Promise<{ updated: number }> => {
-    let updated = 0
-    for (const update of args.updates) {
-      const task = await ctx.db
-        .query('tasks')
-        .withIndex('by_uuid', (q) => q.eq('id', update.task_id))
-        .unique()
-      if (!task) continue
-
-      // Build patch object dynamically - only include fields that are provided
-      const patch: Record<string, unknown> = {
-        agent_session_key: update.agent_session_key,
-        agent_last_active_at: update.agent_last_active_at,
-        updated_at: Date.now(),
-      }
-      if (update.agent_model !== undefined) patch.agent_model = update.agent_model
-      if (update.agent_started_at !== undefined) patch.agent_started_at = update.agent_started_at
-      if (update.agent_tokens_in !== undefined) patch.agent_tokens_in = update.agent_tokens_in
-      if (update.agent_tokens_out !== undefined) patch.agent_tokens_out = update.agent_tokens_out
-      if (update.agent_output_preview !== undefined) patch.agent_output_preview = update.agent_output_preview
-      if (update.agent_retry_count !== undefined) patch.agent_retry_count = update.agent_retry_count
-
-      await ctx.db.patch(task._id, patch)
-      updated++
-    }
-    return { updated }
-  },
-})
-
-/**
  * Clear agent fields from a task (called when agent finishes).
  */
 export const clearAgentActivity = mutation({
@@ -1164,12 +885,6 @@ export const clearAgentActivity = mutation({
     if (!task) return
     await ctx.db.patch(task._id, {
       agent_session_key: undefined,
-      agent_model: undefined,
-      agent_started_at: undefined,
-      agent_last_active_at: undefined,
-      agent_tokens_in: undefined,
-      agent_tokens_out: undefined,
-      agent_output_preview: undefined,
       agent_retry_count: undefined,
       triage_sent_at: undefined,
       updated_at: Date.now(),

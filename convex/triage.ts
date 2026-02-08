@@ -68,12 +68,6 @@ function toTask(doc: {
   dispatch_requested_at?: number
   dispatch_requested_by?: string
   agent_session_key?: string
-  agent_model?: string
-  agent_started_at?: number
-  agent_last_active_at?: number
-  agent_tokens_in?: number
-  agent_tokens_out?: number
-  agent_output_preview?: string
   agent_retry_count?: number
   triage_sent_at?: number
   triage_acked_at?: number
@@ -108,12 +102,6 @@ function toTask(doc: {
     dispatch_requested_at: doc.dispatch_requested_at ?? null,
     dispatch_requested_by: doc.dispatch_requested_by ?? null,
     agent_session_key: doc.agent_session_key ?? null,
-    agent_model: doc.agent_model ?? null,
-    agent_started_at: doc.agent_started_at ?? null,
-    agent_last_active_at: doc.agent_last_active_at ?? null,
-    agent_tokens_in: doc.agent_tokens_in ?? null,
-    agent_tokens_out: doc.agent_tokens_out ?? null,
-    agent_output_preview: doc.agent_output_preview ?? null,
     agent_retry_count: doc.agent_retry_count ?? null,
     triage_sent_at: doc.triage_sent_at ?? null,
     triage_acked_at: (doc as { triage_acked_at?: number }).triage_acked_at ?? null,
@@ -321,9 +309,6 @@ export const triageReassign = mutation({
 
     if (args.role) {
       updates.role = args.role
-    }
-    if (args.agentModel) {
-      updates.agent_model = args.agentModel
     }
 
     await ctx.db.patch(taskDoc._id, updates)

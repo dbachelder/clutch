@@ -60,24 +60,20 @@ function calculateStats(tasks: Task[] | null): AgentStats[] {
 
     const stats = roleMap.get(role)!;
     stats.count++;
-    stats.totalTokensIn += task.agent_tokens_in || 0;
-    stats.totalTokensOut += task.agent_tokens_out || 0;
+    // Note: Token data now comes from sessions table
+    // stats.totalTokensIn += task.agent_tokens_in || 0;
+    // stats.totalTokensOut += task.agent_tokens_out || 0;
 
-    // Track model usage
-    const model = task.agent_model || 'unknown';
-    stats.models.set(model, (stats.models.get(model) || 0) + 1);
+    // Track model usage - now from sessions table
+    // const model = task.agent_model || 'unknown';
+    // stats.models.set(model, (stats.models.get(model) || 0) + 1);
   }
 
+  // Note: Duration data now comes from sessions table
   // Calculate average duration for each role
   for (const stats of roleMap.values()) {
-    const roleTasks = tasks.filter(t => (t.role || 'any') === stats.role);
-    const totalDuration = roleTasks.reduce((acc, t) => {
-      if (t.agent_started_at && t.agent_last_active_at) {
-        return acc + (t.agent_last_active_at - t.agent_started_at);
-      }
-      return acc;
-    }, 0);
-    stats.avgDuration = roleTasks.length > 0 ? totalDuration / roleTasks.length : 0;
+    // Duration tracking moved to sessions table
+    stats.avgDuration = 0;
   }
 
   return Array.from(roleMap.values()).sort((a, b) => b.count - a.count);
@@ -207,8 +203,9 @@ export default function AgentsPage() {
   const stats = useMemo(() => calculateStats(tasks), [tasks]);
 
   const totalTasks = tasks?.length || 0;
-  const totalTokensIn = tasks?.reduce((acc, t) => acc + (t.agent_tokens_in || 0), 0) || 0;
-  const totalTokensOut = tasks?.reduce((acc, t) => acc + (t.agent_tokens_out || 0), 0) || 0;
+  // Note: Token counts now come from sessions table
+  const totalTokensIn = 0;
+  const totalTokensOut = 0;
   const activeAgents = tasks?.filter(t => t.agent_session_key && !t.completed_at).length || 0;
 
   if (isLoading || !project) {
