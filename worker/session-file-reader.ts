@@ -28,6 +28,8 @@ export interface SessionFileInfo {
     timestamp: number
   } | null
   isDone: boolean
+  /** True when OpenClaw killed the run (embedded timeout → synthetic error). isDone is also true. */
+  isTerminalError: boolean
   isStale: boolean
 }
 
@@ -188,6 +190,42 @@ export class SessionFileReader {
   }
 
   /**
+   * Check if the session ended with a terminal error (e.g. OpenClaw killed
+   * the run due to timeout and injected a synthetic toolResult).
+   *
+   * Pattern: the last JSONL entry is a toolResult with isError: true and
+   * content containing "synthetic error result for transcript repair".
+   * This means the embedded run timed out — the session is dead.
+   */
+  private hasTerminalError(lines: string[]): boolean {
+    // Walk backward — the synthetic error is typically the very last line
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 3); i--) {
+      try {
+        const entry = JSON.parse(lines[i]) as SessionMessage
+        if (
+          entry.message?.role === "toolResult" &&
+          (entry as { isError?: boolean }).isError === true
+        ) {
+          const content = entry.message.content
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (
+                block.type === "text" &&
+                block.text?.includes("synthetic error result for transcript repair")
+              ) {
+                return true
+              }
+            }
+          }
+        }
+      } catch {
+        continue
+      }
+    }
+    return false
+  }
+
+  /**
    * Get session file info for a given session key.
    *
    * Returns null if:
@@ -222,6 +260,11 @@ export class SessionFileReader {
     const lines = this.readLastLines(filePath, 20)
     const lastMessage = this.findLastAssistantMessage(lines)
 
+    // Check for terminal error (OpenClaw killed the run via timeout).
+    // The synthetic error toolResult updates the file mtime, so without
+    // this check the session looks "active" and the reaper ignores it.
+    const terminalError = this.hasTerminalError(lines)
+
     // Extract info from last assistant message
     let lastAssistantMessage: SessionFileInfo["lastAssistantMessage"] = null
     let isDone = false
@@ -246,6 +289,11 @@ export class SessionFileReader {
       isDone = msg.stopReason === "stop"
     }
 
+    // A session is done if:
+    // 1. The last assistant message has stopReason === "stop" (normal completion), OR
+    // 2. OpenClaw injected a synthetic error (embedded run timed out — session is dead)
+    isDone = isDone || terminalError
+
     // A session is stale if:
     // 1. The file mtime is older than the threshold AND
     // 2. The session is not done
@@ -257,6 +305,7 @@ export class SessionFileReader {
       fileMtimeMs,
       lastAssistantMessage,
       isDone,
+      isTerminalError: terminalError,
       isStale,
     }
   }

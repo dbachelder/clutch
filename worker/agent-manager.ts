@@ -207,9 +207,18 @@ export class AgentManager {
         reason = "finished"
         replyText = "completed"
       } else if (info.isDone) {
-        // Session has stopReason === "stop" → completed successfully
+        // Session completed — either stopReason === "stop" (normal) or
+        // terminal error (OpenClaw killed the run due to timeout)
         reason = "finished"
-        replyText = info.lastAssistantMessage?.textPreview ?? "completed"
+        if (info.isTerminalError) {
+          replyText = "terminal_error"
+          console.log(
+            `[AgentManager] Session ${handle.sessionKey} ended with terminal error ` +
+            `(OpenClaw embedded run timeout). Will be reaped as finished.`,
+          )
+        } else {
+          replyText = info.lastAssistantMessage?.textPreview ?? "completed"
+        }
         outcomeUsage = info.lastAssistantMessage
           ? {
               inputTokens: info.lastAssistantMessage.usage.input,
