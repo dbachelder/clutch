@@ -101,7 +101,10 @@ export function AgentCard({ session, task, projectSlug }: AgentCardProps) {
   // Calculate metrics
   const metrics = useMemo(() => {
     const createdAt = session.createdAt ? new Date(session.createdAt).getTime() : 0
-    const updatedAt = session.updatedAt ? new Date(session.updatedAt).getTime() : 0
+    // Prefer task's agent_last_active_at (updated every loop cycle from JSONL mtime)
+    // over session.updatedAt (only set when session record itself changes)
+    const updatedAt = task?.agent_last_active_at
+      || (session.updatedAt ? new Date(session.updatedAt).getTime() : 0)
     const totalTokens = session.tokens?.total || 0
     
     // Context window varies by model, use 200k as default
@@ -120,7 +123,7 @@ export function AgentCard({ session, task, projectSlug }: AgentCardProps) {
       contextPercent,
       isStuck: idleMinutes >= 5,
     }
-  }, [session, now])
+  }, [session, task?.agent_last_active_at, now])
   
   // Determine display title
   const displayTitle = useMemo(() => {
