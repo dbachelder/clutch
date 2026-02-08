@@ -1,13 +1,13 @@
 import { v } from "convex/values"
 import { query, mutation } from "./_generated/server"
 import type { GenericMutationCtx } from "convex/server"
+import type { DataModel } from "./_generated/dataModel"
 
 // Query to get active sessions for a project
 export const getActiveSessions = query({
   args: {
     project_id: v.string(),
   },
-  returns: v.array(v.any()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderSessions")
@@ -24,7 +24,6 @@ export const getSession = query({
   args: {
     id: v.string(),
   },
-  returns: v.optional(v.any()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderSessions")
@@ -39,7 +38,6 @@ export const getRecentSessions = query({
     project_id: v.string(),
     limit: v.optional(v.number()),
   },
-  returns: v.array(v.any()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderSessions")
@@ -221,7 +219,7 @@ export const errorSession = mutation({
 
 // Helper to update analytics - uses GenericMutationCtx for proper typing
 async function updateAnalytics(
-  ctx: GenericMutationCtx<Record<string, unknown>>,
+  ctx: GenericMutationCtx<DataModel>,
   projectId: string,
   outcome: "completed" | "cancelled" | "error",
   durationMs: number,
@@ -243,21 +241,21 @@ async function updateAnalytics(
     }
 
     if (outcome === "completed") {
-      updates.sessions_completed = existing.sessions_completed + 1
-      updates.features_created = existing.features_created + 1
-      updates.tasks_generated = existing.tasks_generated + tasksGenerated
+      updates.sessions_completed = (existing.sessions_completed as number) + 1
+      updates.features_created = (existing.features_created as number) + 1
+      updates.tasks_generated = (existing.tasks_generated as number) + tasksGenerated
     } else if (outcome === "cancelled") {
-      updates.sessions_cancelled = existing.sessions_cancelled + 1
+      updates.sessions_cancelled = (existing.sessions_cancelled as number) + 1
     } else if (outcome === "error") {
-      updates.error_count = existing.error_count + 1
+      updates.error_count = (existing.error_count as number) + 1
     }
 
     // Update averages
-    const totalSessions = existing.sessions_started
+    const totalSessions = existing.sessions_started as number
     updates.avg_session_duration_ms = 
-      ((existing.avg_session_duration_ms * (totalSessions - 1)) + durationMs) / totalSessions
+      (((existing.avg_session_duration_ms as number) * (totalSessions - 1)) + durationMs) / totalSessions
     updates.avg_steps_completed = 
-      ((existing.avg_steps_completed * (totalSessions - 1)) + stepsCompleted) / totalSessions
+      (((existing.avg_steps_completed as number) * (totalSessions - 1)) + stepsCompleted) / totalSessions
 
     await ctx.db.patch(existing._id, updates)
   } else {
@@ -286,7 +284,6 @@ export const getAnalytics = query({
     project_id: v.string(),
     period: v.union(v.literal("day"), v.literal("week"), v.literal("month"), v.literal("all_time")),
   },
-  returns: v.optional(v.any()),
   handler: async (ctx, args) => {
     const periodStart = getPeriodStart(args.period)
     const id = `${args.project_id}:${args.period}:${periodStart}`
@@ -304,7 +301,6 @@ export const getAnalyticsHistory = query({
     project_id: v.string(),
     days: v.optional(v.number()),
   },
-  returns: v.array(v.any()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("featureBuilderAnalytics")
