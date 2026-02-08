@@ -530,12 +530,12 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
                     </TabsContent>
 
                     {/* Comments Tab */}
-                    <TabsContent value="comments" className="mt-0">
+                    <TabsContent value="comments" className="mt-0 flex-1 flex flex-col min-h-0">
                       {loadingComments ? (
                         <div className="text-sm text-[var(--text-muted)]">Loading comments...</div>
                       ) : (
-                        <div className="space-y-4">
-                          <div className="max-h-[500px] overflow-y-auto">
+                        <div className="flex-1 flex flex-col min-h-0 gap-4">
+                          <div className="flex-1 overflow-y-auto min-h-0">
                             <CommentThread comments={comments} />
                           </div>
                           <CommentInput onSubmit={handleAddComment} />
@@ -544,12 +544,12 @@ export function TaskModal({ task, open, onOpenChange, onDelete }: TaskModalProps
                     </TabsContent>
 
                     {/* Analysis Tab */}
-                    <TabsContent value="analysis" className="mt-0">
+                    <TabsContent value="analysis" className="mt-0 flex-1 overflow-y-auto min-h-0">
                       <TaskAnalysisContent taskId={task.id} projectSlug={projectSlug} />
                     </TabsContent>
 
                     {/* History Tab */}
-                    <TabsContent value="history" className="mt-0">
+                    <TabsContent value="history" className="mt-0 flex-1 overflow-y-auto min-h-0">
                       <TaskTimeline 
                         events={taskEvents} 
                         isLoading={loadingEvents}
