@@ -57,10 +57,10 @@ interface BlockedTask {
 // ============================================
 
 const MAX_TRIAGE_PER_CYCLE = 2
-const MAX_AUTO_TRIAGE_ATTEMPTS = 5
+const MAX_AUTO_TRIAGE_ATTEMPTS = 7
 
-// Exponential backoff: 5min, 15min, 1hr, 4hr (baseDelay * 2^(attempt-1))
-const BACKOFF_BASE_DELAY_MS = 5 * 60 * 1000 // 5 minutes
+// Exponential backoff: 1min, 2min, 4min, 8min, 16min, 32min, 64min (baseDelay * 2^(attempt-1))
+const BACKOFF_BASE_DELAY_MS = 1 * 60 * 1000 // 1 minute
 
 // ============================================
 // Main Triage Phase
@@ -68,7 +68,7 @@ const BACKOFF_BASE_DELAY_MS = 5 * 60 * 1000 // 5 minutes
 
 /**
  * Calculate the next eligible time for a triage retry using exponential backoff.
- * Backoff schedule: 5min, 15min, 1hr, 4hr
+ * Backoff schedule: 1min, 2min, 4min, 8min, 16min, 32min, 64min (~127 min total)
  */
 function getNextEligibleTime(triageCount: number, triageSentAt: number): number {
   // First attempt is immediate, subsequent use exponential backoff
@@ -461,7 +461,7 @@ async function buildTriageMessage(
   sections.push(`3. **Choose an action** from the options above`)
   sections.push(`4. **If unsure, escalate** — don't guess when the blocker is unclear`)
   sections.push(``)
-  sections.push(`**Note:** This is attempt ${triageCount} of ${maxAttempts}. Retries use exponential backoff (5min → 15min → 1hr → 4hr). After ${maxAttempts} attempts, the task will be auto-escalated to Dan.`)
+  sections.push(`**Note:** This is attempt ${triageCount} of ${maxAttempts}. Retries use exponential backoff (1min → 2min → 4min → 8min → 16min → 32min → 64min). After ${maxAttempts} attempts, the task will be auto-escalated to Dan.`)
 
   return sections.join("\n")
 }
