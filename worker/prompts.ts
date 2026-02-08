@@ -286,7 +286,9 @@ curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type:
 cd ${params.repoDir} && git worktree remove ${params.worktreeDir} --force 2>/dev/null || true
 \`\`\`
 
-**If lint/typecheck fails:** That counts as a review failure. The PR is not ready. Do NOT merge with errors — move to blocked.
+**If lint/typecheck fails:** Check whether the failures are **from this PR's changes** or **pre-existing**.
+- If caused by this PR → reject, move to blocked with specific feedback.
+- If pre-existing (errors in files not touched by this PR) → **merge anyway**. Pre-existing issues are not this PR's problem. They'll get cleaned up over time.
 
 **If issues found:** Leave a PR comment, move ticket to blocked:
 \`\`\`bash
