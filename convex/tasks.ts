@@ -79,6 +79,7 @@ function toTask(doc: {
     auto_triage_count: (doc as { auto_triage_count?: number }).auto_triage_count ?? null,
     escalated: (doc as { escalated?: boolean }).escalated ? 1 : 0,
     escalated_at: (doc as { escalated_at?: number }).escalated_at ?? null,
+    cost_total: (doc as { cost_total?: number }).cost_total ?? null,
     branch: doc.branch ?? null,
     pr_number: doc.pr_number ?? null,
     review_comments: doc.review_comments ?? null,
@@ -1144,6 +1145,40 @@ export const clearAgentActivity = mutation({
       triage_sent_at: undefined,
       updated_at: Date.now(),
     })
+  },
+})
+
+/**
+ * Add cost to a task's cost_total.
+ * Called when an agent completes to accumulate costs across retries.
+ */
+export const addTaskCost = mutation({
+  args: {
+    task_id: v.string(),
+    cost: v.number(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; new_total: number }> => {
+    const task = await ctx.db
+      .query('tasks')
+      .withIndex('by_uuid', (q) => q.eq('id', args.task_id))
+      .unique()
+
+    if (!task) {
+      throw new Error(`Task not found: ${args.task_id}`)
+    }
+
+    const currentTotal = (task as { cost_total?: number }).cost_total ?? 0
+    const newTotal = currentTotal + args.cost
+
+    // Use type assertion to work around generated types
+    const patch: Record<string, unknown> = {
+      updated_at: Date.now(),
+    }
+    ;(patch as { cost_total?: number }).cost_total = newTotal
+
+    await ctx.db.patch(task._id, patch)
+
+    return { success: true, new_total: newTotal }
   },
 })
 

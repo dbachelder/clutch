@@ -83,6 +83,7 @@ export interface Task {
   auto_triage_count: number | null
   escalated: number | null
   escalated_at: number | null
+  cost_total: number | null  // Sum of all agent run costs for this task (USD)
   branch: string | null
   pr_number: number | null
   review_comments: string | null
