@@ -1,41 +1,72 @@
-export type FeatureBuilderStep = 
+export type FeatureBuilderStep =
   | 'overview'
   | 'research'
   | 'requirements'
   | 'design'
   | 'implementation'
+  | 'breakdown'
   | 'testing'
   | 'review'
   | 'launch'
+
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+export type TaskRole = 'pm' | 'dev' | 'research' | 'reviewer'
+
+export interface GeneratedTask {
+  id: string // Temporary ID for editing
+  title: string
+  description: string
+  priority: TaskPriority
+  role: TaskRole
+  phaseIndex: number // Which phase this task belongs to
+  dependsOn: string[] // IDs of tasks this depends on
+}
+
+export interface TaskPhase {
+  index: number
+  name: string
+  description: string
+  tasks: GeneratedTask[]
+}
+
+export interface TaskBreakdown {
+  phases: TaskPhase[]
+  isGenerating: boolean
+  createdTaskIds?: string[] // IDs of tasks after creation
+  error?: string
+}
 
 export interface FeatureBuilderData {
   // Overview step
   name: string
   description: string
   projectId: string
-  
+
   // Research step
   research: ResearchProgress | null
-  
+
   // Requirements step
   requirements: string[]
   acceptanceCriteria: string[]
-  
+
   // Design step
   designNotes: string
   technicalApproach: string
-  
+
   // Implementation step
   implementationPlan: string
   estimatedHours: number
-  
+
+  // Breakdown step
+  taskBreakdown: TaskBreakdown | null
+
   // Testing step
   testStrategy: string
   testCases: string[]
-  
+
   // Review step
   reviewNotes: string
-  
+
   // Launch step
   launchChecklist: string[]
 }
@@ -74,9 +105,10 @@ export const STEPS: StepConfig[] = [
   { id: 'requirements', label: 'Requirements', description: 'Define what needs to be built', index: 2 },
   { id: 'design', label: 'Design', description: 'Technical design and approach', index: 3 },
   { id: 'implementation', label: 'Implementation', description: 'Plan the development work', index: 4 },
-  { id: 'testing', label: 'Testing', description: 'Define test strategy', index: 5 },
-  { id: 'review', label: 'Review', description: 'Final review before creation', index: 6 },
-  { id: 'launch', label: 'Launch', description: 'Create the feature ticket', index: 7 },
+  { id: 'breakdown', label: 'Breakdown', description: 'Convert plan to tasks', index: 5 },
+  { id: 'testing', label: 'Testing', description: 'Define test strategy', index: 6 },
+  { id: 'review', label: 'Review', description: 'Final review before creation', index: 7 },
+  { id: 'launch', label: 'Launch', description: 'Create the feature ticket', index: 8 },
 ]
 
 export const TOTAL_STEPS = STEPS.length
