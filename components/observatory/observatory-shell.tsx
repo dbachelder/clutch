@@ -15,6 +15,7 @@ import { PromptsTab } from './prompts/prompts-tab'
 import { TriageTab } from './triage/triage-tab'
 import { ProjectFilter } from './project-filter'
 import { LiveTab } from './live/live-tab'
+import { AnalyticsTab } from './analytics/analytics-tab'
 
 type TabId = 'live' | 'triage' | 'analytics' | 'models' | 'prompts'
 
@@ -115,10 +116,7 @@ export function ObservatoryShell() {
         {/* Analytics Tab */}
         <TabsContent value="analytics">
           <ObservatoryTab>
-            <ComingSoon
-              title="Analytics"
-              description={`View performance metrics and trends over ${timeRange}.`}
-            />
+            <AnalyticsTab timeRange={timeRange} />
           </ObservatoryTab>
         </TabsContent>
 
