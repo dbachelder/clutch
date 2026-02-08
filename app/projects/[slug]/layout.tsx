@@ -77,9 +77,9 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)]">
+    <div className="min-h-screen bg-[var(--bg-primary)] flex flex-col">
       {/* Header */}
-      <header className="border-b border-[var(--border)] bg-[var(--bg-secondary)] sticky top-0 z-30">
+      <header className="border-b border-[var(--border)] bg-[var(--bg-secondary)] sticky top-0 z-30 flex-shrink-0">
         <div className="container mx-auto px-4 lg:px-6 max-w-7xl">
           {/* Mobile: Ultra-compact header */}
           {isMobile ? (
@@ -191,7 +191,7 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
       </header>
       
       {/* Content */}
-      <main className={`px-4 py-6 overflow-x-hidden ${
+      <main className={`flex-1 flex flex-col min-h-0 px-4 py-6 overflow-x-hidden ${
         activeTab === "board"
           ? "w-full lg:px-6" // Full width on desktop with larger padding
           : "container mx-auto max-w-7xl" // Keep constraint for other pages
