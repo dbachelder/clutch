@@ -41,6 +41,7 @@ import type {
   TaskPriority,
   TaskRole,
 } from "../feature-builder-types"
+import { FeatureBuilderStepHeader } from "../feature-builder-help"
 
 interface TaskBreakdownStepProps {
   data: Pick<FeatureBuilderData, "implementationPlan" | "estimatedHours" | "taskBreakdown" | "projectId">
@@ -784,18 +785,12 @@ export function TaskBreakdownStep({ data, onChange, errors }: TaskBreakdownStepP
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium">Task Breakdown</h3>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">{breakdown.phases.length} phases</Badge>
-            <Badge variant="secondary">{totalTasks} tasks</Badge>
-          </div>
+      <div className="flex items-start justify-between">
+        <FeatureBuilderStepHeader stepId="breakdown" showHelp={false} />
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">{breakdown.phases.length} phases</Badge>
+          <Badge variant="secondary">{totalTasks} tasks</Badge>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Review and edit the generated tasks before creating them. Tasks are organized by phase
-          with automatic dependency chains.
-        </p>
       </div>
 
       <ScrollArea className="h-[400px] pr-4">

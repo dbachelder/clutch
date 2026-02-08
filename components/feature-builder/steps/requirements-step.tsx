@@ -3,6 +3,7 @@
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { FeatureBuilderData } from "../feature-builder-types"
+import { FeatureBuilderStepHeader } from "../feature-builder-help"
 
 interface RequirementsStepProps {
   data: Pick<FeatureBuilderData, "requirements" | "acceptanceCriteria">
@@ -27,12 +28,7 @@ export function RequirementsStep({ data, onChange, errors }: RequirementsStepPro
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <h3 className="text-lg font-medium">Requirements</h3>
-        <p className="text-sm text-muted-foreground">
-          Define what needs to be built. List functional requirements and acceptance criteria.
-        </p>
-      </div>
+      <FeatureBuilderStepHeader stepId="requirements" />
 
       <div className="space-y-4">
         <div className="space-y-2">

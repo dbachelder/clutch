@@ -537,4 +537,62 @@ export default defineSchema({
     .index("by_requirement", ["requirement_id"])
     .index("by_project", ["project_id"])
     .index("by_phase_requirement", ["phase_id", "requirement_id"]),
+
+  // Feature Builder Sessions - track feature builder usage and sessions
+  featureBuilderSessions: defineTable({
+    id: v.string(), // UUID primary key
+    project_id: v.string(), // UUID ref to projects
+    user_id: v.optional(v.string()), // user who started the session
+    status: v.union(
+      v.literal("active"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("error")
+    ),
+    current_step: v.string(), // current step in the flow
+    completed_steps: v.array(v.string()), // steps completed so far
+    feature_data: v.optional(v.string()), // JSON string of FeatureBuilderData
+    result_task_id: v.optional(v.string()), // UUID ref to tasks if feature was created
+    started_at: v.number(),
+    completed_at: v.optional(v.number()),
+    last_activity_at: v.number(),
+    duration_ms: v.optional(v.number()), // total duration
+    // Analytics fields
+    steps_completed_count: v.number(),
+    steps_skipped_count: v.optional(v.number()),
+    research_used: v.boolean(),
+    tasks_generated: v.optional(v.number()),
+  })
+    .index("by_uuid", ["id"])
+    .index("by_project", ["project_id"])
+    .index("by_status", ["status"])
+    .index("by_project_status", ["project_id", "status"])
+    .index("by_started", ["started_at"])
+    .index("by_user", ["user_id"]),
+
+  // Feature Builder Analytics - aggregated metrics
+  featureBuilderAnalytics: defineTable({
+    id: v.string(), // UUID primary key (composite: project_id:period:date)
+    project_id: v.string(), // UUID ref to projects
+    period: v.union(v.literal("day"), v.literal("week"), v.literal("month"), v.literal("all_time")),
+    period_start: v.number(), // start of period
+    // Metrics
+    sessions_started: v.number(),
+    sessions_completed: v.number(),
+    sessions_cancelled: v.number(),
+    avg_session_duration_ms: v.number(),
+    avg_steps_completed: v.number(),
+    features_created: v.number(),
+    tasks_generated: v.number(),
+    // Step completion rates
+    step_completion_rates: v.optional(v.string()), // JSON: { stepId: completionCount }
+    // Errors
+    error_count: v.number(),
+    // Last updated
+    updated_at: v.number(),
+  })
+    .index("by_uuid", ["id"])
+    .index("by_project", ["project_id"])
+    .index("by_project_period", ["project_id", "period", "period_start"])
+    .index("by_period", ["period", "period_start"]),
 })

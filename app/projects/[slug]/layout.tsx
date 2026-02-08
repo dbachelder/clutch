@@ -9,6 +9,7 @@ import { MobileProjectSwitcher } from "@/components/layout/mobile-project-switch
 import { DesktopProjectSwitcher } from "@/components/layout/desktop-project-switcher"
 import { useMobileDetection } from "@/components/board/use-mobile-detection"
 import { WorkLoopHeaderStatus } from "@/components/work-loop/work-loop-header-status"
+import { FeatureBuilderButton } from "@/components/feature-builder"
 
 type LayoutProps = {
   children: React.ReactNode
@@ -130,20 +131,26 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                 </nav>
               </div>
 
-              {/* Work loop status row (mobile only, if enabled) */}
-              {project.work_loop_enabled === 1 && (
-                <div className="flex justify-end">
+              {/* Work loop status + Feature Builder button (mobile) */}
+              <div className="flex items-center justify-between gap-2">
+                {project.work_loop_enabled === 1 && (
                   <WorkLoopHeaderStatus
                     projectId={project.id}
                     workLoopEnabled={true}
                   />
-                </div>
-              )}
+                )}
+                <FeatureBuilderButton
+                  defaultProjectId={project.id}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-8 ml-auto"
+                />
+              </div>
             </div>
           ) : (
             /* Desktop: Original layout */
             <>
-              {/* Top row: back + project name + work loop status */}
+              {/* Top row: back + project name + feature builder + work loop status */}
               <div className="py-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <Link
@@ -157,10 +164,17 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                     projects={projects}
                   />
                 </div>
-                <WorkLoopHeaderStatus
-                  projectId={project.id}
-                  workLoopEnabled={project.work_loop_enabled === 1}
-                />
+                <div className="flex items-center gap-3">
+                  <FeatureBuilderButton
+                    defaultProjectId={project.id}
+                    variant="outline"
+                    size="sm"
+                  />
+                  <WorkLoopHeaderStatus
+                    projectId={project.id}
+                    workLoopEnabled={project.work_loop_enabled === 1}
+                  />
+                </div>
               </div>
               
               {/* Tab navigation */}
