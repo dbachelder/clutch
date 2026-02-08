@@ -2,9 +2,12 @@
 
 import { useEffect, useState, use } from "react"
 import { useSearchParams } from "next/navigation"
+import { Sparkles } from "lucide-react"
 import { Board } from "@/components/board/board"
 import { CreateTaskModal } from "@/components/board/create-task-modal"
+import { FeatureBuilderModal } from "@/components/board/feature-builder-modal"
 import { TaskModal } from "@/components/board/task-modal"
+import { Button } from "@/components/ui/button"
 import type { Task, TaskStatus, Project } from "@/lib/types"
 
 type PageProps = {
@@ -19,6 +22,7 @@ export default function BoardPage({ params }: PageProps) {
   const [project, setProject] = useState<Project | null>(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [createModalStatus, setCreateModalStatus] = useState<TaskStatus>("backlog")
+  const [featureBuilderOpen, setFeatureBuilderOpen] = useState(false)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
 
@@ -70,8 +74,24 @@ export default function BoardPage({ params }: PageProps) {
     )
   }
 
+  const handleTasksCreated = (count: number) => {
+    console.log(`Created ${count} tasks via Feature Builder`)
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {/* Feature Builder button */}
+      <div className="flex justify-end mb-4">
+        <Button
+          onClick={() => setFeatureBuilderOpen(true)}
+          variant="outline"
+          className="flex items-center gap-2 border-[var(--accent-blue)]/30 hover:border-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10"
+        >
+          <Sparkles className="h-4 w-4 text-[var(--accent-blue)]" />
+          Feature Builder
+        </Button>
+      </div>
+
       <Board
         projectId={project.id}
         projectSlug={slug}
@@ -84,6 +104,13 @@ export default function BoardPage({ params }: PageProps) {
         onOpenChange={setCreateModalOpen}
         projectId={project.id}
         initialStatus={createModalStatus}
+      />
+
+      <FeatureBuilderModal
+        projectId={project.id}
+        open={featureBuilderOpen}
+        onOpenChange={setFeatureBuilderOpen}
+        onTasksCreated={handleTasksCreated}
       />
       
       <TaskModal
