@@ -104,7 +104,7 @@ export const get = query({
 
     return {
       id: session.id,
-      session_key: session.session_key,
+      session_key: session.session_key ?? session.id ?? "",
       session_id: session.session_id,
       session_type: session.session_type as SessionType,
       model: session.model ?? null,
@@ -153,7 +153,7 @@ export const getByTask = query({
 
     return sessions.map((s) => ({
       id: s.id,
-      session_key: s.session_key,
+      session_key: s.session_key ?? s.id ?? "",
       session_id: s.session_id,
       session_type: s.session_type as SessionType,
       model: s.model ?? null,
@@ -202,7 +202,7 @@ export const getForProject = query({
 
     return sessions.map((s) => ({
       id: s.id,
-      session_key: s.session_key,
+      session_key: s.session_key ?? s.id ?? "",
       session_id: s.session_id,
       session_type: s.session_type as SessionType,
       model: s.model ?? null,
@@ -289,7 +289,7 @@ export const list = query({
 
     return sessions.map((s) => ({
       id: s.id,
-      session_key: s.session_key,
+      session_key: s.session_key ?? s.id ?? "",
       session_id: s.session_id,
       session_type: s.session_type as SessionType,
       model: s.model ?? null,
@@ -643,11 +643,11 @@ export const removeStale = mutation({
     if (!args.dryRun) {
       for (const session of staleSessions) {
         await ctx.db.delete(session._id)
-        sessionKeys.push(session.session_key)
+        sessionKeys.push(session.session_key ?? session.id ?? "")
       }
     } else {
       for (const session of staleSessions) {
-        sessionKeys.push(session.session_key)
+        sessionKeys.push(session.session_key ?? session.id ?? "")
       }
     }
 
