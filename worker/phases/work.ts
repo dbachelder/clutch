@@ -69,8 +69,10 @@ function sortTasks(tasks: Task[]): Task[] {
 // ============================================
 
 const ROLE_MODEL_MAP: Record<string, string> = {
-  pm: "sonnet",
-  research: "sonnet",
+  // Use OpenAI models for non-coding roles to avoid Anthropic rate limits.
+  // Keep Anthropic capacity for Ada + Penny.
+  pm: "gpt",
+  research: "gpt",
   reviewer: "moonshot/kimi-for-coding",
   dev: "moonshot/kimi-for-coding",
 }

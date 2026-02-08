@@ -87,12 +87,12 @@ describe("ChildManager", () => {
         projectId: "proj-456",
         role: "dev",
         message: "Do work",
-        model: "claude-sonnet",
+        model: "gpt",
       })
 
       expect(mockSpawnFn).toHaveBeenCalledWith(
         "openclaw",
-        ["chat", "--message", "Do work", "--model", "claude-sonnet"],
+        ["chat", "--message", "Do work", "--model", "gpt"],
         expect.any(Object)
       )
     })
