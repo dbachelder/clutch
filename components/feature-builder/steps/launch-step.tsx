@@ -4,6 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Rocket, CheckCircle2 } from "lucide-react"
 import type { FeatureBuilderData } from "../feature-builder-types"
+import { FeatureBuilderStepHeader } from "../feature-builder-help"
 
 interface LaunchStepProps {
   data: Pick<FeatureBuilderData, "launchChecklist">
@@ -36,12 +37,7 @@ export function LaunchStep({ data, fullData, onChange, isSubmitting }: LaunchSte
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <h3 className="text-lg font-medium">Launch</h3>
-        <p className="text-sm text-muted-foreground">
-          Final checklist before creating the feature ticket.
-        </p>
-      </div>
+      <FeatureBuilderStepHeader stepId="launch" />
 
       {/* Feature summary card */}
       <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">

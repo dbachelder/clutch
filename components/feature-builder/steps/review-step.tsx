@@ -3,6 +3,7 @@
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { FeatureBuilderData } from "../feature-builder-types"
+import { FeatureBuilderStepHeader } from "../feature-builder-help"
 
 interface ReviewStepProps {
   data: Pick<FeatureBuilderData, "reviewNotes">
@@ -13,12 +14,7 @@ interface ReviewStepProps {
 export function ReviewStep({ data, fullData, onChange }: ReviewStepProps) {
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <h3 className="text-lg font-medium">Review</h3>
-        <p className="text-sm text-muted-foreground">
-          Review your feature specification before creating the ticket.
-        </p>
-      </div>
+      <FeatureBuilderStepHeader stepId="review" />
 
       {/* Summary preview */}
       <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
