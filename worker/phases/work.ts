@@ -69,8 +69,8 @@ function sortTasks(tasks: Task[]): Task[] {
 // ============================================
 
 const ROLE_MODEL_MAP: Record<string, string> = {
-  pm: "sonnet",
-  research: "sonnet",
+  pm: "gpt",
+  research: "gpt",
   reviewer: "moonshot/kimi-for-coding",
   dev: "moonshot/kimi-for-coding",
 }

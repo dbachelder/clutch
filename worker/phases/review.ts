@@ -70,7 +70,7 @@ interface PRInfo {
  *    c. Check if reviewer child already running
  *    d. If PR exists and no reviewer running → spawn reviewer
  * 3. Build reviewer prompt using role template
- * 4. Spawn via ChildManager with role="reviewer", model="sonnet"
+ * 4. Spawn via ChildManager with role="reviewer", model="gpt"
  */
 export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
   const { convex, agents, config, cycle, project } = ctx
@@ -411,7 +411,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
       projectId: project.id,
       role: "reviewer",
       message: prompt,
-      model: "sonnet",
+      model: "gpt",
       timeoutSeconds: 600,
     })
 
@@ -426,7 +426,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
       await convex.mutation(api.task_events.logAgentAssigned, {
         taskId: task.id,
         sessionKey: handle.sessionKey,
-        model: "sonnet",
+        model: "gpt",
         role: "reviewer",
       })
     } catch (updateError) {
