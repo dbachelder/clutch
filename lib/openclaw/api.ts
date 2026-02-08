@@ -118,7 +118,7 @@ export async function getSessionPreview(
     previews: Array<{
       key: string;
       status: 'ok' | 'empty' | 'missing' | 'error';
-      items: Array<{ role: string; text: string; model?: string }>;
+      items: Array<{ role: string; text: string; model?: string; timestamp?: number }>;
     }>;
   };
 
@@ -141,11 +141,15 @@ export async function getSessionPreview(
           item.role === 'user' || item.role === 'assistant' || item.role === 'system'
             ? item.role
             : 'assistant';
+        // Use item timestamp if available, otherwise fall back to response timestamp
+        const timestamp = item.timestamp
+          ? new Date(item.timestamp).toISOString()
+          : new Date(previewResponse.ts).toISOString();
         return {
           id: `${sessionKey}-msg-${index}`,
           role,
           content: item.text,
-          timestamp: new Date().toISOString(),
+          timestamp,
         };
       });
 

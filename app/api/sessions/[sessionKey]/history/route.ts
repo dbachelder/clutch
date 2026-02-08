@@ -7,25 +7,91 @@ import { homedir } from "os"
 type RouteParams = { params: Promise<{ sessionKey: string }> }
 
 /**
+ * Session entry from sessions.json mapping file
+ */
+interface SessionEntry {
+  sessionId: string
+  updatedAt: number
+  systemSent?: boolean
+}
+
+/**
+ * JSONL record types
+ */
+interface JSONLRecord {
+  type: string
+  timestamp?: string
+  id?: string
+  version?: number
+  cwd?: string
+  model?: string
+  provider?: string
+  content?: Array<{ type: string; text?: string }> | string
+  message?: {
+    role: string
+    content: Array<{ type: string; text?: string }> | string
+  }
+  toolName?: string
+  toolCallId?: string
+  result?: unknown
+  stopReason?: string
+  tokensIn?: number
+  tokensOut?: number
+}
+
+/**
+ * Resolve session key to session UUID via sessions.json
+ */
+async function resolveSessionUuid(sessionKey: string): Promise<string | null> {
+  const sessionsJsonPath = join(homedir(), ".openclaw", "agents", "main", "sessions", "sessions.json")
+  
+  if (!existsSync(sessionsJsonPath)) {
+    return null
+  }
+  
+  try {
+    const content = await readFile(sessionsJsonPath, "utf-8")
+    const sessions = JSON.parse(content) as Record<string, SessionEntry>
+    const entry = sessions[sessionKey]
+    return entry?.sessionId || null
+  } catch {
+    return null
+  }
+}
+
+/**
  * GET /api/sessions/{sessionKey}/history
  * 
  * Returns the full session history from the JSONL file.
- * Falls back to gateway RPC if file doesn't exist.
+ * The session key is resolved to a UUID via sessions.json.
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { sessionKey: encodedSessionKey } = await params
   const sessionKey = decodeURIComponent(encodedSessionKey)
   
-  // JSONL file path
-  const jsonlPath = join(homedir(), ".openclaw", "sessions", `${sessionKey}.jsonl`)
+  // Resolve session key to UUID
+  const sessionUuid = await resolveSessionUuid(sessionKey)
+  if (!sessionUuid) {
+    return NextResponse.json(
+      { 
+        error: "Session not found",
+        sessionKey,
+      },
+      { status: 404 }
+    )
+  }
+  
+  // JSONL file path uses UUID, not session key
+  const jsonlPath = join(homedir(), ".openclaw", "agents", "main", "sessions", `${sessionUuid}.jsonl`)
   
   try {
     // Check if file exists
     if (!existsSync(jsonlPath)) {
       return NextResponse.json(
         { 
-          error: "Session not found",
+          error: "Session file not found",
           sessionKey,
+          sessionUuid,
           path: jsonlPath
         },
         { status: 404 }
@@ -47,8 +113,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     
     let sessionInfo: {
       model?: string
-      startTime?: number
-      endTime?: number
+      startTime?: string
+      endTime?: string
       stopReason?: string
       tokensIn?: number
       tokensOut?: number
@@ -56,33 +122,81 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     
     for (const line of lines) {
       try {
-        const record = JSON.parse(line)
+        const record = JSON.parse(line) as JSONLRecord
         
-        // Handle different record types
-        if (record.type === "session_start") {
-          sessionInfo = {
-            ...sessionInfo,
-            model: record.model,
-            startTime: record.timestamp,
-          }
-        } else if (record.type === "session_end") {
-          sessionInfo = {
-            ...sessionInfo,
-            endTime: record.timestamp,
-            stopReason: record.stopReason,
-            tokensIn: record.tokensIn,
-            tokensOut: record.tokensOut,
-          }
-        } else if (record.role) {
-          // Message record
-          messages.push({
-            role: record.role,
-            content: record.content || "",
-            timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : undefined,
-            tool_calls: record.tool_calls,
-            tool_results: record.tool_results,
-            model: record.model,
-          })
+        // Handle different record types based on 'type' field
+        switch (record.type) {
+          case "session":
+            sessionInfo = {
+              ...sessionInfo,
+              startTime: record.timestamp,
+            }
+            break
+            
+          case "model_change":
+            if (record.model) {
+              sessionInfo.model = record.model
+            }
+            break
+            
+          case "human":
+            messages.push({
+              role: "user",
+              content: extractContentText(record.content) || "",
+              timestamp: record.timestamp,
+            })
+            break
+            
+          case "assistant":
+            messages.push({
+              role: "assistant",
+              content: extractContentText(record.content) || "",
+              timestamp: record.timestamp,
+              model: record.model,
+            })
+            break
+            
+          case "message":
+            // Handle nested message format
+            if (record.message) {
+              const role = record.message.role === "user" ? "user" : 
+                          record.message.role === "assistant" ? "assistant" : "system"
+              messages.push({
+                role,
+                content: extractContentText(record.message.content) || "",
+                timestamp: record.timestamp,
+                model: record.model,
+              })
+            }
+            break
+            
+          case "tool_use":
+            messages.push({
+              role: "tool_use",
+              content: `Using tool: ${record.toolName || "unknown"}`,
+              timestamp: record.timestamp,
+            })
+            break
+            
+          case "tool_result":
+            messages.push({
+              role: "tool_result",
+              content: `Tool result: ${record.toolCallId || "unknown"}`,
+              timestamp: record.timestamp,
+            })
+            break
+            
+          case "custom":
+            // Skip custom records (model snapshots, etc.)
+            break
+            
+          case "thinking_level_change":
+            // Skip thinking level changes
+            break
+            
+          default:
+            // Unknown type - skip
+            break
         }
       } catch (parseError) {
         // Skip malformed lines
@@ -92,6 +206,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     
     return NextResponse.json({
       sessionKey,
+      sessionUuid,
       messages,
       ...sessionInfo,
     })
@@ -106,4 +221,34 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       { status: 500 }
     )
   }
+}
+
+/**
+ * Extract text content from various content formats
+ */
+function extractContentText(content: JSONLRecord["content"]): string {
+  if (!content) {
+    return ""
+  }
+  
+  if (typeof content === "string") {
+    return content
+  }
+  
+  if (Array.isArray(content)) {
+    return content
+      .map(entry => {
+        if (entry.type === "text" && entry.text) {
+          return entry.text
+        }
+        if (entry.type === "thinking" && entry.text) {
+          return `[Thinking: ${entry.text.substring(0, 200)}...]`
+        }
+        return ""
+      })
+      .filter(Boolean)
+      .join("\n")
+  }
+  
+  return ""
 }
