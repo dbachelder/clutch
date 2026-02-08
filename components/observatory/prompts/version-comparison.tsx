@@ -241,6 +241,8 @@ function computeStats(analyses: AnalysisRecord[], versionId: string): VersionSta
   const failureModes = new Map<string, number>()
   for (const a of filtered) {
     for (const mode of a.failure_modes) {
+      // Skip invalid bracket characters that may be stored due to data parsing issues
+      if (mode === '[' || mode === ']') continue
       failureModes.set(mode, (failureModes.get(mode) ?? 0) + 1)
     }
   }
