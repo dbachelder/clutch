@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ObservatoryTab, ComingSoon } from './observatory-tab'
 import { TimeRangeToggle, TimeRange } from './time-range-toggle'
 import { TriageTab } from './triage/triage-tab'
+import { AnalyticsTab } from './analytics/analytics-tab'
 
 type TabId = 'live' | 'triage' | 'analytics' | 'models' | 'prompts'
 
@@ -101,10 +102,7 @@ export function ObservatoryShell() {
         {/* Analytics Tab */}
         <TabsContent value="analytics">
           <ObservatoryTab>
-            <ComingSoon
-              title="Analytics"
-              description={`View performance metrics and trends over ${timeRange}.`}
-            />
+            <AnalyticsTab timeRange={timeRange} />
           </ObservatoryTab>
         </TabsContent>
 
