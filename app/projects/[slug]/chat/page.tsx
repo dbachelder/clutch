@@ -73,16 +73,16 @@ export default function ChatPage({ params }: PageProps) {
   }, [activeChat?.id])
 
   // Generate session key based on project and active chat
-  // Format: trap:{projectSlug}:{chatId} - includes project for context
+  // Format: clutch:{projectSlug}:{chatId} - includes project for context
   // Use stored session_key if available, otherwise generate dynamically
   const sessionKey = activeChat
-    ? (activeChat.session_key || `trap:${slug}:${activeChat.id}`)
+    ? (activeChat.session_key || `clutch:${slug}:${activeChat.id}`)
     : "main"
 
   // ==========================================================================
   // OpenClaw Integration (HTTP-only)
   // - HTTP POST for sending messages (reliable, works during gateway restarts)
-  // - Message persistence handled server-side by trap-channel plugin
+  // - Message persistence handled server-side by clutch-channel plugin
   // - Convex reactive queries update the UI automatically
   // ==========================================================================
 
@@ -286,7 +286,7 @@ export default function ChatPage({ params }: PageProps) {
     }
 
     // Send to OpenClaw via HTTP POST
-    // Response persistence is handled by the trap-channel plugin (agent_end hook)
+    // Response persistence is handled by the clutch-channel plugin (agent_end hook)
     try {
       await sendChatMessage(sessionKey, openClawMessage)
     } catch (error) {

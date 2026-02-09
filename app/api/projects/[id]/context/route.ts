@@ -32,7 +32,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       context,
       formatted,
-      sessionKeyPrefix: `trap:${project.slug}`,
+      sessionKeyPrefix: `clutch:${project.slug}`,
+
     })
   } catch (error) {
     console.error("[Projects API] Error fetching project context:", error)

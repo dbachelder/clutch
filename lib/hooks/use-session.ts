@@ -12,7 +12,7 @@ export type { Session }
  * Returns the session data updated in real-time whenever the session
  * is updated in Convex.
  *
- * @param sessionKey - The session key to subscribe to (e.g., "trap:project:chat123")
+ * @param sessionKey - The session key to subscribe to (e.g., "clutch:project:chat123")
  */
 export function useSession(sessionKey: string): {
   session: Session | null

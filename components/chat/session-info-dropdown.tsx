@@ -202,7 +202,7 @@ export function SessionInfoDropdown({
 
   // Extract short session ID for display
   const getShortSessionId = (key: string) => {
-    if (key.startsWith('trap:')) {
+    if (key.startsWith('clutch:')) {
       const parts = key.split(':')
       const lastPart = parts[parts.length - 1]
       return lastPart.substring(0, 8)

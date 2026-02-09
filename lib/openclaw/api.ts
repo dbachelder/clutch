@@ -263,7 +263,7 @@ export interface ChatSendResult {
 /**
  * Send a chat message to a session.
  *
- * @param sessionKey - The target session key (e.g., 'agent:main', 'trap:myproject:chat123')
+ * @param sessionKey - The target session key (e.g., 'agent:main', 'clutch:myproject:chat123')
  * @param message - The message content
  * @returns Promise with runId and status
  */

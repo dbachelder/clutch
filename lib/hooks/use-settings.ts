@@ -10,7 +10,7 @@ interface ChatSettings {
 const DEFAULT_SETTINGS: ChatSettings = {
 }
 
-const SETTINGS_KEY = 'trap-chat-settings'
+const SETTINGS_KEY = 'clutch-chat-settings'
 
 function getInitialSettings(): ChatSettings {
   if (typeof window === 'undefined') {

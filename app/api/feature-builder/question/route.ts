@@ -158,7 +158,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const agentMessage = buildAgentMessage(featureDescription, conversation, projectId)
 
     // Spawn PM agent via OpenClaw with Kimi model
-    const sessionKey = `trap:feature-builder:${Date.now()}`
+    const sessionKey = `clutch:feature-builder:${Date.now()}`
     
     try {
       const result = await openclawRpc<{

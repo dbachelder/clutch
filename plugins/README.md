@@ -1,10 +1,10 @@
-# Trap OpenClaw Plugins
+# Clutch OpenClaw Plugins
 
-OpenClaw plugins that enable AI agents to communicate with The Trap.
+OpenClaw plugins that enable AI agents to communicate with OpenClutch.
 
 ## Available Plugins
 
-### trap-signal.ts
+### clutch-signal.ts
 
 Provides two tools for agent-to-coordinator communication:
 
@@ -22,7 +22,7 @@ Provides two tools for agent-to-coordinator communication:
 mkdir -p ~/.openclaw/extensions
 
 # Symlink the plugin
-ln -s /path/to/trap/plugins/trap-signal.ts ~/.openclaw/extensions/trap-signal.ts
+ln -s /path/to/clutch/plugins/clutch-signal.ts ~/.openclaw/extensions/clutch-signal.ts
 
 # Restart OpenClaw gateway
 openclaw gateway restart
@@ -34,22 +34,22 @@ Add to your `openclaw.json`:
 
 ```json
 {
-  "plugins": ["/path/to/trap/plugins/trap-signal.ts"]
+  "plugins": ["/path/to/clutch/plugins/clutch-signal.ts"]
 }
 ```
 
 ### Option 3: Copy to extensions
 
 ```bash
-cp /path/to/trap/plugins/trap-signal.ts ~/.openclaw/extensions/
+cp /path/to/clutch/plugins/clutch-signal.ts ~/.openclaw/extensions/
 ```
 
 ## Configuration
 
-Set the `TRAP_URL` environment variable to point to your Trap instance:
+Set the `CLUTCH_URL` environment variable to point to your OpenClutch instance:
 
 ```bash
-export TRAP_URL=http://localhost:3002
+export CLUTCH_URL=http://localhost:3002
 ```
 
 Or add to your shell profile / OpenClaw environment config.
@@ -74,7 +74,7 @@ signal({
 
 // Report a blocker
 signal({
-  taskId: "task-123", 
+  taskId: "task-123",
   kind: "blocker",
   message: "CI is failing on unrelated test, need help"
 })
@@ -90,7 +90,7 @@ signal({
 // FYI (non-blocking)
 signal({
   taskId: "task-123",
-  kind: "fyi", 
+  kind: "fyi",
   message: "Refactored auth module while fixing the bug"
 })
 ```
@@ -131,8 +131,8 @@ mark_complete({
 
 ## How It Works
 
-1. Agent calls `signal()` → creates record in Trap database
-2. Trap's gate API returns `needsAttention: true`
+1. Agent calls `signal()` → creates record in the database
+2. OpenClutch gate API returns `needsAttention: true`
 3. Coordinator (Ada) wakes up, sees pending signal
 4. Coordinator responds via `/api/signal/:id/respond`
 5. Response is routed back to agent's session via `sessionKey`
@@ -144,7 +144,7 @@ The `sessionKey` and `agentId` are automatically injected by OpenClaw — agents
 
 To modify the plugin:
 
-1. Edit `plugins/trap-signal.ts`
+1. Edit `plugins/clutch-signal.ts`
 2. Gateway hot-reloads on save (in dev mode)
 3. Or restart gateway: `openclaw gateway restart`
 
@@ -160,8 +160,8 @@ ls -la ~/.openclaw/extensions/
 ```
 
 **Connection refused:**
-- Verify Trap is running: `curl http://localhost:3002/api/gate`
-- Check `TRAP_URL` is set correctly
+- Verify the app is running: `curl http://localhost:3002/api/gate`
+- Check `CLUTCH_URL` is set correctly
 
 **Tool not available:**
 - Restart gateway after installing plugin

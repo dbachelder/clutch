@@ -80,18 +80,18 @@ function detectSessionType(sessionKey: string): SessionType {
     return "main"
   }
 
-  // agent:main:trap:{slug}:{chatId} → type chat
-  if (sessionKey.match(/^agent:main:trap:[^:]+:/)) {
+  // agent:main:clutch:{slug}:{chatId} → type chat
+  if (sessionKey.match(/^agent:main:clutch:[^:]+:/)) {
     return "chat"
   }
 
-  // agent:main:cron:*:trap-{taskIdPrefix} → type agent (work loop agent)
-  if (sessionKey.match(/^agent:main:cron:.*:trap-/)) {
+  // agent:main:cron:*:clutch-{taskIdPrefix} → type agent (work loop agent)
+  if (sessionKey.match(/^agent:main:cron:.*:clutch-/)) {
     return "agent"
   }
 
-  // agent:main:cron:*:trap-pr-review-* → type agent (reviewer)
-  if (sessionKey.match(/^agent:main:cron:.*:trap-pr-review-/)) {
+  // agent:main:cron:*:clutch-pr-review-* → type agent (reviewer)
+  if (sessionKey.match(/^agent:main:cron:.*:clutch-pr-review-/)) {
     return "agent"
   }
 
@@ -108,8 +108,8 @@ function detectSessionType(sessionKey: string): SessionType {
  * Extract project slug from session key (for chat/agent types).
  */
 function extractProjectSlug(sessionKey: string): string | undefined {
-  // agent:main:trap:{slug}:{chatId}
-  const match = sessionKey.match(/^agent:main:trap:([^:]+):/)
+  // agent:main:clutch:{slug}:{chatId}
+  const match = sessionKey.match(/^agent:main:clutch:([^:]+):/)
   if (match) {
     return match[1]
   }
@@ -120,14 +120,14 @@ function extractProjectSlug(sessionKey: string): string | undefined {
  * Extract task ID from session key (for agent types).
  */
 function extractTaskId(sessionKey: string): string | undefined {
-  // agent:main:cron:*:trap-{taskId}
-  const match = sessionKey.match(/:trap-([a-f0-9-]+)$/)
+  // agent:main:cron:*:clutch-{taskId}
+  const match = sessionKey.match(/:clutch-([a-f0-9-]+)$/)
   if (match) {
     return match[1]
   }
 
-  // agent:main:cron:*:trap-pr-review-{taskId}
-  const reviewMatch = sessionKey.match(/:trap-pr-review-([a-f0-9-]+)$/)
+  // agent:main:cron:*:clutch-pr-review-{taskId}
+  const reviewMatch = sessionKey.match(/:clutch-pr-review-([a-f0-9-]+)$/)
   if (reviewMatch) {
     return reviewMatch[1]
   }

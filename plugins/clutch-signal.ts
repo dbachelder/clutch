@@ -1,15 +1,15 @@
 /**
- * Trap Signal Plugin for OpenClaw
- * 
+ * Clutch Signal Plugin for OpenClaw
+ *
  * Provides the `signal` tool for agent-to-coordinator communication.
  * Agents can request input, escalate issues, or send FYI notifications.
- * 
+ *
  * Installation:
- *   1. Symlink: ln -s /path/to/trap/plugins/trap-signal.ts ~/.openclaw/extensions/
- *   2. Or add to openclaw.json: { "plugins": ["/path/to/trap/plugins/trap-signal.ts"] }
- * 
+ *   1. Symlink: ln -s /path/to/clutch/plugins/clutch-signal.ts ~/.openclaw/extensions/
+ *   2. Or add to openclaw.json: { "plugins": ["/path/to/clutch/plugins/clutch-signal.ts"] }
+ *
  * Configuration:
- *   Set TRAP_URL environment variable (default: http://localhost:3002)
+ *   Set CLUTCH_URL environment variable (default: http://localhost:3002)
  */
 
 // Types from OpenClaw (declared here since module isn't available at build time)
@@ -26,11 +26,14 @@ type OpenClawPluginTool = {
 };
 
 type OpenClawPluginApi = {
-  registerTool: (tool: OpenClawPluginTool | ((ctx: OpenClawPluginToolContext) => OpenClawPluginTool), opts?: { optional?: boolean }) => void;
+  registerTool: (
+    tool: OpenClawPluginTool | ((ctx: OpenClawPluginToolContext) => OpenClawPluginTool),
+    opts?: { optional?: boolean }
+  ) => void;
   logger: { info: (msg: string) => void };
 };
 
-const TRAP_URL = process.env.TRAP_URL || "http://localhost:3002";
+const CLUTCH_URL = process.env.CLUTCH_URL || "http://localhost:3002";
 
 interface SignalParams {
   taskId: string;
@@ -61,7 +64,7 @@ Use this when you need input, are blocked, or want to escalate an issue.
 
 Kinds:
 - question: Ask a question, wait for answer before continuing
-- blocker: Report something blocking progress, wait for resolution  
+- blocker: Report something blocking progress, wait for resolution
 - alert: Flag an issue for attention, wait for acknowledgment
 - fyi: Informational only, continue without waiting
 
@@ -79,7 +82,8 @@ Examples:
           kind: {
             type: "string",
             enum: ["question", "blocker", "alert", "fyi"],
-            description: "Type of signal: question (need answer), blocker (stuck), alert (attention needed), fyi (informational)",
+            description:
+              "Type of signal: question (need answer), blocker (stuck), alert (attention needed), fyi (informational)",
           },
           message: {
             type: "string",
@@ -95,7 +99,7 @@ Examples:
       },
       execute: async (params: SignalParams): Promise<SignalResponse | { error: string }> => {
         try {
-          const response = await fetch(`${TRAP_URL}/api/signal`, {
+          const response = await fetch(`${CLUTCH_URL}/api/signal`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -113,13 +117,14 @@ Examples:
             return { error: error.error || `HTTP ${response.status}` };
           }
 
-          const result = await response.json() as SignalResponse;
-          
+          const result = (await response.json()) as SignalResponse;
+
           // Return guidance based on blocking status
           if (result.blocking) {
             return {
               ...result,
-              _guidance: "Signal sent. WAIT for coordinator response before continuing. The response will arrive as a message in this session.",
+              _guidance:
+                "Signal sent. WAIT for coordinator response before continuing. The response will arrive as a message in this session.",
             } as SignalResponse & { _guidance: string };
           } else {
             return {
@@ -179,7 +184,7 @@ mark_complete({
       },
       execute: async (params: { taskId: string; summary: string; prUrl?: string; notes?: string }) => {
         try {
-          const response = await fetch(`${TRAP_URL}/api/tasks/${params.taskId}/complete`, {
+          const response = await fetch(`${CLUTCH_URL}/api/tasks/${params.taskId}/complete`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -199,9 +204,10 @@ mark_complete({
           return {
             success: true,
             status: result.task?.status,
-            message: result.task?.status === "review" 
-              ? "Task marked complete and moved to review (PR submitted)."
-              : "Task marked complete and moved to done.",
+            message:
+              result.task?.status === "review"
+                ? "Task marked complete and moved to review (PR submitted)."
+                : "Task marked complete and moved to done.",
           };
         } catch (err) {
           return {
@@ -213,5 +219,5 @@ mark_complete({
     { optional: true }
   );
 
-  api.logger.info(`Trap plugin loaded (TRAP_URL=${TRAP_URL})`);
+  api.logger.info(`Clutch plugin loaded (CLUTCH_URL=${CLUTCH_URL})`);
 }

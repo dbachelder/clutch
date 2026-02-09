@@ -76,5 +76,5 @@ ${task.description || "_No description provided_"}
  * Build a task label for session tracking
  */
 export function buildTaskLabel(task: Task): string {
-  return `trap-task-${task.id.slice(0, 8)}`
+  return `clutch-task-${task.id.slice(0, 8)}`
 }
