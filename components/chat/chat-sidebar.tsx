@@ -78,6 +78,20 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     return allTasks.filter((t) => t.agent_session_key && sessionTaskIds.has(t.id))
   }, [agentSessions, allTasks])
 
+  // Create a lookup map of task_id -> session for quick access
+  const sessionByTaskId = useMemo(() => {
+    if (!agentSessions) return new Map()
+
+    const map = new Map()
+    for (const session of agentSessions) {
+      if (session.task_id && !map.has(session.task_id)) {
+        // Keep the first (most recent) session for each task
+        map.set(session.task_id, session)
+      }
+    }
+    return map
+  }, [agentSessions])
+
   // Section expansion state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     in_review: true,
@@ -692,7 +706,11 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
                             </p>
                             {/* Agent status line for in_progress and in_review */}
                             {(section.status === "in_progress" || section.status === "in_review") && (
-                              <AgentStatus task={task} variant="compact" />
+                              <AgentStatus
+                                task={task}
+                                session={sessionByTaskId.get(task.id)}
+                                variant="compact"
+                              />
                             )}
                             {/* Show duration only for in_progress without agent */}
                             {section.status === "in_progress" && !hasAgent && (
