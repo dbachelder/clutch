@@ -167,10 +167,9 @@ ${params.taskDescription}${commentsSection}
 **Review steps:**
 1. Read the ticket description above
 2. Check the diff: \`gh pr diff ${prNumber}\`
-3. Run typecheck: \`cd ${params.worktreeDir} && pnpm install && pnpm typecheck\`
-4. Run lint: \`cd ${params.worktreeDir} && pnpm lint\`
-5. If all checks pass → MERGE: \`gh pr merge ${prNumber} --squash --delete-branch\`
-6. If issues found → leave review comment with actionable feedback
+3. Install deps + run verification commands from AGENTS.md: \`cd ${params.worktreeDir}\` then follow the project's build/lint/typecheck instructions
+4. If all checks pass → MERGE: \`gh pr merge ${prNumber} --squash --delete-branch\`
+5. If issues found → leave review comment with actionable feedback
 
 You do NOT have browser access. If UI changes need visual verification, note it in your review comment.
 
@@ -235,11 +234,7 @@ ${params.taskDescription}${commentsSection}
    GIT_EDITOR=true EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase --skip
    \`\`\`
 
-5. **Verify the resolution:**
-   \`\`\`bash
-   pnpm typecheck
-   pnpm lint
-   \`\`\`
+5. **Verify the resolution** (use the project's verification commands from AGENTS.md — e.g. \`pnpm typecheck && pnpm lint\` for JS, \`uv run pyright && uv run ruff check\` for Python, etc.)
 
 6. **Push the resolved branch (force push required after rebase):**
    \`\`\`bash

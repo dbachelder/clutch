@@ -308,7 +308,7 @@ class SessionWatcher {
    * Check if session key is from pre-rename trap: era (should be skipped).
    */
   private isLegacyTrapKey(sessionKey: string): boolean {
-    return sessionKey.includes(":trap:")
+    return sessionKey.includes(":trap:") || sessionKey.includes(":trap-")
   }
 
   /**
