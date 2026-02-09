@@ -311,33 +311,35 @@ curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Conte
 - If a pre-commit failure is in code you didn't touch, fix it anyway — leave the codebase cleaner than you found it.
 - Do NOT skip, disable, or work around pre-commit hooks under any circumstances.
 
-**After implementation, push and create PR:**
+**After implementation, push and create PR (follow this EXACT sequence):**
+
 \`\`\`bash
+# Step 1: Commit (fix any pre-commit failures before retrying — NEVER use --no-verify)
 cd ${params.worktreeDir}
 git add -A
 git commit -m "feat: <description>"
-# If commit fails due to pre-commit hooks, fix ALL errors and retry. Do NOT use --no-verify.
-git push -u origin ${branchName}
-\`\`\`
 
-Create the PR and capture the PR number:
-\`\`\`bash
-# Create PR and extract the PR number from the URL
+# Step 2: Push
+git push -u origin ${branchName}
+
+# Step 3: Create PR and capture the number
 PR_URL=$(gh pr create --title "<title>" --body "Ticket: ${params.taskId}")
 PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
-PR_TITLE="<title>"
 
-# Record the PR number on the task
+# Step 4: Verify PR_NUMBER is set (MUST be a number, not empty)
+if [ -z "$PR_NUMBER" ]; then echo "ERROR: PR creation failed"; exit 1; fi
+
+# Step 5: Record PR number on the task
 curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d "{\"pr_number\": $PR_NUMBER}"
 
-# Post progress comment
-curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d "{\"content\": \"Implementation complete. PR #$PR_NUMBER opened: $PR_TITLE\", \"author\": \"agent\", \"author_type\": \"agent\"}"
+# Step 6: Post comment
+curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d "{\"content\": \"Implementation complete. PR #$PR_NUMBER opened.\", \"author\": \"agent\", \"author_type\": \"agent\"}"
+
+# Step 7: LAST — move to in_review (only after PR number is recorded)
+curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "in_review"}'
 \`\`\`
 
-Then update ticket to in_review:
-\`\`\`bash
-curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "in_review"}'
-\`\`\``
+**CRITICAL: Do NOT set status to \`in_review\` unless steps 1-6 succeeded. If any step fails, leave the task in its current status — the loop will retry.**`
 }
 
 /**
