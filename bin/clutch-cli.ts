@@ -85,6 +85,19 @@ interface Task {
   completed_at: number | null
 }
 
+interface TaskDependencySummary {
+  id: string
+  title: string
+  status: "backlog" | "ready" | "in_progress" | "in_review" | "blocked" | "done"
+  dependency_id: string
+}
+
+interface TaskSummary {
+  id: string
+  title: string
+  status: "backlog" | "ready" | "in_progress" | "in_review" | "blocked" | "done"
+}
+
 // ============================================
 // CLI Parser
 // ============================================
@@ -128,6 +141,9 @@ Task Commands:
                                       Create a new task
   tasks update <id> [options]         Update task fields
   tasks move <id> <status>            Move task to a new status
+  tasks deps <id> [--json]            List dependencies for a task
+  tasks dep-add <id> --on <taskId>    Add a dependency (task depends on taskId)
+  tasks dep-rm <id> --on <taskId>     Remove a dependency
 
 Agent Commands:
   agents list                         List active agents and their tasks
@@ -236,6 +252,24 @@ async function apiPatch(path: string, body: unknown): Promise<unknown> {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`API error ${response.status}: ${error}`)
+  }
+  return response.json()
+}
+
+async function apiDelete(path: string, query?: Record<string, string>): Promise<unknown> {
+  const baseUrl = process.env.CLUTCH_API_URL ?? "http://localhost:3002"
+  const url = new URL(`/api${path}`, baseUrl)
+  if (query) {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined) url.searchParams.set(key, value)
+    })
+  }
+  const response = await fetch(url.toString(), {
+    method: "DELETE",
   })
   if (!response.ok) {
     const error = await response.text()
@@ -1045,6 +1079,175 @@ async function cmdTasksMove(
 }
 
 // ============================================
+// Task Dependency Commands
+// ============================================
+
+async function cmdTasksDeps(
+  convex: ConvexHttpClient,
+  project: ProjectInfo,
+  idOrPrefix: string,
+  flags: Record<string, string | boolean>
+): Promise<void> {
+  const jsonOutput = flags.json === true
+
+  const task = await resolveTaskByPrefix(convex, project.id, idOrPrefix)
+
+  if (!task) {
+    console.error(`Task "${idOrPrefix}" not found in project ${project.slug}`)
+    process.exit(1)
+  }
+
+  try {
+    const result = await apiGet(`/tasks/${task.id}/dependencies`) as {
+      task_id: string
+      dependencies: TaskDependencySummary[]
+      blocked_by: TaskSummary[]
+      incomplete: TaskSummary[]
+    }
+
+    if (jsonOutput) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    console.log(`\nDependencies for task: ${task.title}`)
+    console.log(`ID: ${task.id}`)
+    console.log(`Status: ${task.status}\n`)
+
+    // Show dependencies (tasks this task depends on)
+    if (result.dependencies.length === 0) {
+      console.log("Depends on: (none)")
+    } else {
+      console.log(`Depends on (${result.dependencies.length}):`)
+      console.log("ID (short)  Title                           Status")
+      console.log("-".repeat(60))
+      for (const dep of result.dependencies) {
+        const shortId = dep.id.slice(0, 8).padEnd(10)
+        const title = dep.title.slice(0, 30).padEnd(31)
+        const status = dep.status.padEnd(12)
+        console.log(`${shortId} ${title} ${status}`)
+      }
+    }
+
+    // Show blocked by (tasks that depend on this task)
+    console.log("")
+    if (result.blocked_by.length === 0) {
+      console.log("Blocking: (none)")
+    } else {
+      console.log(`Blocking (${result.blocked_by.length} tasks):`)
+      console.log("ID (short)  Title                           Status")
+      console.log("-".repeat(60))
+      for (const blocker of result.blocked_by) {
+        const shortId = blocker.id.slice(0, 8).padEnd(10)
+        const title = blocker.title.slice(0, 30).padEnd(31)
+        const status = blocker.status.padEnd(12)
+        console.log(`${shortId} ${title} ${status}`)
+      }
+    }
+
+    // Show incomplete dependencies
+    if (result.incomplete.length > 0) {
+      console.log("")
+      console.log(`Incomplete dependencies (${result.incomplete.length}):`)
+      for (const inc of result.incomplete) {
+        console.log(`  - ${inc.id.slice(0, 8)}: ${inc.title} (${inc.status})`)
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`Failed to fetch dependencies: ${message}`)
+    process.exit(1)
+  }
+}
+
+async function cmdTasksDepAdd(
+  convex: ConvexHttpClient,
+  project: ProjectInfo,
+  idOrPrefix: string,
+  flags: Record<string, string | boolean>
+): Promise<void> {
+  const dependsOnIdOrPrefix = typeof flags.on === "string" ? flags.on : undefined
+
+  if (!dependsOnIdOrPrefix) {
+    console.error("Error: --on <taskId> is required")
+    process.exit(1)
+  }
+
+  const task = await resolveTaskByPrefix(convex, project.id, idOrPrefix)
+
+  if (!task) {
+    console.error(`Task "${idOrPrefix}" not found in project ${project.slug}`)
+    process.exit(1)
+  }
+
+  const dependsOnTask = await resolveTaskByPrefix(convex, project.id, dependsOnIdOrPrefix)
+
+  if (!dependsOnTask) {
+    console.error(`Dependency task "${dependsOnIdOrPrefix}" not found in project ${project.slug}`)
+    process.exit(1)
+  }
+
+  try {
+    const result = await apiPost(`/tasks/${task.id}/dependencies`, {
+      depends_on_id: dependsOnTask.id,
+    }) as { dependency: { id: string } }
+
+    console.log(`* Added dependency: ${task.id.slice(0, 8)} now depends on ${dependsOnTask.id.slice(0, 8)}`)
+    console.log(`  Dependency ID: ${result.dependency.id.slice(0, 8)}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes("cycle")) {
+      console.error(`Error: Cannot add dependency — would create a cycle`)
+    } else if (message.includes("already exists")) {
+      console.error(`Error: Dependency already exists`)
+    } else {
+      console.error(`Failed to add dependency: ${message}`)
+    }
+    process.exit(1)
+  }
+}
+
+async function cmdTasksDepRm(
+  convex: ConvexHttpClient,
+  project: ProjectInfo,
+  idOrPrefix: string,
+  flags: Record<string, string | boolean>
+): Promise<void> {
+  const dependsOnIdOrPrefix = typeof flags.on === "string" ? flags.on : undefined
+
+  if (!dependsOnIdOrPrefix) {
+    console.error("Error: --on <taskId> is required")
+    process.exit(1)
+  }
+
+  const task = await resolveTaskByPrefix(convex, project.id, idOrPrefix)
+
+  if (!task) {
+    console.error(`Task "${idOrPrefix}" not found in project ${project.slug}`)
+    process.exit(1)
+  }
+
+  const dependsOnTask = await resolveTaskByPrefix(convex, project.id, dependsOnIdOrPrefix)
+
+  if (!dependsOnTask) {
+    console.error(`Dependency task "${dependsOnIdOrPrefix}" not found in project ${project.slug}`)
+    process.exit(1)
+  }
+
+  try {
+    await apiDelete(`/tasks/${task.id}/dependencies`, {
+      depends_on_id: dependsOnTask.id,
+    })
+
+    console.log(`* Removed dependency: ${task.id.slice(0, 8)} no longer depends on ${dependsOnTask.id.slice(0, 8)}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`Failed to remove dependency: ${message}`)
+    process.exit(1)
+  }
+}
+
+// ============================================
 // Main Entry Point
 // ============================================
 
@@ -1064,6 +1267,7 @@ async function main(): Promise<void> {
   const needsProject = [
     "agents list", "agents get",
     "tasks list", "tasks get", "tasks create", "tasks update", "tasks move",
+    "tasks deps", "tasks dep-add", "tasks dep-rm",
     "dispatch pending",
     "metrics",
     "deploy convex", "deploy check"
@@ -1101,6 +1305,15 @@ async function main(): Promise<void> {
       break
     case command.startsWith("tasks move "):
       await cmdTasksMove(convex, project!, positional[2], positional[3])
+      break
+    case command.startsWith("tasks deps "):
+      await cmdTasksDeps(convex, project!, positional[2], flags)
+      break
+    case command.startsWith("tasks dep-add "):
+      await cmdTasksDepAdd(convex, project!, positional[2], flags)
+      break
+    case command.startsWith("tasks dep-rm "):
+      await cmdTasksDepRm(convex, project!, positional[2], flags)
       break
 
     // Agent commands
