@@ -3,9 +3,11 @@
 import { useState, useEffect } from "react"
 import { Bot, AlertTriangle } from "lucide-react"
 import type { Task } from "@/lib/types"
+import type { Session } from "@/convex/sessions"
 
 interface AgentStatusProps {
   task: Task
+  session?: Session | null  // from sessions table
   variant?: "compact" | "full"
   showIcon?: boolean
   className?: string
@@ -16,11 +18,11 @@ interface AgentStatusProps {
  */
 export function formatModelShort(model: string | null | undefined): string {
   if (!model) return "agent"
-  
+
   // Extract the part after the last slash
   const parts = model.split("/")
   const name = parts[parts.length - 1] || model
-  
+
   // Remove common suffixes and extract short name
   const cleaned = name
     .replace(/-for-coding$/, "")
@@ -66,11 +68,11 @@ export function formatDuration(timestamp: number | null | undefined): string {
  */
 export function formatLastActivity(timestamp: number | null | undefined): string {
   if (!timestamp) return "no activity"
-  
+
   const now = Date.now()
   const diffMs = now - timestamp
   const diffMinutes = Math.floor(diffMs / (1000 * 60))
-  
+
   if (diffMinutes < 1) return "just now"
   if (diffMinutes < 60) return `${diffMinutes}m ago`
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
@@ -89,21 +91,44 @@ export function isAgentStale(lastActiveAt: number | null | undefined): boolean {
 }
 
 /**
- * Get color for model based on freshness
+ * Format token count (e.g., 42000 -> "42k")
  */
-function getModelColor(stale: boolean): string {
-  return stale ? "#f59e0b" : "#22c55e" // amber-500 vs green-500
+function formatTokenCount(count: number | null | undefined): string {
+  if (!count) return "0"
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}k`
+  return count.toString()
+}
+
+/**
+ * Format cost
+ */
+function formatCost(cost: number | null | undefined): string {
+  if (!cost) return ""
+  if (cost >= 1) return `$${cost.toFixed(2)}`
+  if (cost >= 0.01) return `$${cost.toFixed(3)}`
+  return `$${cost.toFixed(4)}`
+}
+
+/**
+ * Get display status from session
+ */
+function getDisplayStatus(session: Session | null | undefined): string {
+  if (!session) return "active"
+  return session.status
 }
 
 /**
  * Shared AgentStatus component
- * 
+ *
  * Displays agent role, model, duration, and last activity.
+ * Uses real session data from the sessions table.
  * Used in both chat sidebar and board task cards.
  */
-export function AgentStatus({ 
-  task, 
-  variant = "compact", 
+export function AgentStatus({
+  task,
+  session,
+  variant = "compact",
   showIcon = true,
   className = ""
 }: AgentStatusProps) {
@@ -120,30 +145,42 @@ export function AgentStatus({
   }, [])
 
   const hasAgent = !!task.agent_session_key
-  
+
   // Don't render if no agent
   if (!hasAgent) return null
 
-  // Note: Agent status details now come from sessions table
-  const stale = false // Simplified - sessions table tracks staleness
-  const modelColor = getModelColor(stale)
+  // Determine staleness from session data
+  const isStale = session ? isAgentStale(session.last_active_at) : false
+  const displayStatus = getDisplayStatus(session)
+  const modelName = formatModelShort(session?.model)
+  const totalTokens = session?.tokens_total ?? 0
+  const cost = session?.cost_total
 
   if (variant === "compact") {
     // Compact variant for sidebar (single line)
     return (
       <div className={`flex items-center gap-1 mt-0.5 ${className}`}>
         {showIcon && (
-          <span className="text-xs" title="Agent active">
-            {"🤖"}
+          <span className="text-xs" title={isStale ? "Agent stale" : "Agent active"}>
+            {isStale ? "⚠️" : "🤖"}
           </span>
         )}
-        <span className={`text-xs ${stale ? "text-amber-500" : "text-[var(--text-muted)]"}`}>
-          {task.role || "agent"}
-          {/* Model info now in sessions table */}
-          <>
-            {" · "}
-            active
-          </>
+        <span className={`text-xs ${isStale ? "text-amber-500" : "text-[var(--text-muted)]"}`}>
+          {modelName}
+          {" · "}
+          {isStale ? `stale (${formatDuration(session?.last_active_at)})` : displayStatus}
+          {totalTokens > 0 && (
+            <>
+              {" · "}
+              {formatTokenCount(totalTokens)} tokens
+            </>
+          )}
+          {cost && cost > 0 && (
+            <>
+              {" · "}
+              {formatCost(cost)}
+            </>
+          )}
         </span>
       </div>
     )
@@ -153,13 +190,30 @@ export function AgentStatus({
   return (
     <div className={`flex items-center gap-1.5 ${className}`}>
       {showIcon && (
-        <Bot 
-          className={`h-3 w-3 ${stale ? "text-amber-500" : "text-[var(--text-muted)]"}`}
+        <Bot
+          className={`h-3 w-3 ${isStale ? "text-amber-500" : "text-[var(--text-muted)]"}`}
         />
       )}
       <span className="font-medium text-[var(--text-secondary)]">
-        {/* Model info now in sessions table */}
-        agent
+        {session?.model ?? "agent"}
+        {totalTokens > 0 && (
+          <>
+            {" · "}
+            {formatTokenCount(totalTokens)} tokens
+          </>
+        )}
+        {cost && cost > 0 && (
+          <>
+            {" · "}
+            {formatCost(cost)}
+          </>
+        )}
+        {session?.last_active_at && (
+          <>
+            {" · last active "}
+            {formatLastActivity(session.last_active_at)}
+          </>
+        )}
       </span>
     </div>
   )
@@ -182,7 +236,7 @@ export function OrphanedTaskWarning({ task }: { task: Task }) {
   }, [])
 
   const hasAgent = !!task.agent_session_key
-  
+
   // Only show for in_progress or in_review without agent
   if (hasAgent || (task.status !== "in_progress" && task.status !== "in_review")) {
     return null
@@ -190,12 +244,12 @@ export function OrphanedTaskWarning({ task }: { task: Task }) {
 
   const ORPHAN_GRACE_MS = 30 * 60 * 1000
   const taskAge = task.updated_at ? now - task.updated_at : Infinity
-  
+
   // Only show after grace period
   if (taskAge <= ORPHAN_GRACE_MS) return null
 
   return (
-    <div 
+    <div
       className="flex items-center gap-1 ml-2 text-amber-500"
       title="No agent attached to this in-progress task"
     >
