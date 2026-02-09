@@ -11,13 +11,31 @@
 - `pnpm lint` — eslint
 - `pnpm typecheck` — tsc
 
-## Task API
+## Task Management (clutch CLI)
 ```bash
 # Update ticket status
+clutch tasks move TICKET_ID in_review
+
+# Get task details
+clutch tasks get TICKET_ID
+clutch tasks get TICKET_ID --json
+
+# List tasks
+clutch tasks list --project clutch --status ready
+
+# Check active agents
+clutch agents list
+
+# Check pending signals
+clutch signals list --pending
+```
+Statuses: `backlog` → `ready` → `in_progress` → `in_review` → `done` (+ `blocked`)
+
+**REST API still works** for programmatic updates within agent scripts:
+```bash
 curl -X PATCH http://localhost:3002/api/tasks/TICKET_ID \
   -H 'Content-Type: application/json' -d '{"status": "in_review"}'
 ```
-Statuses: `backlog` → `ready` → `in_progress` → `in_review` → `done`
 
 ## Rules
 - Pre-commit hooks must pass — no `--no-verify`
