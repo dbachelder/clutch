@@ -88,20 +88,22 @@ function getModelForRole(role: string): string {
 // Dependency Checking
 // ============================================
 
+import type { TaskSummary } from "../../lib/types"
+
 /**
- * Check if all dependencies for a task are complete (done)
+ * Get incomplete dependencies for a task
  */
-async function areDependenciesMet(
+async function getIncompleteDependencies(
   convex: ConvexHttpClient,
   taskId: string
-): Promise<boolean> {
+): Promise<TaskSummary[]> {
   try {
     const deps = await convex.query(api.taskDependencies.getIncomplete, { taskId })
-    return deps.length === 0
+    return deps
   } catch (error) {
-    // If we can't check dependencies, assume they're not met to be safe
+    // If we can't check dependencies, assume all are incomplete to be safe
     console.error(`[WorkPhase] Failed to check dependencies for ${taskId}:`, error)
-    return false
+    return []
   }
 }
 
@@ -286,15 +288,20 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
     const role = task.role ?? "dev"
 
     // Check dependencies (before attempting claim)
-    const depsMet = await areDependenciesMet(convex, task.id)
-    if (!depsMet) {
+    const incompleteDeps = await getIncompleteDependencies(convex, task.id)
+    if (incompleteDeps.length > 0) {
       await log({
         projectId: project.id,
         cycle,
         phase: "work",
         action: "dependency_blocked",
         taskId: task.id,
-        details: { title: task.title },
+        details: {
+          title: task.title,
+          message: `Skipping task ${task.id.slice(0, 8)}: waiting on ${incompleteDeps.length} incomplete dependencies`,
+          incompleteCount: incompleteDeps.length,
+          incompleteDeps: incompleteDeps.map((d) => ({ id: d.id, title: d.title, status: d.status })),
+        },
       })
       continue
     }
