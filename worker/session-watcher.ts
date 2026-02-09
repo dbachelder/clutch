@@ -665,8 +665,6 @@ class SessionWatcher {
       // Detect type and extract metadata
       const sessionType = detectSessionType(sessionKey)
       const projectSlug = extractProjectSlug(sessionKey)
-      const taskIdPrefix = extractTaskIdPrefix(sessionKey)
-
       // Resolve task ID: look up tasks where agent_session_key matches
       // this session key. The task stores the full session key, so we
       // can match exactly without needing to expand the 8-char prefix.
