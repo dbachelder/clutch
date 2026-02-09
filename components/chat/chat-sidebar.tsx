@@ -107,7 +107,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
 
   // Load active agents expanded state from localStorage on mount
   useEffect(() => {
-    const stored = localStorage.getItem('trap:activeAgentsExpanded')
+    const stored = localStorage.getItem('clutch:activeAgentsExpanded')
     if (stored !== null) {
       setActiveAgentsExpanded(stored === 'true')
     }
@@ -115,7 +115,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
 
   // Persist active agents expanded state to localStorage
   useEffect(() => {
-    localStorage.setItem('trap:activeAgentsExpanded', String(activeAgentsExpanded))
+    localStorage.setItem('clutch:activeAgentsExpanded', String(activeAgentsExpanded))
   }, [activeAgentsExpanded])
 
   // Blocked tasks section expanded state (persisted in localStorage)
@@ -123,7 +123,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
 
   // Load blocked expanded state from localStorage on mount
   useEffect(() => {
-    const stored = localStorage.getItem('trap:blockedExpanded')
+    const stored = localStorage.getItem('clutch:blockedExpanded')
     if (stored !== null) {
       setBlockedExpanded(stored === 'true')
     }
@@ -131,7 +131,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
 
   // Persist blocked expanded state to localStorage
   useEffect(() => {
-    localStorage.setItem('trap:blockedExpanded', String(blockedExpanded))
+    localStorage.setItem('clutch:blockedExpanded', String(blockedExpanded))
   }, [blockedExpanded])
 
   // Task modal state

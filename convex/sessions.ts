@@ -71,14 +71,14 @@ export interface SessionInput {
 
 /**
  * Extract project_slug from session_key.
- * Pattern: agent:main:trap:{slug}:{chatId} -> slug
+ * Pattern: agent:main:clutch:{slug}:{chatId} -> slug
  * Falls back to undefined if pattern doesn't match.
  */
 function extractProjectSlug(sessionKey: string): string | undefined {
-  // Pattern: agent:main:trap:{slug}:{chatId} or similar trap:slug patterns
-  const trapMatch = sessionKey.match(/:trap:([^:]+)/)
-  if (trapMatch) {
-    return trapMatch[1]
+  // Pattern: agent:main:clutch:{slug}:{chatId} or similar clutch:slug patterns
+  const clutchMatch = sessionKey.match(/:clutch:([^:]+)/)
+  if (clutchMatch) {
+    return clutchMatch[1]
   }
   return undefined
 }

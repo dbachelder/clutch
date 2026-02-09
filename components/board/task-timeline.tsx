@@ -126,7 +126,7 @@ function parseEventData(data: string | null): EventData {
 }
 
 function getSessionUrl(sessionKey: string, projectSlug: string): string {
-  // Session key format: agent:main:trap:{role}:{taskShortId}
+  // Session key format: agent:main:clutch:{role}:{taskShortId}
   // Link to project sessions page with the session key
   return `/projects/${projectSlug}/sessions/${encodeURIComponent(sessionKey)}`
 }
@@ -137,7 +137,7 @@ function isAgentActor(actor: string): boolean {
 
 function formatActorName(actor: string): string {
   if (actor.startsWith("agent:")) {
-    // agent:main:trap:role:taskId -> role agent
+    // agent:main:clutch:role:taskId -> role agent
     const parts = actor.split(":")
     const role = parts[3] || "agent"
     return `Agent (${role})`

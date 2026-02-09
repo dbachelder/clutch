@@ -1,30 +1,30 @@
 /**
- * Trap Channel Plugin for OpenClaw
- * 
- * Enables bidirectional communication between OpenClaw and the Trap UI.
- * 
+ * Clutch Channel Plugin for OpenClaw
+ *
+ * Enables bidirectional communication between OpenClaw and the Clutch UI.
+ *
  * How it works:
- *   1. Trap frontend sends messages via OpenClaw WebSocket (chat.send RPC)
+ *   1. Clutch frontend sends messages via OpenClaw WebSocket (chat.send RPC)
  *   2. OpenClaw processes the message in the agent session
- *   3. On agent_end, this plugin detects trap:* session keys
- *   4. Extracts the assistant response and POSTs it to Trap API → Convex
- *   5. Convex reactive query updates the Trap UI
- * 
- * Session key format: trap:{projectSlug}:{chatId}
+ *   3. On agent_end, this plugin detects clutch:* session keys
+ *   4. Extracts the assistant response and POSTs it to Clutch API → Convex
+ *   5. Convex reactive query updates the Clutch UI
+ *
+ * Session key format: clutch:{projectSlug}:{chatId}
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
-function getTrapUrl(api: OpenClawPluginApi): string {
-  return api.config.env?.TRAP_URL || api.config.env?.TRAP_API_URL || "http://localhost:3002";
+function getClutchUrl(api: OpenClawPluginApi): string {
+  return api.config.env?.CLUTCH_URL || api.config.env?.CLUTCH_API_URL || "http://localhost:3002";
 }
 
 /**
- * Parse a trap session key into its components.
- * Format: trap:{projectSlug}:{chatId}
+ * Parse a clutch session key into its components.
+ * Format: clutch:{projectSlug}:{chatId}
  */
-function parseTrapSessionKey(sessionKey: string): { projectSlug: string; chatId: string } | null {
-  const match = sessionKey.match(/^trap:([^:]+):(.+)$/);
+function parseClutchSessionKey(sessionKey: string): { projectSlug: string; chatId: string } | null {
+  const match = sessionKey.match(/^clutch:([^:]+):(.+)$/);
   if (!match) return null;
   return { projectSlug: match[1], chatId: match[2] };
 }
@@ -35,25 +35,26 @@ function parseTrapSessionKey(sessionKey: string): { projectSlug: string; chatId:
  */
 function extractTextContent(message: unknown): string {
   if (!message || typeof message !== "object") return "";
-  
+
   const msg = message as Record<string, unknown>;
   const content = msg.content;
-  
+
   if (typeof content === "string") return content;
-  
+
   if (Array.isArray(content)) {
     return content
-      .filter((c): c is { type: string; text: string } => 
-        c && typeof c === "object" && c.type === "text" && typeof c.text === "string"
+      .filter(
+        (c): c is { type: string; text: string } =>
+          c && typeof c === "object" && c.type === "text" && typeof c.text === "string"
       )
-      .map(c => c.text)
+      .map((c) => c.text)
       .join("\n\n");
   }
-  
+
   return "";
 }
 
-async function sendToTrap(
+async function sendToClutch(
   api: OpenClawPluginApi,
   chatId: string,
   content: string,
@@ -64,20 +65,20 @@ async function sendToTrap(
     isAutomated?: boolean;
   }
 ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  const trapUrl = getTrapUrl(api);
+  const clutchUrl = getClutchUrl(api);
   const { runId, sessionKey, mediaUrl, isAutomated } = options || {};
-  
+
   try {
     const body: Record<string, unknown> = {
       author: "ada",
       content: mediaUrl ? `${content}\n\n📎 ${mediaUrl}` : content,
       is_automated: isAutomated ?? false,
     };
-    
+
     if (runId) body.run_id = runId;
     if (sessionKey) body.session_key = sessionKey;
-    
-    const response = await fetch(`${trapUrl}/api/chats/${chatId}/messages`, {
+
+    const response = await fetch(`${clutchUrl}/api/chats/${chatId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -85,7 +86,7 @@ async function sendToTrap(
 
     if (response.status === 409) {
       // Duplicate run_id — message already saved (e.g. by frontend polling)
-      api.logger.info(`Trap: message already saved (duplicate run_id: ${runId})`);
+      api.logger.info(`Clutch: message already saved (duplicate run_id: ${runId})`);
       return { ok: true };
     }
 
@@ -97,47 +98,47 @@ async function sendToTrap(
     const data = await response.json();
     return { ok: true, messageId: data.message?.id };
   } catch (error) {
-    return { 
-      ok: false, 
-      error: error instanceof Error ? error.message : "Failed to send to Trap" 
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to send to Clutch",
     };
   }
 }
 
 export default function register(api: OpenClawPluginApi) {
   // =========================================================================
-  // agent_end hook — persist assistant responses to Trap/Convex
+  // agent_end hook — persist assistant responses to Clutch/Convex
   // =========================================================================
   api.on("agent_end", async (event, ctx) => {
     const sessionKey = ctx.sessionKey;
     if (!sessionKey) return;
-    
-    // Only handle trap:* sessions
-    const parsed = parseTrapSessionKey(sessionKey);
+
+    // Only handle clutch:* sessions
+    const parsed = parseClutchSessionKey(sessionKey);
     if (!parsed) return;
-    
+
     const { chatId } = parsed;
-    
+
     if (!event.success) {
-      api.logger.warn(`Trap: agent_end failed for chat ${chatId}: ${event.error}`);
+      api.logger.warn(`Clutch: agent_end failed for chat ${chatId}: ${event.error}`);
       // Still clear typing indicator even on failure/abort
-      const trapUrl = getTrapUrl(api);
+      const clutchUrl = getClutchUrl(api);
       try {
-        await fetch(`${trapUrl}/api/chats/${chatId}/typing`, {
+        await fetch(`${clutchUrl}/api/chats/${chatId}/typing`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ typing: false, author: "ada" }),
         });
       } catch (error) {
-        api.logger.warn(`Trap: failed to clear typing after abort for chat ${chatId}: ${error}`);
+        api.logger.warn(`Clutch: failed to clear typing after abort for chat ${chatId}: ${error}`);
       }
       return;
     }
-    
+
     // Find the last assistant message in the transcript
     const messages = event.messages || [];
     let lastAssistantContent = "";
-    
+
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i] as Record<string, unknown>;
       if (msg?.role === "assistant") {
@@ -145,45 +146,49 @@ export default function register(api: OpenClawPluginApi) {
         break;
       }
     }
-    
+
     const trimmed = lastAssistantContent.trim();
     if (!trimmed || trimmed === "NO_REPLY" || trimmed === "HEARTBEAT_OK") {
-      api.logger.info(`Trap: no assistant content to save for chat ${chatId}`);
+      api.logger.info(`Clutch: no assistant content to save for chat ${chatId}`);
       // Still clear typing indicator
-      const trapUrl2 = getTrapUrl(api);
+      const clutchUrl2 = getClutchUrl(api);
       try {
-        await fetch(`${trapUrl2}/api/chats/${chatId}/typing`, {
+        await fetch(`${clutchUrl2}/api/chats/${chatId}/typing`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ typing: false, author: "ada" }),
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
-    
-    // POST the response to Trap API → Convex
-    api.logger.info(`Trap: saving assistant response to chat ${chatId} (${lastAssistantContent.length} chars)`);
-    const result = await sendToTrap(api, chatId, lastAssistantContent.trim(), {
+
+    // POST the response to Clutch API → Convex
+    api.logger.info(
+      `Clutch: saving assistant response to chat ${chatId} (${lastAssistantContent.length} chars)`
+    );
+    const result = await sendToClutch(api, chatId, lastAssistantContent.trim(), {
       sessionKey,
       isAutomated: false,
     });
-    
+
     if (result.ok) {
-      api.logger.info(`Trap: response saved to chat ${chatId}`);
+      api.logger.info(`Clutch: response saved to chat ${chatId}`);
     } else {
-      api.logger.warn(`Trap: failed to save response to chat ${chatId}: ${result.error}`);
+      api.logger.warn(`Clutch: failed to save response to chat ${chatId}: ${result.error}`);
     }
 
     // Clear typing indicator after response is saved
-    const trapUrl = getTrapUrl(api);
+    const clutchUrl = getClutchUrl(api);
     try {
-      await fetch(`${trapUrl}/api/chats/${chatId}/typing`, {
+      await fetch(`${clutchUrl}/api/chats/${chatId}/typing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ typing: false, author: "ada" }),
       });
     } catch (error) {
-      api.logger.warn(`Trap: failed to clear typing indicator for chat ${chatId}: ${error}`);
+      api.logger.warn(`Clutch: failed to clear typing indicator for chat ${chatId}: ${error}`);
     }
   });
 
@@ -192,13 +197,13 @@ export default function register(api: OpenClawPluginApi) {
   // =========================================================================
   api.registerChannel({
     plugin: {
-      id: "trap",
+      id: "clutch",
       meta: {
-        id: "trap",
+        id: "clutch",
         label: "OpenClutch",
         selectionLabel: "OpenClutch",
         detailLabel: "OpenClutch Orchestration",
-        docsPath: "/channels/trap",
+        docsPath: "/channels/clutch",
         blurb: "AI agent orchestration UI",
         order: 50,
       },
@@ -211,51 +216,62 @@ export default function register(api: OpenClawPluginApi) {
       },
       outbound: {
         deliveryMode: "direct",
-        
+
         sendTypingIndicator: async (ctx) => {
           const { to, isTyping } = ctx;
           if (!to) return { ok: false, error: "No chat ID (to) provided" };
 
-          const trapUrl = getTrapUrl(api);
+          const clutchUrl = getClutchUrl(api);
           try {
-            const response = await fetch(`${trapUrl}/api/chats/${to}/typing`, {
+            const response = await fetch(`${clutchUrl}/api/chats/${to}/typing`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ typing: isTyping, author: "ada" }),
             });
             if (!response.ok) {
-              api.logger.warn(`Trap: typing indicator failed - ${response.status}`);
+              api.logger.warn(`Clutch: typing indicator failed - ${response.status}`);
               return { ok: false, error: `HTTP ${response.status}` };
             }
             return { ok: true };
           } catch (error) {
-            api.logger.warn(`Trap: typing indicator error - ${error}`);
-            return { ok: false, error: error instanceof Error ? error.message : "Unknown error" };
+            api.logger.warn(`Clutch: typing indicator error - ${error}`);
+            return {
+              ok: false,
+              error: error instanceof Error ? error.message : "Unknown error",
+            };
           }
         },
-        
+
         sendText: async (ctx) => {
           const { to, text } = ctx;
           if (!to) return { ok: false, error: "No chat ID (to) provided" };
 
-          api.logger.info(`Trap: sendText to chat ${to}`);
-          const result = await sendToTrap(api, to, text);
-          if (!result.ok) api.logger.warn(`Trap: sendText failed - ${result.error}`);
-          return { ok: result.ok, messageId: result.messageId, error: result.error ? new Error(result.error) : undefined };
+          api.logger.info(`Clutch: sendText to chat ${to}`);
+          const result = await sendToClutch(api, to, text);
+          if (!result.ok) api.logger.warn(`Clutch: sendText failed - ${result.error}`);
+          return {
+            ok: result.ok,
+            messageId: result.messageId,
+            error: result.error ? new Error(result.error) : undefined,
+          };
         },
-        
+
         sendMedia: async (ctx) => {
           const { to, text, mediaUrl } = ctx;
           if (!to) return { ok: false, error: "No chat ID (to) provided" };
 
-          api.logger.info(`Trap: sendMedia to chat ${to}`);
-          const result = await sendToTrap(api, to, text || "📎 Attachment", { mediaUrl });
-          if (!result.ok) api.logger.warn(`Trap: sendMedia failed - ${result.error}`);
-          return { ok: result.ok, messageId: result.messageId, error: result.error ? new Error(result.error) : undefined };
+          api.logger.info(`Clutch: sendMedia to chat ${to}`);
+          const result = await sendToClutch(api, to, text || "📎 Attachment", { mediaUrl });
+          if (!result.ok) api.logger.warn(`Clutch: sendMedia failed - ${result.error}`);
+          return {
+            ok: result.ok,
+            messageId: result.messageId,
+            error: result.error ? new Error(result.error) : undefined,
+          };
         },
       },
     },
   });
 
-  api.logger.info("Trap channel plugin loaded (with agent_end hook)");
+  api.logger.info("Clutch channel plugin loaded (with agent_end hook)");
 }

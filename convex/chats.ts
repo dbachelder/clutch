@@ -137,8 +137,8 @@ export const findBySessionKey = query({
       }
     }
 
-    // Try to extract chat UUID from session key format: trap:projectSlug:chatId
-    const match = args.sessionKey.match(/^trap:[^:]+:(.+)$/)
+    // Try to extract chat UUID from session key format: clutch:projectSlug:chatId
+    const match = args.sessionKey.match(/^clutch:[^:]+:(.+)$/)
     if (match) {
       const chatUuid = match[1]
       const exists = await ctx.db

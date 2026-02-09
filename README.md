@@ -358,8 +358,8 @@ trap/
 │   ├── task_events.ts            # Event logging
 │   └── ...
 ├── plugins/                      # OpenClaw plugins
-│   ├── trap-channel.ts           # Channel plugin for chat
-│   └── trap-signal.ts            # Signal plugin for notifications
+│   ├── clutch-channel.ts         # Channel plugin for chat
+│   └── clutch-signal.ts          # Signal plugin for notifications
 ├── bin/                          # CLI tools
 │   └── clutch-cli.ts               # OpenClutch CLI
 ├── scripts/                      # Utility scripts
