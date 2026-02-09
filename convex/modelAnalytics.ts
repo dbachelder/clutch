@@ -66,11 +66,15 @@ interface TaskEventDoc {
 
 interface TaskDoc {
   id: string
-  agent_model?: string | null
   role?: 'pm' | 'dev' | 'research' | 'reviewer' | 'conflict_resolver' | null
   completed_at?: number | null
   agent_tokens_in?: number | null
   agent_tokens_out?: number | null
+}
+
+interface SessionDoc {
+  task_id?: string | null
+  model?: string | null
 }
 
 async function fetchTaskEvents(
@@ -112,14 +116,18 @@ async function fetchTaskEvents(
   return taskEventsMap
 }
 
+interface TaskWithModel extends TaskDoc {
+  agent_model: string
+}
+
 async function aggregateModelData(
-  tasksWithModel: TaskDoc[],
+  tasksWithModel: TaskWithModel[],
   taskEventsMap: Map<string, Array<{ costTotal: number; durationMs: number }>>
 ): Promise<ModelComparisonRecord[]> {
   // Group tasks by model using an object instead of Map for compatibility
-  const tasksByModel: Record<string, TaskDoc[]> = {}
+  const tasksByModel: Record<string, TaskWithModel[]> = {}
   for (const task of tasksWithModel) {
-    const model = task.agent_model!
+    const model = task.agent_model
     if (!tasksByModel[model]) {
       tasksByModel[model] = []
     }
@@ -303,11 +311,23 @@ export const modelComparison = query({
       }
     }
 
-    // Only include tasks that have a model assigned
-    const tasksWithModel: TaskDoc[] = []
+    // Fetch sessions to get model data for completed tasks
+    // Sessions table has model info that tasks table doesn't have
+    const sessions = await ctx.db.query('sessions').collect()
+    const taskModelMap = new Map<string, string>()
+    for (const session of sessions) {
+      const s = session as unknown as SessionDoc
+      if (s.task_id && s.model) {
+        taskModelMap.set(s.task_id, s.model)
+      }
+    }
+
+    // Enrich tasks with model data from sessions
+    const tasksWithModel: Array<TaskDoc & { agent_model: string }> = []
     for (const task of filteredTasks) {
-      if (task.agent_model) {
-        tasksWithModel.push(task)
+      const model = taskModelMap.get(task.id)
+      if (model) {
+        tasksWithModel.push({ ...task, agent_model: model })
       }
     }
 
@@ -361,11 +381,22 @@ export const getModelSummary = query({
       }
     }
 
-    // Only include tasks that have a model assigned
-    const tasksWithModel: TaskDoc[] = []
+    // Fetch sessions to get model data for completed tasks
+    const sessions = await ctx.db.query('sessions').collect()
+    const taskModelMap = new Map<string, string>()
+    for (const session of sessions) {
+      const s = session as unknown as SessionDoc
+      if (s.task_id && s.model) {
+        taskModelMap.set(s.task_id, s.model)
+      }
+    }
+
+    // Enrich tasks with model data from sessions
+    const tasksWithModel: Array<TaskDoc & { agent_model: string }> = []
     for (const task of filteredTasks) {
-      if (task.agent_model) {
-        tasksWithModel.push(task)
+      const model = taskModelMap.get(task.id)
+      if (model) {
+        tasksWithModel.push({ ...task, agent_model: model })
       }
     }
 
@@ -421,15 +452,25 @@ export const getModelUsageStats = query({
       }
     }
 
+    // Fetch sessions to get model data
+    const sessions = await ctx.db.query('sessions').collect()
+    const taskModelMap = new Map<string, string>()
+    for (const session of sessions) {
+      const s = session as unknown as SessionDoc
+      if (s.task_id && s.model) {
+        taskModelMap.set(s.task_id, s.model)
+      }
+    }
+
     let tasksWithModelCount = 0
     let tasksWithoutModelCount = 0
 
     // Count by model
     const modelDistribution: Record<string, number> = {}
     for (const task of filteredTasks) {
-      if (task.agent_model) {
+      const model = taskModelMap.get(task.id)
+      if (model) {
         tasksWithModelCount++
-        const model = task.agent_model
         modelDistribution[model] = (modelDistribution[model] || 0) + 1
       } else {
         tasksWithoutModelCount++
