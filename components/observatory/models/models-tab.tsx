@@ -65,11 +65,8 @@ export function ModelsTab({ timeRange, lockedProjectId }: ModelsTabProps) {
   const dateRange = useMemo(() => timeRangeToDates(timeRange), [timeRange])
 
   // Fetch model comparison data from Convex
-  // Note: modelAnalytics.modelComparison query is defined in convex/modelAnalytics.ts
-  // The api object will have modelAnalytics after convex codegen is run
   const modelData = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).modelAnalytics?.modelComparison,
+    api.modelAnalytics.modelComparison,
     {
       projectId: selectedProject || undefined,
       startDate: dateRange.startDate,
