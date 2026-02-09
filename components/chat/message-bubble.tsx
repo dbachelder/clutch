@@ -127,8 +127,8 @@ export function MessageBubble({
     }
     
     // Look for ticket ID patterns
-    if (content.includes("Trap ticket ID:")) {
-      const ticketMatch = content.match(/Trap ticket ID: `([^`]+)`/m)
+    if (content.includes("OpenClutch ticket ID:")) {
+      const ticketMatch = content.match(/OpenClutch ticket ID: `([^`]+)`/m)
       const taskMatch = content.match(/## Task: (.+?)(?:\n|$)/m)
       if (ticketMatch && taskMatch) {
         return `Automated: ${taskMatch[1]}`
