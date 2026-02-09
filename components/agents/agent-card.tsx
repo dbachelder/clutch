@@ -207,7 +207,7 @@ export function AgentCard({ task, projectSlug }: AgentCardProps) {
             ({metrics.contextPercent}%)
           </span>
         )}
-        {metrics.cost && metrics.cost > 0 && (
+        {metrics.cost != null && metrics.cost > 0 && (
           <>
             <span>·</span>
             <span className="text-green-500/80">{formatCost(metrics.cost)}</span>
