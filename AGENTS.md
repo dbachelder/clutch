@@ -31,12 +31,6 @@ clutch signals list --pending
 ```
 Statuses: `backlog` → `ready` → `in_progress` → `in_review` → `done` (+ `blocked`)
 
-**REST API still works** for programmatic updates within agent scripts:
-```bash
-curl -X PATCH http://localhost:3002/api/tasks/TICKET_ID \
-  -H 'Content-Type: application/json' -d '{"status": "in_review"}'
-```
-
 ## Rules
 - Pre-commit hooks must pass — no `--no-verify`
 - Don't merge your own PRs
