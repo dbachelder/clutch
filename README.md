@@ -1,4 +1,4 @@
-# The Trap
+# OpenClutch
 
 AI agent orchestration system where Ada serves as coordinator for specialized sub-agents.
 
@@ -26,7 +26,7 @@ PORT=3002 pnpm start
 ### Core Concept
 - **Ada (Coordinator)** - Main agent that triages and delegates to sub-agents
 - **Worker Agents** - Stateless, fresh session per task (kimi-coder, sonnet-reviewer, haiku-triage)
-- **Trap Board** - Convex-backed task management (replaces GitHub Projects)
+- **OpenClutch Board** - Convex-backed task management (replaces GitHub Projects)
 - **Observatory** - 5-tab dashboard for monitoring and controlling AI agents
 - **Chat** - Bidirectional communication with OpenClaw main session
 
@@ -40,12 +40,12 @@ PORT=3002 pnpm start
 
 ### Process Architecture
 
-Trap runs as **4 separate processes** managed by `run.sh`:
+OpenClutch runs as **4 separate processes** managed by `run.sh`:
 
-1. **Next.js Server** (`trap-server`) - Serves web UI and API routes (port 3002)
-2. **Work Loop** (`trap-loop`) - Agent orchestration, task scheduling, triage
-3. **Chat Bridge** (`trap-bridge`) - WebSocket client syncing OpenClaw ↔ Convex
-4. **Session Watcher** (`trap-session-watcher`) - Reads OpenClaw JSONL files, upserts to Convex `sessions` table
+1. **Next.js Server** (`openclutch-server`) - Serves web UI and API routes (port 3002)
+2. **Work Loop** (`openclutch-loop`) - Agent orchestration, task scheduling, triage
+3. **Chat Bridge** (`openclutch-bridge`) - WebSocket client syncing OpenClaw ↔ Convex
+4. **Session Watcher** (`openclutch-session-watcher`) - Reads OpenClaw JSONL files, upserts to Convex `sessions` table
 
 **Why split:** Running work loop + WebSocket client in Next.js blocked the event loop, causing 30s+ page loads.
 
@@ -95,7 +95,7 @@ The **Observatory** is the centralized dashboard that replaced the old work-loop
 
 ## Work Loop v2
 
-The work loop is Trap's agent orchestration engine. It runs continuously, cycling through phases to manage agent execution across all projects.
+The work loop is OpenClutch's agent orchestration engine. It runs continuously, cycling through phases to manage agent execution across all projects.
 
 ### Phases
 
@@ -150,7 +150,7 @@ WORK_LOOP_MAX_REVIEWER_AGENTS=2     # Max reviewer agents
 
 ### Concurrency Tuning (Critical)
 
-Trap's agent limits must match OpenClaw's command lane concurrency:
+OpenClutch's agent limits must match OpenClaw's command lane concurrency:
 
 **In `~/.openclaw/openclaw.json`:**
 ```json
@@ -163,9 +163,9 @@ Trap's agent limits must match OpenClaw's command lane concurrency:
 }
 ```
 
-If OpenClaw's limit is lower than Trap's, agents will queue and may be falsely reaped ("ghost-completing" with 0 tokens).
+If OpenClaw's limit is lower than OpenClutch's, agents will queue and may be falsely reaped ("ghost-completing" with 0 tokens).
 
-**Trap reaper grace period:** Located in `worker/agent-manager.ts`. Recommended: **10 minutes** when running high parallelism.
+**OpenClutch reaper grace period:** Located in `worker/agent-manager.ts`. Recommended: **10 minutes** when running high parallelism.
 
 ### Multi-Project Support
 
@@ -177,7 +177,7 @@ Worktree convention: `{project.local_path}-worktrees/fix/{taskId.slice(0,8)}`
 
 ## Database
 
-Trap uses **Convex** (self-hosted) for real-time data synchronization.
+OpenClutch uses **Convex** (self-hosted) for real-time data synchronization.
 
 ### Tables
 
@@ -231,7 +231,7 @@ The Convex URL is configured via `NEXT_PUBLIC_CONVEX_URL` (defaults to `http://1
 
 ### WebSocket Chat
 
-The Trap connects to OpenClaw via WebSocket for real-time chat.
+OpenClutch connects to OpenClaw via WebSocket for real-time chat.
 
 ```javascript
 // Connect handshake (first message required)
@@ -255,9 +255,9 @@ The Trap connects to OpenClaw via WebSocket for real-time chat.
 
 ### Channel Plugin
 
-The trap-channel plugin enables bidirectional messaging:
-- Plugin location: `plugins/trap-channel.ts`
-- Symlink to: `~/.openclaw/extensions/trap-channel.ts`
+The openclutch-channel plugin enables bidirectional messaging:
+- Plugin location: `plugins/openclutch-channel.ts`
+- Symlink to: `~/.openclaw/extensions/openclutch-channel.ts`
 
 ### Session Tracking
 
@@ -302,7 +302,7 @@ PORT=3002
 ## Project Structure
 
 ```
-trap/
+openclutch/
 ├── app/                          # Next.js app router
 │   ├── api/                      # API routes
 │   │   ├── chats/                # Chat CRUD
@@ -358,10 +358,10 @@ trap/
 │   ├── task_events.ts            # Event logging
 │   └── ...
 ├── plugins/                      # OpenClaw plugins
-│   ├── trap-channel.ts           # Channel plugin for chat
-│   └── trap-signal.ts            # Signal plugin for notifications
+│   ├── openclutch-channel.ts     # Channel plugin for chat
+│   └── openclutch-signal.ts      # Signal plugin for notifications
 ├── bin/                          # CLI tools
-│   └── trap-cli.ts               # Trap CLI
+│   └── openclutch-cli.ts         # OpenClutch CLI
 ├── scripts/                      # Utility scripts
 ├── systemd/                      # Systemd service files
 ├── run.sh                        # Process management script
@@ -384,7 +384,7 @@ For HTTPS deployment, WebSocket connections need to be proxied through nginx.
 Add to nginx custom config (`/data/nginx/custom/server_proxy.conf` in NPM):
 
 ```nginx
-# OpenClaw WebSocket proxy (for Trap app)
+# OpenClaw WebSocket proxy (for OpenClutch app)
 location = /openclaw-ws {
     proxy_pass http://192.168.7.200:18789/ws;
     proxy_http_version 1.1;
@@ -464,7 +464,7 @@ Check OpenClaw logs for connection issues:
 journalctl --user -u openclaw-gateway.service -f --no-pager | grep -i ws
 ```
 
-Check Trap logs:
+Check OpenClutch logs:
 ```bash
 ./run.sh logs        # Server logs
 ./run.sh loop-logs   # Work loop logs
@@ -476,5 +476,6 @@ Check Trap logs:
 - **"invalid handshake"** - First message must be `connect` with proper params
 - **"protocol mismatch"** - Use protocol version 3
 - **"Mixed Content"** - HTTPS pages need WSS via nginx proxy
-- **Ghost-completing agents** - OpenClaw lane concurrency too low vs Trap agent limits
+- **Ghost-completing agents** - OpenClaw lane concurrency too low vs OpenClutch agent limits
 - **Tasks stuck in_review with 0 reviews** - PR has conflicts, needs conflict_resolver role
+```
