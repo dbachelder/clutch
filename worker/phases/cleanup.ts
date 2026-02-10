@@ -512,13 +512,13 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<num
       // Check if PR was merged
       const prResult = execFileSync(
         "gh",
-        ["pr", "view", String(prNumber), "--json", "state,merged"],
+        ["pr", "view", String(prNumber), "--json", "state,mergedAt"],
         { encoding: "utf-8", timeout: 10_000, cwd: repoPath }
       )
-      const prData = JSON.parse(prResult) as { state: string; merged: boolean }
+      const prData = JSON.parse(prResult) as { state: string; mergedAt: string | null }
 
       // Only delete branch if PR was merged
-      if (prData.merged) {
+      if (prData.state === "MERGED") {
         // Check if remote branch exists
         try {
           execFileSync(
