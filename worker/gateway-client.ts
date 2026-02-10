@@ -50,7 +50,7 @@ interface AgentResult {
 // ============================================
 
 const PROTOCOL_VERSION = 3
-const DEFAULT_REQUEST_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes for agent runs
+const DEFAULT_REQUEST_TIMEOUT_MS = 65 * 60 * 1000 // 65 minutes (above 1hr agent timeout)
 const CONNECT_TIMEOUT_MS = 10_000
 const RECONNECT_DELAY_MS = 5_000
 
@@ -254,7 +254,7 @@ export class GatewayRpcClient {
    * @returns Agent result with session info and reply
    */
   async runAgent(params: AgentParams): Promise<AgentResult> {
-    const timeoutSeconds = params.timeout ?? 600
+    const timeoutSeconds = params.timeout ?? 3600
 
     // Set model override on the session BEFORE running the agent.
     // This ensures the agent runs with the correct model from the start.
