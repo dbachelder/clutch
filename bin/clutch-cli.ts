@@ -140,6 +140,8 @@ Task Commands:
   tasks create --project <slug> --title "..." [options]
                                       Create a new task
   tasks update <id> [options]         Update task fields
+  tasks comment <id> "message" [options]
+                                      Add comment to a task
   tasks move <id> <status>            Move task to a new status
   tasks deps <id> [--json]            List dependencies for a task
   tasks dep-add <id> --on <taskId>    Add a dependency (task depends on taskId)
@@ -179,17 +181,28 @@ Task Create Options:
   --tags <tags>        Comma-separated tags (e.g., "ui,frontend")
 
 Task Update Options:
-  --title "..."        New title
-  --description "..."  New description (supports \\n for newlines)
-  --status <status>    New status
-  --priority <level>   New priority
-  --role <role>        New role
+  --title "..."             New title
+  --description "..."       New description (supports \\n for newlines)
+  --status <status>         New status
+  --priority <level>        New priority
+  --role <role>             New role
+  --branch <name>           Branch name (e.g., fix/abc123)
+  --pr-number <number>      PR number
+  --agent-session-key <key> Agent session key for cleanup
+
+Task Comment Options:
+  --author <name>           Comment author (default: agent)
+  --author-type <type>      Author type: agent/human/coordinator (default: agent)
+  --type <type>             Comment type: message/status_change/request_input/completion (default: message)
 
 Examples:
   clutch tasks list                           List tasks for current project
   clutch tasks list --status ready --json     List ready tasks as JSON
   clutch tasks get abc123                     Get task details
   clutch tasks create --title "Fix bug"       Create a task
+  clutch tasks update abc123 --branch fix/xyz Update task branch
+  clutch tasks update abc123 --pr-number 42   Update task PR number
+  clutch tasks comment abc123 "Progress"      Add comment to task
   clutch tasks move abc123 done               Move task to done
   clutch agents list                          Show all active agents
   clutch agents get agent:main:clutch:dev:abc Get agent details
@@ -1042,8 +1055,28 @@ async function cmdTasksUpdate(
     updatedFields.push(`role: ${flags.role}`)
   }
 
+  if (typeof flags.branch === "string") {
+    updates.branch = flags.branch
+    updatedFields.push(`branch: ${flags.branch}`)
+  }
+
+  if (typeof flags["pr-number"] === "string") {
+    const prNum = parseInt(flags["pr-number"], 10)
+    if (isNaN(prNum)) {
+      console.error(`Error: --pr-number must be a valid number`)
+      process.exit(1)
+    }
+    updates.pr_number = prNum
+    updatedFields.push(`pr_number: ${prNum}`)
+  }
+
+  if (typeof flags["agent-session-key"] === "string") {
+    updates.agent_session_key = flags["agent-session-key"]
+    updatedFields.push(`agent_session_key: ${flags["agent-session-key"]}`)
+  }
+
   if (Object.keys(updates).length === 0) {
-    console.error("Error: No fields to update. Provide at least one of: --title, --description, --status, --priority, --role")
+    console.error("Error: No fields to update. Provide at least one of: --title, --description, --status, --priority, --role, --branch, --pr-number, --agent-session-key")
     process.exit(1)
   }
 
@@ -1053,6 +1086,41 @@ async function cmdTasksUpdate(
   for (const field of updatedFields) {
     console.log(`  - ${field}`)
   }
+}
+
+async function cmdTasksComment(
+  convex: ConvexHttpClient,
+  project: ProjectInfo,
+  idOrPrefix: string,
+  message: string,
+  flags: Record<string, string | boolean>
+): Promise<void> {
+  const task = await resolveTaskByPrefix(convex, project.id, idOrPrefix)
+
+  if (!task) {
+    console.error(`Task "${idOrPrefix}" not found in project ${project.slug}`)
+    process.exit(1)
+  }
+
+  if (!message) {
+    console.error("Error: Message is required")
+    process.exit(1)
+  }
+
+  const author = typeof flags.author === "string" ? flags.author : "agent"
+  const authorType = typeof flags["author-type"] === "string" ? flags["author-type"] : "agent"
+  const type = typeof flags.type === "string" ? flags.type : "message"
+
+  await apiPost(`/tasks/${task.id}/comments`, {
+    content: unescapeString(message),
+    author,
+    author_type: authorType,
+    type,
+  })
+
+  console.log(`* Added comment to task ${task.id.slice(0, 8)}`)
+  console.log(`  author: ${author} (${authorType})`)
+  console.log(`  type: ${type}`)
 }
 
 async function cmdTasksMove(
@@ -1266,7 +1334,7 @@ async function main(): Promise<void> {
   // Resolve target project (if needed)
   const needsProject = [
     "agents list", "agents get",
-    "tasks list", "tasks get", "tasks create", "tasks update", "tasks move",
+    "tasks list", "tasks get", "tasks create", "tasks update", "tasks move", "tasks comment",
     "tasks deps", "tasks dep-add", "tasks dep-rm",
     "dispatch pending",
     "metrics",
@@ -1302,6 +1370,9 @@ async function main(): Promise<void> {
       break
     case command.startsWith("tasks update "):
       await cmdTasksUpdate(convex, project!, positional[2], flags)
+      break
+    case command.startsWith("tasks comment "):
+      await cmdTasksComment(convex, project!, positional[2], positional.slice(3).join(" "), flags)
       break
     case command.startsWith("tasks move "):
       await cmdTasksMove(convex, project!, positional[2], positional[3])
