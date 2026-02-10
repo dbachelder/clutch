@@ -131,7 +131,7 @@ export function getSessionStatusIndicator(status?: SessionStatusInfo) {
   }
 
   if (status.isIdle) {
-    return { emoji: '🟡', color: '#eab308', title: 'Idle - no activity for 5+ minutes' }
+    return { emoji: '🟡', color: '#eab308', title: 'Idle - no activity for 10+ minutes' }
   }
 
   // Default to idle for unknown states

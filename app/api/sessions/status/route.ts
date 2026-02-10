@@ -35,7 +35,7 @@ interface OpenClawSession {
   contextTokens: number
 }
 
-const IDLE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
+const IDLE_THRESHOLD_MS = 10 * 60 * 1000 // 10 minutes
 const COMPLETED_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
 
 /**
