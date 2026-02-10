@@ -6,8 +6,14 @@
  *
  * Each agent is a long-running RPC call to the gateway. The gateway
  * creates a real session that is fully trackable (tokens, model, activity).
+ *
+ * NOTE: This implementation uses Convex as the source of truth for active
+ * agents. There is no in-memory Map — agent state is stored in the database
+ * with agent_session_key and agent_spawned_at fields on tasks.
  */
 
+import type { ConvexHttpClient } from "convex/browser"
+import { api } from "../convex/_generated/api"
 import { getGatewayClient, type GatewayRpcClient } from "./gateway-client"
 import { SessionFileReader } from "./session-file-reader"
 
@@ -15,19 +21,9 @@ import { SessionFileReader } from "./session-file-reader"
 // Types
 // ============================================
 
-export interface AgentHandle {
-  taskId: string
-  projectId: string
-  role: string
-  sessionKey: string
-  model?: string
-  spawnedAt: number
-  /** The promise that resolves when the agent completes */
-  promise: Promise<AgentOutcome>
-}
-
 export interface AgentOutcome {
   taskId: string
+  projectId: string
   sessionKey: string
   role: string
   success: boolean
@@ -58,9 +54,7 @@ export interface SpawnAgentParams {
 // ============================================
 
 export class AgentManager {
-  private agents = new Map<string, AgentHandle>()
   private gateway: GatewayRpcClient
-  private completedQueue: AgentOutcome[] = []
   private sessionFileReader: SessionFileReader
   /** Timestamp when this loop started. Used to ignore stale session files from previous runs. */
   private loopStartedAt: number
@@ -75,9 +69,14 @@ export class AgentManager {
    * Spawn a new agent via the gateway.
    *
    * This sends an async RPC call that will run until the agent completes.
-   * The agent is tracked internally and its session is visible in OpenClaw.
+   * The agent is tracked in Convex (via agent_session_key and agent_spawned_at
+   * on the task), NOT in an in-memory Map.
+   *
+   * NOTE: This is fire-and-forget. The gateway runs the agent asynchronously.
+   * Agent completion is detected by reapFinished() which polls Convex and
+   * checks session JSONL files.
    */
-  async spawn(params: SpawnAgentParams): Promise<AgentHandle> {
+  async spawn(params: SpawnAgentParams): Promise<{ sessionKey: string }> {
     // Ensure gateway connection
     await this.gateway.connect()
 
@@ -85,75 +84,30 @@ export class AgentManager {
     const sessionKey = retryCount > 0
       ? `agent:main:${params.projectSlug}:${params.role}:${params.taskId.slice(0, 8)}:r${retryCount}`
       : `agent:main:${params.projectSlug}:${params.role}:${params.taskId.slice(0, 8)}`
-    const now = Date.now()
 
-    // Create the long-running RPC promise
-    const promise = this._runAgent(params, sessionKey, now)
-
-    const handle: AgentHandle = {
-      taskId: params.taskId,
-      projectId: params.projectId,
-      role: params.role,
+    // The gateway accepts the agent run and executes it asynchronously.
+    // This call returns quickly with status: "accepted".
+    // The actual session is trackable via sessions.list.
+    await this.gateway.runAgent({
+      message: params.message,
       sessionKey,
       model: params.model,
-      spawnedAt: now,
-      promise,
-    }
+      thinking: params.thinking ?? "off",
+      timeout: params.timeoutSeconds ?? 600,
+    })
 
-    this.agents.set(params.taskId, handle)
-    return handle
-  }
-
-  private async _runAgent(
-    params: SpawnAgentParams,
-    sessionKey: string,
-    _spawnedAt: number,
-  ): Promise<AgentOutcome> {
-    try {
-      // The gateway accepts the agent run and executes it asynchronously.
-      // This call returns quickly with status: "accepted".
-      // The actual session is trackable via sessions.list.
-      await this.gateway.runAgent({
-        message: params.message,
-        sessionKey,
-        model: params.model,
-        thinking: params.thinking ?? "off",
-        timeout: params.timeoutSeconds ?? 600,
-      })
-
-      // Agent was accepted — it's now running on the gateway.
-      // We DON'T remove from active here. The cleanup phase will
-      // detect when the session finishes via sessions polling.
-      return {
-        taskId: params.taskId,
-        sessionKey,
-        role: params.role,
-        success: true,
-        reply: "accepted",
-        durationMs: 0,
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const outcome: AgentOutcome = {
-        taskId: params.taskId,
-        sessionKey,
-        role: params.role,
-        success: false,
-        error: message,
-        durationMs: 0,
-      }
-
-      this.completedQueue.push(outcome)
-      this.agents.delete(params.taskId)
-      return outcome
-    }
+    // Agent was accepted — it's now running on the gateway.
+    // Agent state is stored in Convex (agent_session_key, agent_spawned_at).
+    // reapFinished() will detect completion by checking JSONL files.
+    return { sessionKey }
   }
 
   /**
-   * Reap finished and stale agents by reading session JSONL files directly.
+   * Reap finished and stale agents by querying Convex and reading session JSONL files.
    *
-   * Uses SessionFileReader to detect completion via stopReason and staleness
-   * via file mtime, which is more reliable than the RPC sessions.list API.
+   * Queries Convex for all tasks with agent_session_key != null AND status in
+   * (in_progress, in_review). For each, checks the session JSONL file via
+   * SessionFileReader to detect completion or staleness.
    *
    * Three conditions:
    * 1. **Done**: Last assistant message has stopReason === "stop" → reap as finished
@@ -162,20 +116,32 @@ export class AgentManager {
    *
    * @param staleMs - Milliseconds of inactivity before a session is considered stuck.
    *                  Default: 5 minutes (300_000 ms).
+   * @param convex - Convex HTTP client for querying active tasks
    */
-  async reapFinished(staleMs = 5 * 60 * 1000, staleReviewMs?: number): Promise<{
-    reaped: AgentOutcome[]
-  }> {
-    if (this.agents.size === 0) return { reaped: [] }
+  async reapFinished(
+    convex: ConvexHttpClient,
+    staleMs = 5 * 60 * 1000,
+    staleReviewMs?: number
+  ): Promise<{ reaped: AgentOutcome[] }> {
+    // Query Convex for all active agent tasks (in_progress or in_review with session key)
+    const activeTasks = await convex.query(api.tasks.getAllActiveAgentTasks, {})
+
+    if (activeTasks.length === 0) {
+      return { reaped: [] }
+    }
 
     const reaped: AgentOutcome[] = []
     const now = Date.now()
 
-    for (const [taskId, handle] of this.agents) {
-      const effectiveStaleMs = handle.role === "reviewer" && staleReviewMs != null
+    for (const task of activeTasks) {
+      const sessionKey = task.agent_session_key!
+      const spawnedAt = task.agent_spawned_at ?? now
+
+      const effectiveStaleMs = task.role === "reviewer" && staleReviewMs != null
         ? staleReviewMs
         : staleMs
-      const info = this.sessionFileReader.getSessionInfo(handle.sessionKey, effectiveStaleMs)
+
+      const info = this.sessionFileReader.getSessionInfo(sessionKey, effectiveStaleMs)
 
       // Ignore stale session files from previous loop runs
       // This prevents false tombstones when the loop restarts
@@ -190,12 +156,12 @@ export class AgentManager {
       if (!info) {
         // Session file not found yet — agent may still be starting up.
         // Only treat as finished if the agent has been running for a while.
-        const agentAgeMs = now - handle.spawnedAt
+        const agentAgeMs = now - spawnedAt
         if (agentAgeMs < 10 * 60_000) {
           // Agent was spawned less than 10min ago — give it time to create its session file
           continue
         }
-        // Session file still missing after 60s — treat as failed/gone
+        // Session file still missing after grace period — treat as failed/gone
         reason = "finished"
         replyText = "completed"
       } else if (info.isDone) {
@@ -205,7 +171,7 @@ export class AgentManager {
         if (info.isTerminalError) {
           replyText = "terminal_error"
           console.log(
-            `[AgentManager] Session ${handle.sessionKey} ended with terminal error ` +
+            `[AgentManager] Session ${sessionKey} ended with terminal error ` +
             `(OpenClaw embedded run timeout). Will be reaped as finished.`,
           )
         } else {
@@ -232,36 +198,34 @@ export class AgentManager {
 
         // Kill the stuck session on the gateway
         try {
-          await this.gateway.deleteSession(handle.sessionKey)
+          await this.gateway.deleteSession(sessionKey)
           console.log(
-            `[AgentManager] Killed stale session ${handle.sessionKey} ` +
+            `[AgentManager] Killed stale session ${sessionKey} ` +
             `(mtime ${Math.round((now - info.fileMtimeMs) / 1000)}s ago, threshold ${Math.round(staleMs / 1000)}s)`,
           )
         } catch (killError) {
           const msg = killError instanceof Error ? killError.message : String(killError)
-          console.warn(`[AgentManager] Failed to kill stale session ${handle.sessionKey}: ${msg}`)
-          // Still reap the handle — the session may be in a broken state
+          console.warn(`[AgentManager] Failed to kill stale session ${sessionKey}: ${msg}`)
+          // Still reap the task — the session may be in a broken state
         }
       } else {
         // Session is still active (recent mtime or mid-tool-call)
-        // Note: Active agent updates now handled by sessions table
         continue
       }
 
       if (reason) {
         const outcome: AgentOutcome = {
-          taskId,
-          sessionKey: handle.sessionKey,
-          role: handle.role,
+          taskId: task.id,
+          projectId: task.project_id,
+          sessionKey,
+          role: task.role ?? "dev",
           success: reason === "finished",
           reply: replyText,
           error: reason === "stale" ? `Agent stale for >${Math.round(staleMs / 60_000)}min` : undefined,
-          durationMs: now - handle.spawnedAt,
+          durationMs: now - spawnedAt,
           usage: outcomeUsage,
         }
         reaped.push(outcome)
-        this.completedQueue.push(outcome)
-        this.agents.delete(taskId)
       }
     }
 
@@ -273,69 +237,6 @@ export class AgentManager {
     }
 
     return { reaped }
-  }
-
-  /**
-   * Get all active (running) agent handles.
-   */
-  active(): AgentHandle[] {
-    return Array.from(this.agents.values())
-  }
-
-  /**
-   * Count active agents, optionally filtered by project.
-   */
-  activeCount(projectId?: string): number {
-    if (projectId === undefined) {
-      return this.agents.size
-    }
-    let count = 0
-    for (const agent of this.agents.values()) {
-      if (agent.projectId === projectId) count++
-    }
-    return count
-  }
-
-  /**
-   * Count active agents by role, optionally filtered by project.
-   */
-  activeCountByRole(role: string, projectId?: string): number {
-    let count = 0
-    for (const agent of this.agents.values()) {
-      if (agent.role === role && (projectId === undefined || agent.projectId === projectId)) count++
-    }
-    return count
-  }
-
-  /**
-   * Drain completed agents from the queue.
-   * Returns outcomes since the last drain.
-   */
-  drainCompleted(): AgentOutcome[] {
-    const completed = [...this.completedQueue]
-    this.completedQueue = []
-    return completed
-  }
-
-  /**
-   * Check if a specific task has an active agent.
-   */
-  has(taskId: string): boolean {
-    return this.agents.has(taskId)
-  }
-
-  /**
-   * Get a specific agent handle by task ID.
-   */
-  get(taskId: string): AgentHandle | undefined {
-    return this.agents.get(taskId)
-  }
-
-  /**
-   * Get session keys for all active agents.
-   */
-  activeSessionKeys(): string[] {
-    return Array.from(this.agents.values()).map((a) => a.sessionKey)
   }
 
   /**

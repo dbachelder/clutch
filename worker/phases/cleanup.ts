@@ -21,7 +21,6 @@
 import { execFileSync } from "node:child_process"
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
-import type { AgentManager } from "../agent-manager"
 import type { Task } from "../../lib/types"
 
 // ============================================
@@ -53,7 +52,6 @@ interface ProjectInfo {
 
 interface CleanupContext {
   convex: ConvexHttpClient
-  agents: AgentManager
   cycle: number
   project: ProjectInfo
   log: (params: LogRunParams) => Promise<void>

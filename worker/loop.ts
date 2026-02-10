@@ -369,33 +369,11 @@ async function runProjectCycle(
   const cycleStart = Date.now()
 
   // Reap finished agents before doing anything else.
+  // Queries Convex for active tasks and checks their JSONL files for completion.
   const config = loadConfig()
   const staleMs = config.staleTaskMinutes * 60 * 1000
   const staleReviewMs = config.staleReviewMinutes * 60 * 1000
-  const { reaped } = await agentManager.reapFinished(staleMs, staleReviewMs)
-
-  // Drain completed queue — catches outcomes from fire-and-forget _runAgent
-  // promises that resolved/rejected between cycles (e.g. gateway errors).
-  // Without this, failed spawns silently disappear from the agents map and
-  // the ghost detector is the only thing that catches them (after 2min delay).
-  const asyncCompleted = agentManager.drainCompleted()
-  if (asyncCompleted.length > 0) {
-    console.log(
-      `[WorkLoop] Drained ${asyncCompleted.length} async outcome(s): ` +
-      asyncCompleted.map((o) => `${o.sessionKey} (${o.error ? 'error: ' + o.error.slice(0, 100) : o.reply})`).join(", "),
-    )
-  }
-
-  // Merge both sources — reaped (from JSONL inspection) + async (from gateway RPC results)
-  // Deduplicate by taskId since both paths could theoretically produce an outcome for the same task
-  const allOutcomes: typeof reaped = [...reaped]
-  const seenTaskIds = new Set(reaped.map((r) => r.taskId))
-  for (const outcome of asyncCompleted) {
-    if (!seenTaskIds.has(outcome.taskId)) {
-      allOutcomes.push(outcome)
-      seenTaskIds.add(outcome.taskId)
-    }
-  }
+  const { reaped: allOutcomes } = await agentManager.reapFinished(convex, staleMs, staleReviewMs)
 
   // Note: Active agent activity is now tracked via sessions table, not tasks
 
@@ -804,10 +782,9 @@ async function runProjectCycle(
   }
 
   // Query active agents from Convex (survives loop restarts, source of truth)
-  const activeAgents = await convex.query(api.tasks.getActiveAgentsByProject, {
-    projectId: project.id,
-  })
-  const activeAgentCount = activeAgents.length
+  const activeTasks = await convex.query(api.tasks.getAllActiveAgentTasks, {})
+  const projectActiveAgents = activeTasks.filter((t) => t.project_id === project.id)
+  const activeAgentCount = projectActiveAgents.length
 
   // Update state to show we're starting a cycle
   await convex.mutation(api.workLoop.upsertState, {
@@ -828,7 +805,6 @@ async function runProjectCycle(
     async () => {
       const result = await runCleanup({
         convex,
-        agents: agentManager,
         cycle,
         project,
         log: (params) => logRun(convex, params),
@@ -855,7 +831,6 @@ async function runProjectCycle(
     async () => {
       const result = await runReview({
         convex,
-        agents: agentManager,
         config: loadConfig(),
         cycle,
         project,
@@ -883,7 +858,6 @@ async function runProjectCycle(
     async () => {
       const result = await runWork({
         convex,
-        agents: agentManager,
         config,
         cycle,
         project,
@@ -1077,18 +1051,19 @@ async function runLoop(): Promise<void> {
 
   // Update all project states to stopped
   try {
+    // Query all active agents from Convex for accurate counts
+    const allActiveTasks = await convex.query(api.tasks.getAllActiveAgentTasks, {})
+
     const projects = await getEnabledProjects(convex)
     for (const project of projects) {
-      // Query active agents from Convex for accurate count
-      const activeAgents = await convex.query(api.tasks.getActiveAgentsByProject, {
-        projectId: project.id,
-      })
+      const projectActiveCount = allActiveTasks.filter((t) => t.project_id === project.id).length
+
       await convex.mutation(api.workLoop.upsertState, {
         project_id: project.id,
         status: "stopped",
         current_phase: currentPhase,
         current_cycle: cycle,
-        active_agents: activeAgents.length,
+        active_agents: projectActiveCount,
         max_agents: project.work_loop_max_agents ?? config.maxAgentsPerProject,
         last_cycle_at: Date.now(),
       })
