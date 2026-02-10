@@ -464,6 +464,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
           id: task.id,
           session_id: handle.sessionKey,
           agent_session_key: handle.sessionKey,
+          agent_retry_count: (task.agent_retry_count ?? 0) + 1,
         })
         await convex.mutation(api.task_events.logAgentAssigned, {
           taskId: task.id,
