@@ -7,7 +7,7 @@
 
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
-import type { AgentManager } from "../agent-manager"
+import { agentManager } from "../agent-manager"
 import type { WorkLoopConfig } from "../config"
 import type { LogRunParams } from "../logger"
 import type { Task, TaskPriority } from "../../lib/types"
@@ -35,7 +35,6 @@ interface ProjectInfo {
 
 interface WorkContext {
   convex: ConvexHttpClient
-  agents: AgentManager
   config: WorkLoopConfig
   cycle: number
   project: ProjectInfo
@@ -204,12 +203,14 @@ function extractImageUrls(description: string | null): string[] {
  * 6. Log claim and spawn to Convex
  */
 export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
-  const { convex, agents, config, cycle, project, log } = ctx
+  const { convex, config, cycle, project, log } = ctx
 
   // --- 1. Check capacity ---
-  const globalCount = agents.activeCount()
-  const projectCount = agents.activeCount(project.id)
-  const devCount = agents.activeCountByRole("dev")
+  // Query active agents from Convex (source of truth, survives restarts)
+  const allActiveTasks = await convex.query(api.tasks.getAllActiveAgentTasks, {})
+  const globalCount = allActiveTasks.length
+  const projectCount = allActiveTasks.filter((t) => t.project_id === project.id).length
+  const devCount = allActiveTasks.filter((t) => t.role === "dev").length
 
   if (globalCount >= config.maxAgentsGlobal) {
     await log({
@@ -432,7 +433,7 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
     console.log(`[WorkPhase] Task ${task.id.slice(0, 8)} role=${role} → model=${model}`)
 
     try {
-      const handle = await agents.spawn({
+      const { sessionKey } = await agentManager.spawn({
         taskId: task.id,
         projectId: project.id,
         projectSlug: project.slug,
@@ -450,16 +451,16 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
         phase: "work",
         action: "agent_spawned",
         taskId: task.id,
-        sessionKey: handle.sessionKey,
-        details: { role, model: model ?? "default", sessionKey: handle.sessionKey },
+        sessionKey,
+        details: { role, model: model ?? "default", sessionKey },
       })
 
       // Update task with session key, increment retry count for fresh sessions
       try {
         await convex.mutation(api.tasks.update, {
           id: task.id,
-          session_id: handle.sessionKey,
-          agent_session_key: handle.sessionKey,
+          session_id: sessionKey,
+          agent_session_key: sessionKey,
           agent_spawned_at: Date.now(),
           agent_retry_count: (task.agent_retry_count ?? 0) + 1,
         })
@@ -467,7 +468,7 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
         // Log agent assignment event
         await convex.mutation(api.task_events.logAgentAssigned, {
           taskId: task.id,
-          sessionKey: handle.sessionKey,
+          sessionKey,
           model,
           role,
         })

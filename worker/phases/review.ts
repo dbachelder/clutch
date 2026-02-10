@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
-import type { AgentManager } from "../agent-manager"
+import { agentManager } from "../agent-manager"
 import type { WorkLoopConfig } from "../config"
 import type { Task } from "../../lib/types"
 import { buildPromptAsync } from "../prompts"
@@ -37,7 +37,6 @@ interface ProjectInfo {
 
 interface ReviewContext {
   convex: ConvexHttpClient
-  agents: AgentManager
   config: WorkLoopConfig
   cycle: number
   project: ProjectInfo
@@ -82,7 +81,7 @@ interface RecoveryResult {
  * 4. Spawn via ChildManager with role="reviewer", model="gpt"
  */
 export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
-  const { convex, agents, config, cycle, project } = ctx
+  const { convex, config, cycle, project } = ctx
 
   let spawnedCount = 0
   let skippedCount = 0
@@ -98,22 +97,17 @@ export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
     details: { count: tasks.length },
   })
 
-  // Enforce: max 1 reviewer per project.
-  // Query Convex for active reviewers instead of using in-memory agentManager.
-  // This survives loop restarts and manual task moves.
-  const activeReviewers = await convex.query(api.tasks.getActiveAgentsByProject, {
-    projectId: project.id,
-    role: "reviewer",
-    status: "in_review",
-  })
-  const activeConflictResolvers = await convex.query(api.tasks.getActiveAgentsByProject, {
-    projectId: project.id,
-    role: "conflict_resolver",
-    status: "in_review",
-  })
+  // Query active agents from Convex (source of truth, survives restarts)
+  const allActiveTasks = await convex.query(api.tasks.getAllActiveAgentTasks, {})
 
-  if (activeReviewers.length > 0 || activeConflictResolvers.length > 0) {
-    const role = activeReviewers.length > 0 ? "reviewer" : "conflict_resolver"
+  // Enforce: max 1 reviewer per project.
+  // Sequential reviews prevent merge conflict cascades — each PR merges
+  // before the next gets reviewed, so branches don't diverge.
+  const projectActiveTasks = allActiveTasks.filter((t) => t.project_id === project.id)
+  const projectReviewerCount = projectActiveTasks.filter((t) => t.role === "reviewer").length
+  const projectConflictCount = projectActiveTasks.filter((t) => t.role === "conflict_resolver").length
+  if (projectReviewerCount > 0 || projectConflictCount > 0) {
+    const role = projectReviewerCount > 0 ? "reviewer" : "conflict_resolver"
     console.log(`[ReviewPhase] ${project.slug}: already has active ${role} — skipping ${tasks.length} in_review tasks (1 reviewer per project)`)
     await ctx.log({
       projectId: project.id,
@@ -127,7 +121,7 @@ export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
 
   for (const task of tasks) {
     // Check global limits before each attempt
-    const globalActive = agents.activeCount()
+    const globalActive = allActiveTasks.length
     if (globalActive >= config.maxAgentsGlobal) {
       const remaining = tasks.length - tasks.indexOf(task)
       console.log(`[ReviewPhase] Global agent limit reached (${globalActive}/${config.maxAgentsGlobal}) — skipping ${remaining} review tasks`)
@@ -141,7 +135,7 @@ export async function runReview(ctx: ReviewContext): Promise<ReviewResult> {
       break
     }
 
-    const result = await processTask(ctx, task)
+    const result = await processTask(ctx, task, allActiveTasks)
 
     if (result.spawned) {
       spawnedCount++
@@ -181,22 +175,66 @@ interface TaskProcessResult {
   details: Record<string, unknown>
 }
 
-async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessResult> {
-  const { convex, agents, project } = ctx
+async function processTask(
+  ctx: ReviewContext,
+  task: Task,
+  allActiveTasks: Task[]
+): Promise<TaskProcessResult> {
+  const { convex, project } = ctx
 
   // Use recorded branch name if available, otherwise derive from task ID
   const branchName = task.branch ?? `fix/${task.id.slice(0, 8)}`
 
-  // Check if this task already has an active agent (via Convex query).
-  // This replaces the in-memory agentManager.has() check to survive loop restarts.
-  const hasActiveAgent = await convex.query(api.tasks.hasActiveAgent, { taskId: task.id })
+  // ── Early merged-PR check ──────────────────────────────────────────
+  // Before checking agent status, see if the PR was already merged.
+  // This prevents stale agent_session_key from blocking task completion
+  // when a reviewer merged the PR but the task wasn't moved to done.
+  if (task.pr_number) {
+    const alreadyMerged = isPRMerged(task.pr_number, project)
+    if (alreadyMerged) {
+      try {
+        await convex.mutation(api.tasks.move, {
+          id: task.id,
+          status: "done",
+          reason: 'pr_already_merged',
+        })
+        await convex.mutation(api.tasks.update, {
+          id: task.id,
+          agent_session_key: undefined,
+          agent_spawned_at: undefined,
+        })
+        console.log(`[ReviewPhase] Auto-closed task ${task.id.slice(0, 8)} — PR #${task.pr_number} already merged (early check)`)
 
-  if (hasActiveAgent) {
+        await handlePostMergeDeploy(convex, task.pr_number, project, task.id)
+        await convex.mutation(api.task_events.logPRMerged, {
+          taskId: task.id,
+          prNumber: task.pr_number,
+          mergedBy: 'work-loop',
+        })
+        await handleSelfDeploy(project, task.pr_number)
+      } catch (err) {
+        console.error(`[ReviewPhase] Failed to auto-close merged task ${task.id.slice(0, 8)}:`, err)
+      }
+      return {
+        spawned: false,
+        details: {
+          reason: "pr_already_merged_early",
+          taskId: task.id,
+          prNumber: task.pr_number,
+        },
+      }
+    }
+  }
+
+  // Check if task already has an active agent session recorded (database check)
+  // This prevents duplicate agent_assigned events when review phase runs multiple times
+  if (task.agent_session_key) {
     return {
       spawned: false,
       details: {
         reason: "agent_session_already_active",
         taskId: task.id,
+        sessionKey: task.agent_session_key,
       },
     }
   }
@@ -445,7 +483,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
     }
 
     try {
-      const handle = await agents.spawn({
+      const { sessionKey } = await agentManager.spawn({
         taskId: task.id,
         projectId: project.id,
         projectSlug: project.slug,
@@ -459,14 +497,14 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
       try {
         await convex.mutation(api.tasks.update, {
           id: task.id,
-          session_id: handle.sessionKey,
-          agent_session_key: handle.sessionKey,
+          session_id: sessionKey,
+          agent_session_key: sessionKey,
           agent_spawned_at: Date.now(),
           agent_retry_count: (task.agent_retry_count ?? 0) + 1,
         })
         await convex.mutation(api.task_events.logAgentAssigned, {
           taskId: task.id,
-          sessionKey: handle.sessionKey,
+          sessionKey,
           model: "kimi",
           role: "conflict_resolver",
         })
@@ -488,7 +526,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
           prNumber: pr.number,
           prTitle: pr.title,
           branch: branchName,
-          sessionKey: handle.sessionKey,
+          sessionKey,
           role: "conflict_resolver",
           attempt: retryCount + 1,
         },
@@ -550,7 +588,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
   }
 
   try {
-    const handle = await agents.spawn({
+    const { sessionKey } = await agentManager.spawn({
       taskId: task.id,
       projectId: project.id,
       projectSlug: project.slug,
@@ -565,8 +603,8 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
     try {
       await convex.mutation(api.tasks.update, {
         id: task.id,
-        session_id: handle.sessionKey,
-        agent_session_key: handle.sessionKey,
+        session_id: sessionKey,
+        agent_session_key: sessionKey,
         agent_spawned_at: Date.now(),
         review_count: (task.review_count ?? 0) + 1,
       })
@@ -574,7 +612,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
       // Log agent assignment event
       await convex.mutation(api.task_events.logAgentAssigned, {
         taskId: task.id,
-        sessionKey: handle.sessionKey,
+        sessionKey,
         model: "gpt",
         role: "reviewer",
       })
@@ -589,7 +627,7 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
         prNumber: pr.number,
         prTitle: pr.title,
         branch: branchName,
-        sessionKey: handle.sessionKey,
+        sessionKey,
       },
     }
   } catch (error) {

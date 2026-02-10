@@ -525,6 +525,44 @@ export const getWithActiveAgentSessions = query({
 })
 
 /**
+ * Get ALL tasks with active agents across ALL projects.
+ * Used by the work loop's reapFinished() to monitor all running agents
+ * without maintaining an in-memory Map.
+ *
+ * Returns tasks with status in (in_progress, in_review) that have
+ * an agent_session_key set. Does NOT join with sessions table —
+ * session status is determined from JSONL files by the AgentManager.
+ */
+export const getAllActiveAgentTasks = query({
+  args: {},
+  handler: async (ctx): Promise<Task[]> => {
+    // Get tasks with agent_session_key that are actively being worked on.
+    // Only in_progress and in_review tasks have live agents.
+    const tasks = await ctx.db
+      .query('tasks')
+      .filter((q) =>
+        q.and(
+          q.neq(q.field('agent_session_key'), null),
+          q.or(
+            q.eq(q.field('status'), 'in_progress'),
+            q.eq(q.field('status'), 'in_review')
+          )
+        )
+      )
+      .collect()
+
+    // Sort by agent_spawned_at (oldest first) so we reap oldest agents first
+    return tasks
+      .sort((a, b) => {
+        const aSpawned = (a as { agent_spawned_at?: number }).agent_spawned_at ?? 0
+        const bSpawned = (b as { agent_spawned_at?: number }).agent_spawned_at ?? 0
+        return aSpawned - bSpawned
+      })
+      .map((t) => toTask(t as Parameters<typeof toTask>[0]))
+  },
+})
+
+/**
  * Get the count of agents for a project.
  * Returns just the count (lightweight) instead of full task objects.
  * Note: Active status should now be determined from sessions table
