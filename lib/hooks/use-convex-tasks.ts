@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Task, TaskStatus } from "@/lib/types"
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 
 /**
  * Reactive Convex subscription for tasks by project and status.
@@ -118,7 +118,12 @@ const DONE_COLUMN_PAGE_SIZE = 10  // Smaller initial batch for done column
 
 /**
  * Hook that returns paginated tasks for each board column.
- * Each column tracks its own pagination state independently.
+ * Uses a single reactive query for all tasks to ensure consistent real-time updates.
+ * 
+ * Previously, this used 6 separate useQuery calls (one per column), which caused
+ * race conditions when tasks moved between columns - the source and target columns
+ * would update at different times, causing cards to briefly appear in both or
+ * disappear entirely.
  */
 export function usePaginatedBoardTasks(
   projectId: string | null
@@ -131,7 +136,6 @@ export function usePaginatedBoardTasks(
   loadMore: (status: TaskStatus) => void
 } {
   // Track page size per column (starts at DEFAULT_PAGE_SIZE, grows with "load more")
-  // Done column starts with smaller batch size for performance (can have 100s of tasks)
   const [pageSizes, setPageSizes] = useState<Record<TaskStatus, number>>({
     backlog: DEFAULT_PAGE_SIZE,
     ready: DEFAULT_PAGE_SIZE,
@@ -141,76 +145,97 @@ export function usePaginatedBoardTasks(
     done: DONE_COLUMN_PAGE_SIZE,
   })
 
-  // Fetch paginated data for each status
-  const backlogResult = useQuery(
-    api.tasks.getByProjectAndStatusPaginated,
-    projectId ? { projectId, status: "backlog", limit: pageSizes.backlog, offset: 0 } : "skip"
-  )
-  const readyResult = useQuery(
-    api.tasks.getByProjectAndStatusPaginated,
-    projectId ? { projectId, status: "ready", limit: pageSizes.ready, offset: 0 } : "skip"
-  )
-  const inProgressResult = useQuery(
-    api.tasks.getByProjectAndStatusPaginated,
-    projectId ? { projectId, status: "in_progress", limit: pageSizes.in_progress, offset: 0 } : "skip"
-  )
-  const inReviewResult = useQuery(
-    api.tasks.getByProjectAndStatusPaginated,
-    projectId ? { projectId, status: "in_review", limit: pageSizes.in_review, offset: 0 } : "skip"
-  )
-  const blockedResult = useQuery(
-    api.tasks.getByProjectAndStatusPaginated,
-    projectId ? { projectId, status: "blocked", limit: pageSizes.blocked, offset: 0 } : "skip"
-  )
-  const doneResult = useQuery(
-    api.tasks.getByProjectAndStatusPaginated,
-    projectId ? { projectId, status: "done", limit: pageSizes.done, offset: 0 } : "skip"
+  // Use a single reactive query for all tasks - this ensures consistent real-time updates
+  // When a task moves between columns, all columns update atomically from the same data source
+  const allTasks = useQuery(
+    api.tasks.getByProject,
+    projectId ? { projectId } : "skip"
   )
 
-  const results = {
-    backlog: backlogResult,
-    ready: readyResult,
-    in_progress: inProgressResult,
-    in_review: inReviewResult,
-    blocked: blockedResult,
-    done: doneResult,
-  }
+  const isLoading = allTasks === undefined
 
-  // Check if any are still loading
-  const isLoading = Object.values(results).some((r) => r === undefined)
+  // Group, sort, and paginate tasks by status - memoized for performance
+  const { tasksByStatus, totalCounts, hasMore } = useMemo<{
+    tasksByStatus: Record<TaskStatus, Task[]>
+    totalCounts: Record<TaskStatus, number>
+    hasMore: Record<TaskStatus, boolean>
+  }>(() => {
+    // Initialize empty result
+    const result: Record<TaskStatus, Task[]> = {
+      backlog: [],
+      ready: [],
+      in_progress: [],
+      in_review: [],
+      blocked: [],
+      done: [],
+    }
 
-  // Build tasksByStatus from results
-  const tasksByStatus: Record<TaskStatus, Task[]> = {
-    backlog: backlogResult?.tasks ?? [],
-    ready: readyResult?.tasks ?? [],
-    in_progress: inProgressResult?.tasks ?? [],
-    in_review: inReviewResult?.tasks ?? [],
-    blocked: blockedResult?.tasks ?? [],
-    done: doneResult?.tasks ?? [],
-  }
+    const counts: Record<TaskStatus, number> = {
+      backlog: 0,
+      ready: 0,
+      in_progress: 0,
+      in_review: 0,
+      blocked: 0,
+      done: 0,
+    }
 
-  // Build total counts from results
-  const totalCounts: Record<TaskStatus, number> = {
-    backlog: backlogResult?.totalCount ?? 0,
-    ready: readyResult?.totalCount ?? 0,
-    in_progress: inProgressResult?.totalCount ?? 0,
-    in_review: inReviewResult?.totalCount ?? 0,
-    blocked: blockedResult?.totalCount ?? 0,
-    done: doneResult?.totalCount ?? 0,
-  }
+    const noMore: Record<TaskStatus, boolean> = {
+      backlog: false,
+      ready: false,
+      in_progress: false,
+      in_review: false,
+      blocked: false,
+      done: false,
+    }
 
-  // Calculate hasMore for each column
-  const hasMore: Record<TaskStatus, boolean> = {
-    backlog: (backlogResult?.tasks.length ?? 0) < (backlogResult?.totalCount ?? 0),
-    ready: (readyResult?.tasks.length ?? 0) < (readyResult?.totalCount ?? 0),
-    in_progress: (inProgressResult?.tasks.length ?? 0) < (inProgressResult?.totalCount ?? 0),
-    in_review: (inReviewResult?.tasks.length ?? 0) < (inReviewResult?.totalCount ?? 0),
-    blocked: (blockedResult?.tasks.length ?? 0) < (blockedResult?.totalCount ?? 0),
-    done: (doneResult?.tasks.length ?? 0) < (doneResult?.totalCount ?? 0),
-  }
+    if (!allTasks) {
+      return { tasksByStatus: result, totalCounts: counts, hasMore: noMore }
+    }
+
+    // Group tasks by status
+    for (const task of allTasks) {
+      if (result[task.status]) {
+        result[task.status].push(task)
+      }
+    }
+
+    // Sort each group and apply pagination
+    for (const status of Object.keys(result) as TaskStatus[]) {
+      const tasks = result[status]
+      counts[status] = tasks.length
+
+      // Sort tasks
+      if (status === "done") {
+        // Done column: most recently completed first
+        tasks.sort((a, b) => {
+          const aTime = a.completed_at ?? a.updated_at
+          const bTime = b.completed_at ?? b.updated_at
+          return bTime - aTime
+        })
+      } else {
+        // Other columns: by position
+        tasks.sort((a, b) => a.position - b.position)
+      }
+
+      // Apply pagination - slice to page size
+      const limit = pageSizes[status]
+      result[status] = tasks.slice(0, limit)
+    }
+
+    // Calculate hasMore for each column
+    const more: Record<TaskStatus, boolean> = {
+      backlog: result.backlog.length < counts.backlog,
+      ready: result.ready.length < counts.ready,
+      in_progress: result.in_progress.length < counts.in_progress,
+      in_review: result.in_review.length < counts.in_review,
+      blocked: result.blocked.length < counts.blocked,
+      done: result.done.length < counts.done,
+    }
+
+    return { tasksByStatus: result, totalCounts: counts, hasMore: more }
+  }, [allTasks, pageSizes])
 
   // Load more function - increases page size for a specific column
-  // Done column increments by smaller batch size (10) vs others (25)
   const loadMore = useCallback((status: TaskStatus) => {
     const increment = status === 'done' ? DONE_COLUMN_PAGE_SIZE : DEFAULT_PAGE_SIZE
     setPageSizes((prev) => ({
