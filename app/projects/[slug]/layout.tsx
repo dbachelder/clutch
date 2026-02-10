@@ -9,7 +9,7 @@ import { MobileProjectSwitcher } from "@/components/layout/mobile-project-switch
 import { DesktopProjectSwitcher } from "@/components/layout/desktop-project-switcher"
 import { useMobileDetection } from "@/components/board/use-mobile-detection"
 import { WorkLoopHeaderStatus } from "@/components/work-loop/work-loop-header-status"
-import { FeatureBuilderButton } from "@/components/feature-builder"
+// import { FeatureBuilderButton } from "@/components/feature-builder"  // HIDDEN: feature builder not ready
 
 type LayoutProps = {
   children: React.ReactNode
@@ -131,7 +131,7 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                 </nav>
               </div>
 
-              {/* Work loop status + Feature Builder button (mobile) */}
+              {/* Work loop status (mobile) */}
               <div className="flex items-center justify-between gap-2">
                 {project.work_loop_enabled === 1 && (
                   <WorkLoopHeaderStatus
@@ -139,12 +139,6 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                     workLoopEnabled={true}
                   />
                 )}
-                <FeatureBuilderButton
-                  defaultProjectId={project.id}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-8 ml-auto"
-                />
               </div>
             </div>
           ) : (
@@ -165,11 +159,6 @@ export default function ProjectLayout({ children, params }: LayoutProps) {
                   />
                 </div>
                 <div className="flex items-center gap-3">
-                  <FeatureBuilderButton
-                    defaultProjectId={project.id}
-                    variant="outline"
-                    size="sm"
-                  />
                   <WorkLoopHeaderStatus
                     projectId={project.id}
                     workLoopEnabled={project.work_loop_enabled === 1}
