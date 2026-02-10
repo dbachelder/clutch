@@ -26,6 +26,7 @@ import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
 import type { Task } from "../../lib/types"
 import { isPRMerged, type ProjectInfo } from "./github"
+import { handleSelfDeploy } from "./self-deploy"
 
 // ============================================
 // Types
@@ -281,14 +282,14 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
   //    delete the remote branch if it exists. This handles cases where
   //    tasks went blocked→done and bypassed the review phase cleanup.
   // ------------------------------------------------------------------
-  const branchActions = await cleanMergedRemoteBranches({
+  const branchResult = await cleanMergedRemoteBranches({
     repoPath,
     doneTasks,
     projectId: project.id,
     cycle,
     log,
   })
-  actions += branchActions
+  actions += branchResult.actions
 
   // ------------------------------------------------------------------
   // 4. Close stale browser tabs
@@ -304,6 +305,20 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
     log,
   })
   actions += tabActions
+
+  // ------------------------------------------------------------------
+  // 5. Self-deploy if merged branches were cleaned
+  //
+  //    When reviewer agents merge PRs and move tasks to done directly,
+  //    the review phase never sees them (tasks are already done). Self-deploy
+  //    only fires from the review phase on "discovered merged PR" paths.
+  //    This catches the gap: if we just cleaned up merged branches, the
+  //    code on disk is newer than the running build.
+  //    MUST be last — restarts the loop process, nothing after this runs.
+  // ------------------------------------------------------------------
+  if (branchResult.hadMergedBranches) {
+    await handleSelfDeploy(project, 0)
+  }
 
   return { actions }
 }
@@ -501,7 +516,12 @@ interface BranchCleanupContext {
   log: (params: LogRunParams) => Promise<void>
 }
 
-async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<number> {
+interface BranchCleanupResult {
+  actions: number
+  hadMergedBranches: boolean
+}
+
+async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<BranchCleanupResult> {
   const {
     repoPath,
     doneTasks,
@@ -511,12 +531,13 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<num
   } = ctx
 
   let actions = 0
+  let hadMergedBranches = false
 
   // Find done tasks with PR numbers that might have merged PRs
   const tasksWithPRs = doneTasks.filter(task => task.pr_number && task.branch)
 
   if (tasksWithPRs.length === 0) {
-    return 0
+    return { actions: 0, hadMergedBranches: false }
   }
 
   // Batch-fetch all remote branch names in one call (much faster than per-branch ls-remote)
@@ -534,14 +555,14 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<num
     )
   } catch (lsErr) {
     console.warn(`[cleanup] Failed to list remote branches, skipping branch cleanup: ${lsErr instanceof Error ? lsErr.message : String(lsErr)}`)
-    return 0
+    return { actions: 0, hadMergedBranches: false }
   }
 
   // Filter to only tasks whose branches still exist on remote
   const tasksWithRemoteBranches = tasksWithPRs.filter(task => remoteBranches.has(task.branch!))
 
   if (tasksWithRemoteBranches.length === 0) {
-    return 0
+    return { actions: 0, hadMergedBranches: false }
   }
 
   console.log(`[cleanup] Checking ${tasksWithRemoteBranches.length} branches (${tasksWithPRs.length - tasksWithRemoteBranches.length} already cleaned)`)
@@ -579,7 +600,9 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<num
             details: { branch: branchName, prNumber, reason },
           })
           actions++
+          if (prData.state === "MERGED") hadMergedBranches = true
           console.log(`[cleanup] Deleted remote branch: ${branchName} (PR #${prNumber}, ${prData.state.toLowerCase()})`)
+
         } catch (deleteErr) {
           const deleteMsg = deleteErr instanceof Error ? deleteErr.message : String(deleteErr)
           console.warn(`[cleanup] Failed to delete remote branch ${branchName}: ${deleteMsg}`)
@@ -609,7 +632,7 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<num
     }
   }
 
-  return actions
+  return { actions, hadMergedBranches }
 }
 
 // ============================================
