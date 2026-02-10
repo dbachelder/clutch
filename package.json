@@ -2,6 +2,7 @@
   "name": "clutch",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "bin": {
     "clutch": "./bin/clutch-cli.ts",
     "clutch-cli": "./bin/clutch-cli.ts"
