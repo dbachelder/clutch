@@ -658,3 +658,103 @@ export const clearStaleTyping = mutation({
     return staleStates.length
   },
 })
+
+// Get messages by delivery status (for restart resilience)
+export const getMessagesByDeliveryStatus = query({
+  args: {
+    delivery_status: v.union(
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("processing"),
+    ),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(v.object({
+    id: v.string(),
+    chat_id: v.string(),
+    author: v.string(),
+    content: v.string(),
+    run_id: v.optional(v.string()),
+    session_key: v.optional(v.string()),
+    is_automated: v.optional(v.number()),
+    delivery_status: v.optional(v.union(
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("processing"),
+      v.literal("responded"),
+      v.literal("failed"),
+    )),
+    created_at: v.number(),
+  })),
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100
+
+    const messages = await ctx.db
+      .query('chatMessages')
+      .withIndex('by_delivery_status', (q) => q.eq('delivery_status', args.delivery_status))
+      .order('desc')
+      .take(limit)
+
+    return messages.map((m) => ({
+      id: m.id,
+      chat_id: m.chat_id,
+      author: m.author,
+      content: m.content,
+      run_id: m.run_id,
+      session_key: m.session_key,
+      is_automated: m.is_automated ? 1 : 0,
+      delivery_status: m.delivery_status,
+      created_at: m.created_at,
+    }))
+  },
+})
+
+// Get the latest human message in a chat (for status tracking)
+export const getLatestHumanMessage = query({
+  args: {
+    chat_id: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      id: v.string(),
+      chat_id: v.string(),
+      author: v.string(),
+      content: v.string(),
+      run_id: v.optional(v.string()),
+      session_key: v.optional(v.string()),
+      is_automated: v.optional(v.number()),
+      delivery_status: v.optional(v.union(
+        v.literal("sent"),
+        v.literal("delivered"),
+        v.literal("processing"),
+        v.literal("responded"),
+        v.literal("failed"),
+      )),
+      created_at: v.number(),
+    }),
+    v.null()
+  ),
+  handler: async (ctx, args) => {
+    // Find the most recent message where author is not "ada" (human message)
+    const message = await ctx.db
+      .query('chatMessages')
+      .withIndex('by_chat', (q) => q.eq('chat_id', args.chat_id))
+      .filter((q) => q.neq(q.field('author'), 'ada'))
+      .order('desc')
+      .first()
+
+    if (!message) return null
+
+    return {
+      id: message.id,
+      chat_id: message.chat_id,
+      author: message.author,
+      content: message.content,
+      run_id: message.run_id,
+      session_key: message.session_key,
+      is_automated: message.is_automated ? 1 : 0,
+      delivery_status: message.delivery_status,
+      created_at: message.created_at,
+    }
+  },
+})
