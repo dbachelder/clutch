@@ -110,17 +110,30 @@ export function ChatInput({
     }
   }, [content])
 
+  // Commands that require arguments — Tab fills them in with a trailing space
+  // instead of immediately submitting.
+  const COMMANDS_WITH_REQUIRED_ARGS = new Set(["issue", "model"])
+
   const handleAutocompleteSelect = (command: string) => {
-    // Set the command text and immediately submit it
     const lines = content.split("\n")
-    lines[lines.length - 1] = command
-    const finalContent = lines.join("\n")
-    setContent(finalContent)
-    setShowAutocomplete(false)
-    // Execute the command directly (avoiding the two-Enter problem)
-    setTimeout(() => {
-      handleSendWithContent(finalContent)
-    }, 0)
+    const cmdName = command.replace("/", "")
+
+    if (COMMANDS_WITH_REQUIRED_ARGS.has(cmdName)) {
+      // Fill in command with trailing space so user can type args
+      lines[lines.length - 1] = `${command} `
+      const finalContent = lines.join("\n")
+      setContent(finalContent)
+      setShowAutocomplete(false)
+      // Focus the textarea so user can keep typing
+      setTimeout(() => textareaRef.current?.focus(), 0)
+    } else {
+      // No required args — submit immediately
+      lines[lines.length - 1] = command
+      const finalContent = lines.join("\n")
+      setContent(finalContent)
+      setShowAutocomplete(false)
+      setTimeout(() => handleSendWithContent(finalContent), 0)
+    }
   }
 
   const handleAutocompleteDismiss = () => {
