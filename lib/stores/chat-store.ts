@@ -106,9 +106,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     
     const data = await response.json()
     
-    set((state) => ({
-      chats: [{ ...data.chat, lastMessage: null }, ...state.chats],
-    }))
+    set((state) => {
+      // Check if chat already exists (Convex subscription might have added it first)
+      if (state.chats.some((c) => c.id === data.chat.id)) {
+        return state
+      }
+      return {
+        chats: [{ ...data.chat, lastMessage: null }, ...state.chats],
+      }
+    })
     
     return data.chat
   },
@@ -396,8 +402,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? chats.find((c) => c.id === state.activeChat?.id) ?? null
         : null
 
+      // Deduplicate by id to prevent race condition where optimistic update
+      // and Convex subscription both add the same chat (especially when
+      // creating the first chat with an empty sidebar).
+      const seen = new Set<string>()
+      const uniqueChats = chats.filter((c) => {
+        if (seen.has(c.id)) return false
+        seen.add(c.id)
+        return true
+      })
+
       return {
-        chats,
+        chats: uniqueChats,
         activeChat,
         loading: false,
       }
