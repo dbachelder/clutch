@@ -104,6 +104,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ...(run_id && { run_id }),
       ...(session_key && { session_key }),
       is_automated: is_automated ? true : false,
+      // delivery_status will be set to "sent" by the mutation for human messages
     })
 
     // Note: No need to broadcast via SSE - Convex handles reactivity
