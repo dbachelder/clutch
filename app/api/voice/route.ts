@@ -11,7 +11,20 @@ const execAsync = promisify(exec)
 // Use local Qwen3-TTS for voice synthesis
 const ADA_VOICE = "ada"
 
+// Configurable paths via environment variables (with sensible defaults)
+const WHISPER_BIN = process.env.WHISPER_BIN || "whisper"
+const QWEN_TTS_DIR = process.env.QWEN_TTS_DIR
+const UV_BIN = process.env.UV_BIN || "uv"
+
 export async function POST(request: NextRequest) {
+  // Validate required configuration
+  if (!QWEN_TTS_DIR) {
+    return NextResponse.json(
+      { error: "QWEN_TTS_DIR environment variable is not set" },
+      { status: 500 }
+    )
+  }
+
   const tempFiles: string[] = []
 
   try {
@@ -58,7 +71,7 @@ export async function POST(request: NextRequest) {
     // Transcribe with Whisper (installed via pipx)
     let transcript = ""
     try {
-      const whisperCmd = `/home/dan/.local/share/pipx/venvs/openai-whisper/bin/whisper "${wavPath}" --model base --language en --output_format txt --output_dir "${tmpdir()}" 2>/dev/null`
+      const whisperCmd = `${WHISPER_BIN} "${wavPath}" --model base --language en --output_format txt --output_dir "${tmpdir()}" 2>/dev/null`
       await execAsync(whisperCmd)
       console.log(`[Voice API] Whisper transcription successful`)
     } catch (whisperError) {
@@ -78,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     // Generate TTS with Ada voice
     try {
-      const ttsCmd = `cd /home/dan/src/qwen3-tts-test && /home/dan/.local/bin/uv run python simple_tts.py "${response.replace(/"/g, '\\"')}" --voice ${ADA_VOICE} --output "${responseWavPath}"`
+      const ttsCmd = `cd "${QWEN_TTS_DIR}" && ${UV_BIN} run python simple_tts.py "${response.replace(/"/g, '\\"')}" --voice ${ADA_VOICE} --output "${responseWavPath}"`
       console.log(`[Voice API] Starting TTS generation...`)
       await execAsync(ttsCmd, { timeout: 30000 })
       console.log(`[Voice API] TTS generation successful: ${responseWavPath}`)
