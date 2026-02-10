@@ -2,9 +2,12 @@ import { ConvexHttpClient } from "convex/browser"
 import { readdirSync, statSync, readFileSync, openSync, readSync, closeSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, extname } from "node:path"
+import { randomUUID } from "node:crypto"
+import WebSocket from "ws"
 import { api } from "../convex/_generated/api"
 
 const CONVEX_URL = process.env.CONVEX_URL ?? "http://127.0.0.1:3210"
+const GATEWAY_WS_URL = process.env.GATEWAY_WS_URL ?? "ws://127.0.0.1:18789"
 const SESSIONS_DIR = join(homedir(), ".openclaw", "agents", "main", "sessions")
 const SESSIONS_JSON_PATH = join(SESSIONS_DIR, "sessions.json")
 const POLL_INTERVAL_MS = 3000
@@ -323,91 +326,112 @@ class SessionWatcher {
   }
 
   /**
-   * Periodic reconciliation: find sessions marked "active" in Convex whose
-   * JSONL files are older than STALE_THRESHOLD_MS, and mark them stale/completed.
-   * This catches sessions that died without the watcher noticing (because the
-   * file scanner only picks up files with new mtimes).
+   * Periodic reconciliation: cross-reference Convex "active" agent sessions
+   * against OpenClaw's actual live sessions. If OpenClaw doesn't have it,
+   * it's dead — no heuristics, no mtime guessing.
    */
   private async reconcileStale(): Promise<void> {
     if (!this.running) return
 
     try {
-      // Get all active/idle agent sessions from Convex
-      const activeSessions = await this.convex.query(api.sessions.list, {
+      // 1. Get all sessions Convex thinks are "active" (agent type only)
+      const convexActive = await this.convex.query(api.sessions.list, {
         status: "active",
         sessionType: "agent",
         limit: 200,
       })
 
-      if (!activeSessions || activeSessions.length === 0) return
+      if (!convexActive || convexActive.length === 0) return
 
-      const now = Date.now()
+      // 2. Get all sessions OpenClaw actually has running
+      const liveKeys = await this.getOpenClawLiveSessions()
+      if (liveKeys === null) {
+        // Couldn't reach OpenClaw — skip this cycle rather than false-positive
+        return
+      }
+
+      // 3. Diff: anything Convex thinks is active but OpenClaw doesn't have → dead
       let reconciled = 0
+      for (const session of convexActive) {
+        if (liveKeys.has(session.session_key)) continue
 
-      for (const session of activeSessions) {
-        const filePath = session.file_path
-        if (!filePath) {
-          // No file path recorded — if lastActiveAt is old, mark completed
-          const lastActive = session.last_active_at ?? session.updated_at ?? 0
-          if (now - lastActive > STALE_THRESHOLD_MS) {
-            try {
-              await this.convex.mutation(api.sessions.upsert, {
-                sessionKey: session.session_key,
-                sessionId: session.session_id,
-                sessionType: (session.session_type ?? "agent") as SessionType,
-                status: "completed",
-              })
-              reconciled++
-            } catch {
-              // non-fatal
-            }
-          }
-          continue
-        }
-
-        // Check file mtime
+        // OpenClaw doesn't know about this session — it's dead
         try {
-          const stats = statSync(filePath)
-          if (now - stats.mtimeMs > STALE_THRESHOLD_MS) {
-            // File hasn't been touched — determine proper status
-            const lastLines = readLastLines(filePath, 5)
-            const lastMsg = lastLines.length > 0 ? findLastAssistantMessage(lastLines) : null
-            const isTerminalError = hasTerminalError(filePath)
-            const isDone = (lastMsg?.isDone ?? false) || isTerminalError
-            const newStatus = isDone ? "completed" : "stale"
-
-            await this.convex.mutation(api.sessions.upsert, {
-              sessionKey: session.session_key,
-              sessionId: session.session_id,
-              sessionType: (session.session_type ?? "agent") as SessionType,
-              status: newStatus,
-              lastActiveAt: stats.mtimeMs,
-            })
-            reconciled++
-          }
+          await this.convex.mutation(api.sessions.upsert, {
+            sessionKey: session.session_key,
+            sessionId: session.session_id,
+            sessionType: (session.session_type ?? "agent") as SessionType,
+            status: "completed",
+          })
+          reconciled++
         } catch {
-          // File doesn't exist — session is dead
-          try {
-            await this.convex.mutation(api.sessions.upsert, {
-              sessionKey: session.session_key,
-              sessionId: session.session_id,
-              sessionType: (session.session_type ?? "agent") as SessionType,
-              status: "completed",
-            })
-            reconciled++
-          } catch {
-            // non-fatal
-          }
+          // non-fatal
         }
       }
 
       if (reconciled > 0) {
-        console.log(`[SessionWatcher] Reconciled ${reconciled} stale sessions`)
+        console.log(`[SessionWatcher] Reconciled ${reconciled} dead sessions (not in OpenClaw)`)
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       console.error(`[SessionWatcher] Reconciliation error: ${msg}`)
     }
+  }
+
+  /**
+   * Query OpenClaw gateway for live session keys via WebSocket RPC.
+   * Returns null if gateway is unreachable (to avoid false positives).
+   */
+  private async getOpenClawLiveSessions(): Promise<Set<string> | null> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        ws.close()
+        resolve(null)
+      }, 10_000)
+
+      let ws: WebSocket
+      try {
+        ws = new WebSocket(GATEWAY_WS_URL)
+      } catch {
+        clearTimeout(timeout)
+        resolve(null)
+        return
+      }
+
+      ws.on("error", () => {
+        clearTimeout(timeout)
+        resolve(null)
+      })
+
+      ws.on("open", () => {
+        const id = randomUUID()
+        // Request all sessions active in last 24h to catch anything that might be running
+        const frame = JSON.stringify({
+          type: "req",
+          id,
+          method: "sessions.list",
+          params: { activeMinutes: 1440 },
+        })
+        ws.send(frame)
+
+        ws.on("message", (data) => {
+          try {
+            const msg = JSON.parse(data.toString())
+            if (msg.id === id) {
+              clearTimeout(timeout)
+              const sessions = msg.result?.sessions ?? msg.sessions ?? []
+              const keys = new Set<string>(
+                sessions.map((s: Record<string, unknown>) => s.key as string).filter(Boolean)
+              )
+              ws.close()
+              resolve(keys)
+            }
+          } catch {
+            // keep waiting
+          }
+        })
+      })
+    })
   }
 
   private async poll(): Promise<void> {
