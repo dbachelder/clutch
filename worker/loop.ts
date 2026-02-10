@@ -487,32 +487,52 @@ async function runProjectCycle(
 
         const currentStatus = task.task.status
 
-        // Case 1: Task still in_progress after agent finished → blocked
+        // Case 1: Dev agent finished while task still in_progress
         if (currentStatus === "in_progress") {
-          await convex.mutation(api.tasks.move, {
-            id: outcome.taskId,
-            status: "blocked",
-          })
-          const agentOutput = outcome.reply?.slice(0, 500)
-          const blockReason = agentOutput
-            ? `Agent finished but task still in_progress. Moving to blocked for triage.\n\n**Agent's last output:**\n> ${agentOutput}`
-            : `Agent finished but task still in_progress (no output captured). Moving to blocked for triage.`
-          await convex.mutation(api.comments.create, {
-            taskId: outcome.taskId,
-            author: "work-loop",
-            authorType: "coordinator",
-            content: blockReason,
-            type: "status_change",
-          })
-          console.log(`[WorkLoop] Task ${outcome.taskId.slice(0, 8)} moved to blocked (finished while in_progress)`)
-          await logRun(convex, {
-            projectId: project.id,
-            cycle,
-            phase: "cleanup",
-            action: "task_blocked",
-            taskId: outcome.taskId,
-            details: { reason: "finished_in_progress", role: outcome.role },
-          })
+          const hasPR = !!task.task.pr_number
+
+          if (hasPR) {
+            // Dev created a PR — move to in_review for autonomous review
+            await convex.mutation(api.tasks.move, {
+              id: outcome.taskId,
+              status: "in_review",
+            })
+            console.log(`[WorkLoop] Task ${outcome.taskId.slice(0, 8)} moved to in_review (dev finished with PR #${task.task.pr_number})`)
+            await logRun(convex, {
+              projectId: project.id,
+              cycle,
+              phase: "cleanup",
+              action: "task_to_review",
+              taskId: outcome.taskId,
+              details: { reason: "dev_finished_with_pr", prNumber: task.task.pr_number, role: outcome.role },
+            })
+          } else {
+            // No PR — something went wrong, block for triage
+            await convex.mutation(api.tasks.move, {
+              id: outcome.taskId,
+              status: "blocked",
+            })
+            const agentOutput = outcome.reply?.slice(0, 500)
+            const blockReason = agentOutput
+              ? `Agent finished without creating a PR. Moving to blocked for triage.\n\n**Agent's last output:**\n> ${agentOutput}`
+              : `Agent finished without creating a PR (no output captured). Moving to blocked for triage.`
+            await convex.mutation(api.comments.create, {
+              taskId: outcome.taskId,
+              author: "work-loop",
+              authorType: "coordinator",
+              content: blockReason,
+              type: "status_change",
+            })
+            console.log(`[WorkLoop] Task ${outcome.taskId.slice(0, 8)} moved to blocked (finished without PR)`)
+            await logRun(convex, {
+              projectId: project.id,
+              cycle,
+              phase: "cleanup",
+              action: "task_blocked",
+              taskId: outcome.taskId,
+              details: { reason: "finished_without_pr", role: outcome.role },
+            })
+          }
         }
         // Case 2: Reviewer finished but task still in_review → try auto-merge fallback, then retry/block
         else if (currentStatus === "in_review" && outcome.role === "reviewer") {
