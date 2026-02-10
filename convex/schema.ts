@@ -153,10 +153,18 @@ export default defineSchema({
     run_id: v.optional(v.string()),
     session_key: v.optional(v.string()),
     is_automated: v.optional(v.boolean()),
+    delivery_status: v.optional(v.union(
+      v.literal("sent"),        // Saved to Convex (UI created it)
+      v.literal("delivered"),   // OpenClaw gateway acknowledged receipt
+      v.literal("processing"),  // Agent is actively working on a response
+      v.literal("responded"),   // Agent response has been posted
+      v.literal("failed"),      // Delivery to gateway failed
+    )),
     created_at: v.number(),
   })
     .index("by_uuid", ["id"])
-    .index("by_chat", ["chat_id"]),
+    .index("by_chat", ["chat_id"])
+    .index("by_delivery_status", ["delivery_status"]),
 
   // Notifications
   notifications: defineTable({

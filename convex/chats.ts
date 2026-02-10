@@ -308,6 +308,13 @@ export const getMessages = query({
       run_id: v.optional(v.string()),
       session_key: v.optional(v.string()),
       is_automated: v.optional(v.number()),
+      delivery_status: v.optional(v.union(
+        v.literal("sent"),
+        v.literal("delivered"),
+        v.literal("processing"),
+        v.literal("responded"),
+        v.literal("failed"),
+      )),
       created_at: v.number(),
     })),
     hasMore: v.boolean(),
@@ -348,6 +355,7 @@ export const getMessages = query({
         run_id: m.run_id,
         session_key: m.session_key,
         is_automated: m.is_automated ? 1 : 0,
+        delivery_status: m.delivery_status,
         created_at: m.created_at,
       })),
       hasMore,
@@ -364,6 +372,13 @@ export const createMessage = mutation({
     run_id: v.optional(v.string()),
     session_key: v.optional(v.string()),
     is_automated: v.optional(v.boolean()),
+    delivery_status: v.optional(v.union(
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("processing"),
+      v.literal("responded"),
+      v.literal("failed"),
+    )),
   },
   returns: v.object({
     id: v.string(),
@@ -373,11 +388,22 @@ export const createMessage = mutation({
     run_id: v.optional(v.string()),
     session_key: v.optional(v.string()),
     is_automated: v.optional(v.number()),
+    delivery_status: v.optional(v.union(
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("processing"),
+      v.literal("responded"),
+      v.literal("failed"),
+    )),
     created_at: v.number(),
   }),
   handler: async (ctx, args) => {
     const now = Date.now()
     const id = generateId()
+
+    // Set initial delivery_status: "sent" for human messages, null for agent messages
+    // Human messages are those where author is not "ada"
+    const initialDeliveryStatus = args.delivery_status ?? (args.author === "ada" ? undefined : "sent")
 
     const internalId = await ctx.db.insert('chatMessages', {
       id,
@@ -387,6 +413,7 @@ export const createMessage = mutation({
       run_id: args.run_id,
       session_key: args.session_key,
       is_automated: args.is_automated ?? false,
+      delivery_status: initialDeliveryStatus,
       created_at: now,
     })
 
@@ -410,7 +437,65 @@ export const createMessage = mutation({
       run_id: message.run_id,
       session_key: message.session_key,
       is_automated: message.is_automated ? 1 : 0,
+      delivery_status: message.delivery_status,
       created_at: message.created_at,
+    }
+  },
+})
+
+// Update delivery status for a message
+export const updateDeliveryStatus = mutation({
+  args: {
+    message_id: v.string(),
+    delivery_status: v.union(
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("processing"),
+      v.literal("responded"),
+      v.literal("failed"),
+    ),
+  },
+  returns: v.object({
+    id: v.string(),
+    chat_id: v.string(),
+    author: v.string(),
+    content: v.string(),
+    run_id: v.optional(v.string()),
+    session_key: v.optional(v.string()),
+    is_automated: v.optional(v.number()),
+    delivery_status: v.optional(v.union(
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("processing"),
+      v.literal("responded"),
+      v.literal("failed"),
+    )),
+    created_at: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const message = await ctx.db
+      .query('chatMessages')
+      .withIndex('by_uuid', (q) => q.eq('id', args.message_id))
+      .unique()
+    if (!message) throw new Error('Message not found')
+
+    await ctx.db.patch(message._id, {
+      delivery_status: args.delivery_status,
+    })
+
+    const updated = await ctx.db.get(message._id)
+    if (!updated) throw new Error('Failed to update message')
+
+    return {
+      id: updated.id,
+      chat_id: updated.chat_id,
+      author: updated.author,
+      content: updated.content,
+      run_id: updated.run_id,
+      session_key: updated.session_key,
+      is_automated: updated.is_automated ? 1 : 0,
+      delivery_status: updated.delivery_status,
+      created_at: updated.created_at,
     }
   },
 })
@@ -429,6 +514,13 @@ export const getMessageByRunId = query({
       run_id: v.optional(v.string()),
       session_key: v.optional(v.string()),
       is_automated: v.optional(v.number()),
+      delivery_status: v.optional(v.union(
+        v.literal("sent"),
+        v.literal("delivered"),
+        v.literal("processing"),
+        v.literal("responded"),
+        v.literal("failed"),
+      )),
       created_at: v.number(),
     }),
     v.null()
@@ -451,6 +543,7 @@ export const getMessageByRunId = query({
       run_id: m.run_id,
       session_key: m.session_key,
       is_automated: m.is_automated ? 1 : 0,
+      delivery_status: m.delivery_status,
       created_at: m.created_at,
     }
   },

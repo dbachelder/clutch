@@ -117,6 +117,8 @@ export interface Chat {
   updated_at: number
 }
 
+export type DeliveryStatus = "sent" | "delivered" | "processing" | "responded" | "failed"
+
 export interface ChatMessage {
   id: string
   chat_id: string
@@ -125,6 +127,7 @@ export interface ChatMessage {
   run_id?: string | null
   session_key?: string | null
   is_automated?: number | null  // SQLite boolean (0/1) - true for cron/sub-agent messages
+  delivery_status?: DeliveryStatus | null  // Message delivery lifecycle status
   created_at: number
 }
 
