@@ -158,11 +158,17 @@ export function SessionInfoDropdown({
     return key.substring(0, 8)
   }
 
+  // Filter to only truly active agents (in_progress or in_review)
+  // The Convex query should already filter, but be defensive in case of stale data
+  const filteredAgentSessions = activeAgentSessions?.filter(
+    (item) => item.task.status === "in_progress" || item.task.status === "in_review"
+  )
+
   // Check if there are any active agents
-  const hasActiveAgents = activeAgentSessions && activeAgentSessions.length > 0
+  const hasActiveAgents = filteredAgentSessions && filteredAgentSessions.length > 0
 
   // Calculate total tokens across all active agents
-  const totalAgentTokens = activeAgentSessions?.reduce((sum, item) => {
+  const totalAgentTokens = filteredAgentSessions?.reduce((sum, item) => {
     return sum + (item.session?.tokens_total ?? 0)
   }, 0) ?? 0
 
@@ -192,7 +198,7 @@ export function SessionInfoDropdown({
           {hasActiveAgents && (
             <div className="flex items-center gap-0.5">
               <Bot className="h-3 w-3 text-purple-400 animate-pulse" />
-              <span className="text-purple-400">{activeAgentSessions.length}</span>
+              <span className="text-purple-400">{filteredAgentSessions!.length}</span>
             </div>
           )}
 
@@ -369,7 +375,7 @@ export function SessionInfoDropdown({
                 <span className="font-medium">Project Agents</span>
                 {hasActiveAgents && (
                   <Badge variant="secondary" className="text-xs">
-                    {activeAgentSessions.length}
+                    {filteredAgentSessions!.length}
                   </Badge>
                 )}
                 {totalAgentTokens > 0 && (
@@ -383,7 +389,7 @@ export function SessionInfoDropdown({
                 <div className="h-16 bg-[var(--bg-secondary)]/50 rounded animate-pulse" />
               ) : hasActiveAgents ? (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {activeAgentSessions.map((item: TaskWithAgentSession) => {
+                  {filteredAgentSessions!.map((item: TaskWithAgentSession) => {
                     const { task, session } = item
                     const isStale = session ? isAgentStale(session.last_active_at) : false
                     const modelName = formatModelShort(session?.model)
