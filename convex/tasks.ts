@@ -758,7 +758,7 @@ export const update = mutation({
     requires_human_review: v.optional(v.boolean()),
     tags: v.optional(v.string()),
     session_id: v.optional(v.string()),
-    agent_session_key: v.optional(v.string()),
+    agent_session_key: v.optional(v.union(v.string(), v.null())),
     prompt_version_id: v.optional(v.string()),
     branch: v.optional(v.string()),
     pr_number: v.optional(v.number()),
@@ -808,7 +808,7 @@ export const update = mutation({
     if (args.requires_human_review !== undefined) updates.requires_human_review = args.requires_human_review
     if (args.tags !== undefined) updates.tags = args.tags
     if (args.session_id !== undefined) updates.session_id = args.session_id
-    if (args.agent_session_key !== undefined) updates.agent_session_key = args.agent_session_key
+    if (args.agent_session_key !== undefined) updates.agent_session_key = args.agent_session_key ?? null
     if (args.prompt_version_id !== undefined) updates.prompt_version_id = args.prompt_version_id
     if (args.branch !== undefined) updates.branch = args.branch
     if (args.pr_number !== undefined) updates.pr_number = args.pr_number
@@ -933,10 +933,10 @@ export const move = mutation({
       position: newPosition,
       updated_at: now,
       completed_at: wasCompleted ? now : existing.completed_at,
-      // Note: We intentionally do NOT clear agent_session_key here.
-      // It should persist so users can see which agent last worked on the task.
-      // The UI distinguishes running vs completed agents via sessions table status.
-      // agent_session_key is only cleared on explicit task retry via clearAgentActivity.
+      // Clear agent_session_key when moving to in_review — the dev agent is done.
+      // Review phase sets it fresh when spawning a reviewer.
+      // For done tasks, keep it for history (which agent completed the work).
+      ...(args.status === 'in_review' ? { agent_session_key: null } : {}),
       // Reset retry count when starting fresh (in_progress), otherwise preserve it
       agent_retry_count: args.status === 'in_progress' ? 0 : existing.agent_retry_count,
       // Reset triage state when unblocking (moving to ready)
