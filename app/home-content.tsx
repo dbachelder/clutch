@@ -4,7 +4,7 @@ import { useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { ProjectListRow } from "@/components/projects/project-list-row"
 import { CreateProjectModal } from "@/components/projects/create-project-modal"
-import { FeatureBuilderButton } from "@/components/feature-builder"
+// import { FeatureBuilderButton } from "@/components/feature-builder"  // HIDDEN: feature builder not ready
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function HomeContent() {
@@ -23,7 +23,7 @@ export default function HomeContent() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <FeatureBuilderButton variant="outline" />
+          {/* <FeatureBuilderButton variant="outline" /> */}
           <CreateProjectModal />
         </div>
       </div>
