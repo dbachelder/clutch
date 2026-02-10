@@ -2,12 +2,9 @@ import { ConvexHttpClient } from "convex/browser"
 import { readdirSync, statSync, readFileSync, openSync, readSync, closeSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, extname } from "node:path"
-import { randomUUID } from "node:crypto"
-import WebSocket from "ws"
 import { api } from "../convex/_generated/api"
 
 const CONVEX_URL = process.env.CONVEX_URL ?? "http://127.0.0.1:3210"
-const GATEWAY_WS_URL = process.env.GATEWAY_WS_URL ?? "ws://127.0.0.1:18789"
 const SESSIONS_DIR = join(homedir(), ".openclaw", "agents", "main", "sessions")
 const SESSIONS_JSON_PATH = join(SESSIONS_DIR, "sessions.json")
 const POLL_INTERVAL_MS = 3000
@@ -326,112 +323,210 @@ class SessionWatcher {
   }
 
   /**
-   * Periodic reconciliation: cross-reference Convex "active" agent sessions
-   * against OpenClaw's actual live sessions. If OpenClaw doesn't have it,
-   * it's dead — no heuristics, no mtime guessing.
+   * Periodic reconciliation (runs every 60s):
+   *
+   * Step 1: Already handled by poll() — changed files get synced to Convex.
+   *
+   * Step 2: Active sessions NOT updated in step 1 — inspect JSONL:
+   *   a. Clear stop signal (stopReason=stop/end_turn) → mark completed
+   *   b. toolUse stopReason + file untouched for 10min → mark completed (stuck mid-tool)
+   *   c. Log ALL transitions with stopReason and timestamps
+   *
+   * Step 3: Tasks with agent_session_key not accounted for → log as urgent bug
    */
   private async reconcileStale(): Promise<void> {
     if (!this.running) return
 
+    const now = Date.now()
+    const TOOL_USE_GRACE_MS = 10 * 60 * 1000 // 10 minutes for toolUse
+
     try {
-      // 1. Get all sessions Convex thinks are "active" (agent type only)
+      // --- Step 2: Check active sessions that poll() didn't touch ---
       const convexActive = await this.convex.query(api.sessions.list, {
         status: "active",
         sessionType: "agent",
         limit: 200,
       })
 
-      if (!convexActive || convexActive.length === 0) return
-
-      // 2. Get all sessions OpenClaw actually has running
-      const liveKeys = await this.getOpenClawLiveSessions()
-      if (liveKeys === null) {
-        // Couldn't reach OpenClaw — skip this cycle rather than false-positive
+      if (!convexActive || convexActive.length === 0) {
+        // No active agent sessions — skip to step 3
+        await this.reconcileOrphanedTasks(new Set())
         return
       }
 
-      // 3. Diff: anything Convex thinks is active but OpenClaw doesn't have → dead
+      // Track which session keys we've accounted for
+      const accountedKeys = new Set<string>()
       let reconciled = 0
-      for (const session of convexActive) {
-        if (liveKeys.has(session.session_key)) continue
 
-        // OpenClaw doesn't know about this session — it's dead
-        try {
-          await this.convex.mutation(api.sessions.upsert, {
-            sessionKey: session.session_key,
-            sessionId: session.session_id,
-            sessionType: (session.session_type ?? "agent") as SessionType,
-            status: "completed",
-          })
-          reconciled++
-        } catch {
-          // non-fatal
+      for (const session of convexActive) {
+        const sessionKey = session.session_key
+        const filePath = session.file_path
+
+        if (!filePath) {
+          // No file path — check last_active_at age
+          const lastActive = session.last_active_at ?? session.updated_at ?? 0
+          if (now - lastActive > TOOL_USE_GRACE_MS) {
+            console.log(
+              `[Reconcile] ${sessionKey}: no file path, last active ${Math.round((now - lastActive) / 60000)}min ago → completed`
+            )
+            await this.markSessionCompleted(session, "no_file_path_stale")
+            reconciled++
+          } else {
+            accountedKeys.add(sessionKey)
+          }
+          continue
         }
+
+        // Read the JSONL to inspect the last message
+        let fileMtimeMs: number
+        try {
+          const stats = statSync(filePath)
+          fileMtimeMs = stats.mtimeMs
+        } catch {
+          // File doesn't exist — session is dead
+          console.log(`[Reconcile] ${sessionKey}: JSONL file missing → completed`)
+          await this.markSessionCompleted(session, "file_missing")
+          reconciled++
+          continue
+        }
+
+        const fileAgeMs = now - fileMtimeMs
+        const lastLines = readLastLines(filePath, 5)
+        const lastMsg = lastLines.length > 0 ? findLastAssistantMessage(lastLines) : null
+        const isTerminalError = hasTerminalError(filePath)
+        const stopReason = lastMsg?.stopReason ?? "unknown"
+
+        // 2a. Clear stop signal → mark completed immediately
+        if (lastMsg?.isDone || isTerminalError) {
+          console.log(
+            `[Reconcile] ${sessionKey}: clear stop signal (stopReason=${stopReason}, terminal=${isTerminalError}) → completed`
+          )
+          await this.markSessionCompleted(session, stopReason)
+          reconciled++
+          continue
+        }
+
+        // 2b. toolUse — wait 10 minutes before marking dead
+        if (stopReason === "toolUse" || stopReason === "tool_use") {
+          if (fileAgeMs > TOOL_USE_GRACE_MS) {
+            console.log(
+              `[Reconcile] ${sessionKey}: toolUse stuck for ${Math.round(fileAgeMs / 60000)}min (threshold: 10min) → completed`
+            )
+            await this.markSessionCompleted(session, `toolUse_timeout_${Math.round(fileAgeMs / 60000)}min`)
+            reconciled++
+            continue
+          } else {
+            // Still within grace period — leave it alone
+            accountedKeys.add(sessionKey)
+            continue
+          }
+        }
+
+        // 2c. Unknown/other stopReason + file hasn't changed in 10min
+        if (fileAgeMs > TOOL_USE_GRACE_MS) {
+          console.log(
+            `[Reconcile] ${sessionKey}: inactive ${Math.round(fileAgeMs / 60000)}min, stopReason=${stopReason} → completed`
+          )
+          await this.markSessionCompleted(session, `inactive_${stopReason}`)
+          reconciled++
+          continue
+        }
+
+        // Session looks alive — account for it
+        accountedKeys.add(sessionKey)
       }
 
       if (reconciled > 0) {
-        console.log(`[SessionWatcher] Reconciled ${reconciled} dead sessions (not in OpenClaw)`)
+        console.log(`[Reconcile] Marked ${reconciled} sessions as completed`)
       }
+
+      // --- Step 3: Find orphaned tasks ---
+      await this.reconcileOrphanedTasks(accountedKeys)
+
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
-      console.error(`[SessionWatcher] Reconciliation error: ${msg}`)
+      console.error(`[Reconcile] Error: ${msg}`)
     }
   }
 
   /**
-   * Query OpenClaw gateway for live session keys via WebSocket RPC.
-   * Returns null if gateway is unreachable (to avoid false positives).
+   * Mark a session as completed in Convex with logging.
    */
-  private async getOpenClawLiveSessions(): Promise<Set<string> | null> {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        ws.close()
-        resolve(null)
-      }, 10_000)
-
-      let ws: WebSocket
-      try {
-        ws = new WebSocket(GATEWAY_WS_URL)
-      } catch {
-        clearTimeout(timeout)
-        resolve(null)
-        return
-      }
-
-      ws.on("error", () => {
-        clearTimeout(timeout)
-        resolve(null)
+  private async markSessionCompleted(
+    session: { session_key: string; session_id: string; session_type: string | null },
+    reason: string,
+  ): Promise<void> {
+    try {
+      await this.convex.mutation(api.sessions.upsert, {
+        sessionKey: session.session_key,
+        sessionId: session.session_id,
+        sessionType: (session.session_type ?? "agent") as SessionType,
+        status: "completed",
+        stopReason: reason,
       })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[Reconcile] Failed to mark ${session.session_key} as completed: ${msg}`)
+    }
+  }
 
-      ws.on("open", () => {
-        const id = randomUUID()
-        // Request all sessions active in last 24h to catch anything that might be running
-        const frame = JSON.stringify({
-          type: "req",
-          id,
-          method: "sessions.list",
-          params: { activeMinutes: 1440 },
-        })
-        ws.send(frame)
+  /**
+   * Step 3: Find tasks with agent_session_key that point to sessions
+   * we haven't accounted for in steps 1 & 2. These are bugs — an agent
+   * was assigned but we have no record of it running or stopping.
+   */
+  private async reconcileOrphanedTasks(accountedKeys: Set<string>): Promise<void> {
+    try {
+      // Get all in_progress and in_review tasks across all projects
+      const projects = await this.convex.query(api.projects.getAll, {})
 
-        ws.on("message", (data) => {
-          try {
-            const msg = JSON.parse(data.toString())
-            if (msg.id === id) {
-              clearTimeout(timeout)
-              const sessions = msg.result?.sessions ?? msg.sessions ?? []
-              const keys = new Set<string>(
-                sessions.map((s: Record<string, unknown>) => s.key as string).filter(Boolean)
-              )
-              ws.close()
-              resolve(keys)
+      for (const project of projects) {
+        for (const status of ["in_progress", "in_review"] as const) {
+          const tasks = await this.convex.query(api.tasks.getByProject, {
+            projectId: project.id,
+            status,
+          })
+
+          for (const task of tasks) {
+            if (!task.agent_session_key) continue
+
+            // Was this session accounted for in step 1 (poll) or step 2 (reconcile)?
+            if (accountedKeys.has(task.agent_session_key)) continue
+
+            // Check if this session exists in Convex at all
+            const sessionStatus = await this.convex.query(api.sessions.getLiveStatus, {
+              sessionKey: task.agent_session_key,
+            })
+
+            if (sessionStatus.exists && sessionStatus.status === "active") {
+              // Active in Convex but not in our accountedKeys — we missed it
+              // This shouldn't happen if reconcile ran correctly
+              continue
             }
-          } catch {
-            // keep waiting
+
+            if (sessionStatus.exists && (sessionStatus.status === "completed" || sessionStatus.status === "stale")) {
+              // Session is done but task still has it assigned — task is stuck
+              console.error(
+                `[Reconcile] BUG: Task ${task.id.slice(0, 8)} (${status}) has agent ${task.agent_session_key} ` +
+                `but session is ${sessionStatus.status}. Task is orphaned and needs attention!`
+              )
+              continue
+            }
+
+            if (!sessionStatus.exists) {
+              // No session record at all — agent was assigned but never ran or record was lost
+              console.error(
+                `[Reconcile] BUG: Task ${task.id.slice(0, 8)} (${status}) has agent ${task.agent_session_key} ` +
+                `but NO session record exists. Agent assignment is orphaned!`
+              )
+            }
           }
-        })
-      })
-    })
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[Reconcile] Orphan check failed: ${msg}`)
+    }
   }
 
   private async poll(): Promise<void> {
