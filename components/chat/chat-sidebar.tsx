@@ -620,29 +620,23 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
           onClick={() => setWorkQueueExpanded(!workQueueExpanded)}
           className="w-full flex items-center justify-between hover:opacity-80 transition-opacity"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
             {workQueueExpanded ? (
-              <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+              <ChevronDown className="h-3.5 w-3.5 text-[var(--text-muted)] flex-shrink-0" />
             ) : (
-              <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+              <ChevronRight className="h-3.5 w-3.5 text-[var(--text-muted)] flex-shrink-0" />
             )}
-            <ListTodo className="h-4 w-4 text-[var(--text-muted)]" />
-            <h2 className="font-medium text-[var(--text-primary)]">Work Queue</h2>
+            <span className="text-sm font-medium text-[var(--text-primary)] whitespace-nowrap">Work Queue</span>
             {totalWorkItems > 0 && (
-              <span className="text-xs bg-[var(--accent-blue)]/20 text-[var(--accent-blue)] px-1.5 py-0.5 rounded">
-                {totalWorkItems}
-              </span>
-            )}
-            {readyCount > 0 && (
-              <span className="text-xs bg-green-500/20 text-green-600 px-1.5 py-0.5 rounded font-medium">
-                {readyCount} ready
+              <span className="text-xs text-[var(--text-muted)] whitespace-nowrap flex-shrink-0">
+                {totalWorkItems} active{readyCount > 0 ? ` · ${readyCount} ready` : ''}
               </span>
             )}
           </div>
           {projectSlug && (
             <Link
               href={`/projects/${projectSlug}/board`}
-              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center gap-1"
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] flex-shrink-0 ml-2"
               title="Open board"
               onClick={(e) => e.stopPropagation()}
             >
