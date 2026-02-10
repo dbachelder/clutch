@@ -34,7 +34,7 @@ export interface SelfDeployResult {
  * Pull latest main, rebuild, and restart OpenClutch services.
  *
  * Only triggers for the clutch project. No-ops for other projects.
- * Runs: git pull --ff-only → pnpm install → pnpm build → systemctl restart
+ * Runs: git pull --ff-only → pnpm install → pnpm build → convex deploy → systemctl restart
  *
  * The work loop process itself gets restarted as part of this,
  * so this should be the LAST thing called in the post-merge flow.
@@ -79,7 +79,16 @@ export async function handleSelfDeploy(
     })
     steps.push("pnpm build ✓")
 
-    // Step 4: Restart all services
+    // Step 4: Deploy Convex schema/functions (if schema changed, old validators reject new fields)
+    console.log("[SelfDeploy] Deploying Convex...")
+    execFileSync("npx", ["convex", "deploy", "--yes"], {
+      encoding: "utf-8",
+      timeout: 60_000,
+      cwd: CLUTCH_REPO,
+    })
+    steps.push("convex deploy ✓")
+
+    // Step 5: Restart all services
     // Note: this restarts the loop process too, so the current cycle ends here.
     console.log("[SelfDeploy] Restarting services...")
     execFileSync("systemctl", [
