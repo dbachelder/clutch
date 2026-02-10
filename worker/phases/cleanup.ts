@@ -27,6 +27,11 @@ import { api } from "../../convex/_generated/api"
 import type { Task } from "../../lib/types"
 import { isPRMerged, type ProjectInfo } from "./github"
 import { handleSelfDeploy } from "./self-deploy"
+import {
+  cleanMergedLocalBranches,
+  cleanStaleWorktrees,
+  pruneStaleRemoteRefs,
+} from "./cleanup-enhanced"
 
 // ============================================
 // Types
@@ -305,6 +310,48 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
     log,
   })
   actions += tabActions
+
+  // ------------------------------------------------------------------
+  // 4.5. Clean stale worktrees and branches
+  //
+  //    Remove worktrees and local branches that are fully merged into main
+  //    but not associated with any active task. This handles:
+  //    - Branches from old tasks before the work-loop system
+  //    - Branches that escaped cleanup during task transitions
+  //    - Manual merges that didn't go through the review phase
+  // ------------------------------------------------------------------
+  
+  // Build set of active task branches (in_progress, in_review, ready)
+  const readyTasks = await convex.query(api.tasks.getByProject, {
+    projectId: project.id,
+    status: "ready",
+  })
+  const activeTaskBranches = new Set<string>([
+    ...inProgressTasks.map(t => t.branch).filter(Boolean),
+    ...inReviewTasks.map(t => t.branch).filter(Boolean),
+    ...readyTasks.map(t => t.branch).filter(Boolean),
+  ] as string[])
+
+  // Clean stale worktrees for merged branches not associated with active tasks
+  const staleWorktreeResult = await cleanStaleWorktrees(
+    { repoPath, worktreesPath, projectId: project.id, cycle, log },
+    activeTaskBranches
+  )
+  actions += staleWorktreeResult.actions
+
+  // Clean merged local branches not associated with active tasks
+  const mergedBranchResult = await cleanMergedLocalBranches(
+    { repoPath, projectId: project.id, cycle, log },
+    activeTaskBranches
+  )
+  actions += mergedBranchResult.actions
+
+  // Prune stale remote tracking refs
+  const prunedCount = await pruneStaleRemoteRefs({ repoPath, projectId: project.id, cycle, log })
+  if (prunedCount > 0) {
+    actions += 1 // Count as one cleanup action
+  }
+  // ------------------------------------------------------------------
 
   // ------------------------------------------------------------------
   // 5. Self-deploy if merged branches were cleaned
