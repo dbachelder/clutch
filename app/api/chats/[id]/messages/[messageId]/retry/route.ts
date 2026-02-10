@@ -23,12 +23,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Retry the message (this resets delivery_status to "sent" and increments retry_count)
-    const retryedMessage = await convex.mutation(api.chats.retryMessage, {
+    const retriedMessage = await convex.mutation(api.chats.retryMessage, {
       message_id: messageId,
     })
 
     return NextResponse.json({ 
-      message: retryedMessage,
+      message: retriedMessage,
       success: true 
     })
   } catch (error) {

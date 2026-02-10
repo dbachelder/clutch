@@ -270,7 +270,7 @@ async function startHeartbeatMonitoring(api: OpenClawPluginApi): Promise<void> {
           const retryCount = msg.retry_count || 0;
           if (retryCount < RECOVERY_CONFIG.MAX_RETRY_ATTEMPTS) {
             api.logger.info(`Clutch: retrying stuck message ${msg.id} (attempt ${retryCount + 1})`);
-            await retryMessage(api, msg.id);
+            await retryMessage(api, msg.chat_id, msg.id);
           } else {
             shouldTimeout = true;
             timeoutReason = "max retries exceeded";
@@ -295,12 +295,12 @@ async function startHeartbeatMonitoring(api: OpenClawPluginApi): Promise<void> {
 /**
  * Retry a specific message
  */
-async function retryMessage(api: OpenClawPluginApi, messageId: string): Promise<boolean> {
+async function retryMessage(api: OpenClawPluginApi, chatId: string, messageId: string): Promise<boolean> {
   const clutchUrl = getClutchUrl(api);
 
   try {
     // This will increment retry_count and reset delivery_status to "sent"
-    const response = await fetch(`${clutchUrl}/api/chats/messages/${messageId}/retry`, {
+    const response = await fetch(`${clutchUrl}/api/chats/${chatId}/messages/${messageId}/retry`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
@@ -336,7 +336,7 @@ async function handleCooldown(api: OpenClawPluginApi, chatId: string, messageId:
       const latestMessage = await getLatestHumanMessage(api, chatId);
       if (latestMessage && latestMessage.id === messageId && latestMessage.delivery_status === "sent") {
         api.logger.info(`Clutch: auto-retrying message ${messageId} after cooldown`);
-        await retryMessage(api, messageId);
+        await retryMessage(api, chatId, messageId);
       }
     } catch (error) {
       api.logger.warn(`Clutch: auto-retry after cooldown failed for message ${messageId}: ${error}`);
