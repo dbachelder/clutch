@@ -14,7 +14,6 @@ import {
   AlertTriangle,
   RotateCcw,
   BrainCircuit,
-  Coins,
   ArrowRightLeft,
 } from "lucide-react"
 import Link from "next/link"
@@ -62,11 +61,6 @@ function formatTokenCount(count?: number): string {
   return count.toString()
 }
 
-// Format cost for display
-function formatCost(cost?: number): string {
-  if (!cost) return "$0.00"
-  return `$${cost.toFixed(4)}`
-}
 
 // Format relative time
 function formatRelativeTime(timestamp?: number): string {
@@ -322,16 +316,7 @@ export function SessionInfoDropdown({
                 </div>
               )}
 
-              {/* Cost Estimate */}
-              {sessionDetails?.cost !== undefined && sessionDetails.cost > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[var(--text-muted)]">Est. Cost:</span>
-                  <span className="text-xs text-[var(--text-primary)] flex items-center gap-1">
-                    <Coins className="h-3 w-3 text-yellow-400" />
-                    {formatCost(sessionDetails.cost)}
-                  </span>
-                </div>
-              )}
+              {/* Cost removed from sidebar — providers report $0 */}
             </div>
 
             {/* Quick Actions */}
@@ -394,7 +379,6 @@ export function SessionInfoDropdown({
                     const isStale = session ? isAgentStale(session.last_active_at) : false
                     const modelName = formatModelShort(session?.model)
                     const tokens = session?.tokens_total ?? 0
-                    const cost = session?.cost_total
 
                     return (
                       <div
@@ -439,9 +423,6 @@ export function SessionInfoDropdown({
                           </span>
                           {tokens > 0 && (
                             <span>{formatTokenCount(tokens)} tokens</span>
-                          )}
-                          {cost && cost > 0 && (
-                            <span>{formatCost(cost)}</span>
                           )}
                           {session?.last_active_at && (
                             <span>{formatLastActivity(session.last_active_at)}</span>
