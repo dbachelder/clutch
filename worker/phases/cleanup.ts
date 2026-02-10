@@ -504,7 +504,34 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<num
     return 0
   }
 
-  for (const task of tasksWithPRs) {
+  // Batch-fetch all remote branch names in one call (much faster than per-branch ls-remote)
+  let remoteBranches: Set<string>
+  try {
+    const lsAll = execFileSync(
+      "git",
+      ["ls-remote", "--heads", "origin"],
+      { encoding: "utf-8", timeout: 30_000, cwd: repoPath }
+    )
+    remoteBranches = new Set(
+      lsAll.trim().split("\n")
+        .filter(Boolean)
+        .map(line => line.replace(/^.*refs\/heads\//, ""))
+    )
+  } catch (lsErr) {
+    console.warn(`[cleanup] Failed to list remote branches, skipping branch cleanup: ${lsErr instanceof Error ? lsErr.message : String(lsErr)}`)
+    return 0
+  }
+
+  // Filter to only tasks whose branches still exist on remote
+  const tasksWithRemoteBranches = tasksWithPRs.filter(task => remoteBranches.has(task.branch!))
+
+  if (tasksWithRemoteBranches.length === 0) {
+    return 0
+  }
+
+  console.log(`[cleanup] Checking ${tasksWithRemoteBranches.length} branches (${tasksWithPRs.length - tasksWithRemoteBranches.length} already cleaned)`)
+
+  for (const task of tasksWithRemoteBranches) {
     const branchName = task.branch!
     const prNumber = task.pr_number!
 
@@ -519,47 +546,35 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<num
 
       // Only delete branch if PR was merged
       if (prData.state === "MERGED") {
-        // Check if remote branch exists
+        // Branch existence already verified by batch ls-remote above
         try {
           execFileSync(
             "git",
-            ["ls-remote", "--heads", "origin", branchName],
-            { encoding: "utf-8", timeout: 10_000, cwd: repoPath }
+            ["push", "origin", "--delete", branchName],
+            { encoding: "utf-8", timeout: 15_000, cwd: repoPath }
           )
 
-          // Branch exists on remote, delete it
-          try {
-            execFileSync(
-              "git",
-              ["push", "origin", "--delete", branchName],
-              { encoding: "utf-8", timeout: 15_000, cwd: repoPath }
-            )
-
-            await log({
-              projectId,
-              cycle,
-              phase: "cleanup",
-              action: "remote_branch_deleted",
-              taskId: task.id,
-              details: { branch: branchName, prNumber, reason: "merged_pr" },
-            })
-            actions++
-            console.log(`[cleanup] Deleted merged remote branch: ${branchName} (PR #${prNumber})`)
-          } catch (deleteErr) {
-            const deleteMsg = deleteErr instanceof Error ? deleteErr.message : String(deleteErr)
-            console.warn(`[cleanup] Failed to delete remote branch ${branchName}: ${deleteMsg}`)
-            await log({
-              projectId,
-              cycle,
-              phase: "cleanup",
-              action: "remote_branch_delete_failed",
-              taskId: task.id,
-              details: { branch: branchName, prNumber, error: deleteMsg },
-            })
-          }
-        } catch {
-          // Remote branch doesn't exist, which is fine
-          console.log(`[cleanup] Remote branch ${branchName} already deleted`)
+          await log({
+            projectId,
+            cycle,
+            phase: "cleanup",
+            action: "remote_branch_deleted",
+            taskId: task.id,
+            details: { branch: branchName, prNumber, reason: "merged_pr" },
+          })
+          actions++
+          console.log(`[cleanup] Deleted merged remote branch: ${branchName} (PR #${prNumber})`)
+        } catch (deleteErr) {
+          const deleteMsg = deleteErr instanceof Error ? deleteErr.message : String(deleteErr)
+          console.warn(`[cleanup] Failed to delete remote branch ${branchName}: ${deleteMsg}`)
+          await log({
+            projectId,
+            cycle,
+            phase: "cleanup",
+            action: "remote_branch_delete_failed",
+            taskId: task.id,
+            details: { branch: branchName, prNumber, error: deleteMsg },
+          })
         }
       } else {
         console.log(`[cleanup] PR #${prNumber} not merged (state: ${prData.state}), keeping branch ${branchName}`)
