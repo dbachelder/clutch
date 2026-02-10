@@ -102,16 +102,6 @@ function formatTokenCount(count: number | null | undefined): string {
 }
 
 /**
- * Format cost
- */
-function formatCost(cost: number | null | undefined): string {
-  if (!cost) return ""
-  if (cost >= 1) return `$${cost.toFixed(2)}`
-  if (cost >= 0.01) return `$${cost.toFixed(3)}`
-  return `$${cost.toFixed(4)}`
-}
-
-/**
  * Get display status from session
  */
 function getDisplayStatus(session: Session | null | undefined): string {

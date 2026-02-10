@@ -105,6 +105,7 @@ export const useSessionStore = create<SessionState>()(
        * @deprecated No longer fetches from HTTP. This is now a no-op.
        * ConvexSessionSync component populates the store reactively.
        */
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       fetchAndUpdate: async (_isInitialLoad = false) => {
         // No-op: Data comes from Convex via ConvexSessionSync
         console.warn('[session-store] fetchAndUpdate is deprecated. Data comes from Convex reactively.');

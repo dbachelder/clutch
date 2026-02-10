@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Image from "next/image"
 
 const AUTHOR_COLORS: Record<string, string> = {
   ada: "#a855f7",
@@ -22,11 +23,13 @@ export function Avatar({ author, className = "w-8 h-8" }: AvatarProps) {
   // Use image for Ada if available, fallback to letter
   if (author === "ada" && !imageError) {
     return (
-      <img
+      <Image
         src="/ada-avatar.png"
         alt="Ada"
         className={`${className} rounded-full object-cover flex-shrink-0`}
         onError={() => setImageError(true)}
+        width={32}
+        height={32}
       />
     )
   }

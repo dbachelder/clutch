@@ -600,7 +600,7 @@ export function TaskBreakdownStep({ data, onChange, errors }: TaskBreakdownStepP
     )
 
     return cleanup
-  }, [data.implementationPlan, data.estimatedHours, onChange])
+  }, [data.implementationPlan, data.estimatedHours, data.qaValidation, onChange])
 
   // Auto-generate on mount
   useEffect(() => {

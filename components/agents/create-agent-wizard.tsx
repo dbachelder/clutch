@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, ChevronLeft, ChevronRight, Check, X, Sparkles, Code, Users, Eye } from 'lucide-react';
+import { Bot, ChevronLeft, ChevronRight, Check, X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -242,7 +242,6 @@ export default function CreateAgentWizard({ onClose, onSuccess }: CreateAgentWiz
   };
 
   const isLastStep = currentStep === WIZARD_STEPS.length - 1;
-  const canProceed = currentStep < WIZARD_STEPS.length - 1;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">

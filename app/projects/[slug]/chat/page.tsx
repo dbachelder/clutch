@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, use } from "react"
+import { useEffect, useState, use, useMemo } from "react"
 import { MessageSquare, Menu } from "lucide-react"
 import { useChatStore } from "@/lib/stores/chat-store"
 import { ChatSidebar } from "@/components/chat/chat-sidebar"
@@ -375,7 +375,7 @@ export default function ChatPage({ params }: PageProps) {
     }
   }
 
-  const currentMessages = activeChat ? messages[activeChat.id] || [] : []
+  const currentMessages = useMemo(() => activeChat ? messages[activeChat.id] || [] : [], [activeChat, messages])
 
   // Clear lastSentAt when agent response arrives (typing indicator clears)
   useEffect(() => {

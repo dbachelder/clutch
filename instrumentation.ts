@@ -3,9 +3,6 @@
  * Runs once on server startup for initializing backend services
  */
 
-import { getConvexClient } from "@/lib/convex/server"
-import { api } from "@/convex/_generated/api"
-
 export async function register() {
   // Only run on server
   if (process.env.NEXT_RUNTIME === 'nodejs') {

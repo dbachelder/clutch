@@ -13,6 +13,7 @@ const ROLES = ["pm", "dev", "research", "reviewer", "conflict_resolver"]
  * Seeds the promptVersions table with v1 of all role templates from disk.
  * Idempotent - skips roles that already have versions.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function POST(_request: NextRequest) {
   try {
     const convex = getConvexClient()

@@ -59,7 +59,8 @@ export function ChatInput({
   const [content, setContent] = useState("")
   const [sending, setSending] = useState(false)
   const [stopping, setStopping] = useState(false)
-  const [contextUpdateTrigger, setContextUpdateTrigger] = useState(0)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_contextUpdateTrigger, setContextUpdateTrigger] = useState(0)
   const [images, setImages] = useState<ImagePreview[]>([])
   const [slashCommandMode, setSlashCommandMode] = useState<{
     active: boolean;
@@ -301,12 +302,12 @@ export function ChatInput({
     }
   }
 
-  // Clean up object URLs on unmount
+  // Clean up object URLs when images change or on unmount
   useEffect(() => {
     return () => {
       images.forEach(img => URL.revokeObjectURL(img.url))
     }
-  }, [])
+  }, [images])
 
   const hasContent = content.trim() || images.length > 0
 
@@ -318,6 +319,7 @@ export function ChatInput({
           {images.map(image => (
             <div key={image.id} className="relative group">
               <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-[var(--border)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={image.url}
                   alt="Image preview"

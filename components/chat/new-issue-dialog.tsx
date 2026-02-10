@@ -359,6 +359,7 @@ export function NewIssueDialog({
                 {images.map((image) => (
                   <div key={image.id} className="relative group">
                     <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-[var(--border)]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={image.url}
                         alt="Upload preview"

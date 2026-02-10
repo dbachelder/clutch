@@ -93,16 +93,6 @@ function calculatePercentiles(values: number[]): { average: number; median: numb
   return { average, median, p90 }
 }
 
-/**
- * Calculate cost from tokens (approximate)
- * Using rough pricing: $0.03 per 1K tokens (blended rate)
- */
-function calculateCost(tokensIn: number, tokensOut: number): number {
-  const INPUT_RATE = 0.00001  // $0.01 per 1K input tokens
-  const OUTPUT_RATE = 0.00003 // $0.03 per 1K output tokens
-  return (tokensIn * INPUT_RATE) + (tokensOut * OUTPUT_RATE)
-}
-
 // ============================================
 // Queries
 // ============================================

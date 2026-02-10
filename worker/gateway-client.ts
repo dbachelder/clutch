@@ -52,7 +52,6 @@ interface AgentResult {
 const PROTOCOL_VERSION = 3
 const DEFAULT_REQUEST_TIMEOUT_MS = 65 * 60 * 1000 // 65 minutes (above 1hr agent timeout)
 const CONNECT_TIMEOUT_MS = 10_000
-const RECONNECT_DELAY_MS = 5_000
 
 // ============================================
 // Gateway Client
@@ -356,7 +355,8 @@ export class GatewayRpcClient {
     // Count pending requests that aren't the connect handshake
     // Agent requests have long timeouts, connect has short ones
     let count = 0
-    for (const req of this.pending.values()) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for (const _req of this.pending.values()) {
       // We can't perfectly distinguish agent calls from other RPCs,
       // but in practice only agent calls have long timeouts
       count++

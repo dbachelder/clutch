@@ -32,7 +32,8 @@ export function useCreateProject() {
   return createProject
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const useProjectStore = create<ProjectState>((set, _get) => ({
   projects: [],
   loading: false,
   error: null,

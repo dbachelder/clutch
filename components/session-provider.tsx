@@ -21,6 +21,7 @@ interface SessionProviderProps {
 export function SessionProvider({
   children,
   /** @deprecated No longer used */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   refreshIntervalMs: _refreshIntervalMs,
 }: SessionProviderProps) {
   // Sessions now queried directly via Convex hooks where needed

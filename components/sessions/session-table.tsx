@@ -10,7 +10,6 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 
 /**
  * Hook that provides a time value that updates at a fixed interval.
@@ -35,8 +34,9 @@ function useTickingTime(updateIntervalMs = 30000) {
  * Only updates when the ticking time changes (every 30s by default).
  */
 function TimeAgo({ timestamp, tickingTime }: { timestamp: number; tickingTime: number }) {
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // tickingTime is intentionally used only to trigger re-renders when it changes
   const formatted = useMemo(() => {
+    void tickingTime
     return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
   }, [timestamp, tickingTime]);
 
@@ -50,7 +50,7 @@ import {
   SortingState,
   useReactTable,
 } from '@tanstack/react-table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronUp, ExternalLink, DollarSign } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronUp, DollarSign } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import type { Session, SessionStatus, SessionType } from '@/convex/sessions';
 import { useSessionStore } from '@/lib/stores/session-store';
@@ -606,6 +606,7 @@ export function SessionTable({ onRowClick, filteredSessions }: SessionTableProps
 
   const columns = getColumns(tickingTime);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,
