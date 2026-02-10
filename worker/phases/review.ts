@@ -6,6 +6,7 @@ import type { WorkLoopConfig } from "../config"
 import type { Task } from "../../lib/types"
 import { buildPromptAsync } from "../prompts"
 import { handlePostMergeDeploy } from "./convex-deploy"
+import { handleSelfDeploy } from "./self-deploy"
 
 // ============================================
 // Types
@@ -285,6 +286,9 @@ async function processTask(ctx: ReviewContext, task: Task): Promise<TaskProcessR
             prNumber: task.pr_number,
             mergedBy: 'work-loop',
           })
+          // Self-deploy: pull + rebuild + restart if this is the clutch project
+          // MUST be last — restarts the loop process, nothing after this runs
+          await handleSelfDeploy(project, task.pr_number)
         } catch {
           // Non-fatal
         }

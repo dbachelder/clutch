@@ -17,6 +17,7 @@ import { runReview } from "./phases/review"
 import type { Project, WorkLoopPhase } from "../lib/types"
 import { runWork } from "./phases/work"
 import { runTriage } from "./phases/triage"
+import { handleSelfDeploy } from "./phases/self-deploy"
 import { sessionFileReader } from "./session-file-reader"
 
 // ============================================
@@ -569,6 +570,9 @@ async function runProjectCycle(
                     taskId: outcome.taskId,
                     details: { reason: "reviewer_no_merge_but_approved", prNumber, role: outcome.role },
                   })
+                  // Self-deploy: pull + rebuild + restart if clutch project
+                  // MUST be last — restarts the loop process
+                  await handleSelfDeploy(project, prNumber)
                   autoMerged = true
                 } else {
                   console.log(`[WorkLoop] Auto-merge failed for PR #${prNumber} — will check for retry eligibility`)
@@ -608,6 +612,9 @@ async function runProjectCycle(
                     taskId: outcome.taskId,
                     details: { reason: "reviewer_positive_but_forgot_merge", prNumber, role: outcome.role, sentiment: reviewerSentiment },
                   })
+                  // Self-deploy: pull + rebuild + restart if clutch project
+                  // MUST be last — restarts the loop process
+                  await handleSelfDeploy(project, prNumber)
                   autoMerged = true
                 } else {
                   console.log(`[WorkLoop] Expanded auto-merge failed for PR #${prNumber} — will check for retry eligibility`)
@@ -704,7 +711,14 @@ async function runProjectCycle(
           }
         }
         // Case 3: Task already done/blocked → agent signaled correctly, no action
-        else {
+        else if (currentStatus === "done") {
+          console.log(`[WorkLoop] Task ${outcome.taskId.slice(0, 8)} status is done — agent signaled correctly`)
+          // Reviewer merged the PR and marked done. Trigger self-deploy if clutch project.
+          const donePrNumber = task.task.pr_number
+          if (donePrNumber) {
+            await handleSelfDeploy(project, donePrNumber)
+          }
+        } else {
           console.log(`[WorkLoop] Task ${outcome.taskId.slice(0, 8)} status is ${currentStatus} — agent signaled correctly`)
         }
       } catch (err) {
