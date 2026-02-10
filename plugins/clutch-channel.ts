@@ -6,11 +6,16 @@
  * How it works:
  *   1. Clutch frontend sends messages via OpenClaw WebSocket (chat.send RPC)
  *   2. OpenClaw processes the message in the agent session
- *   3. On agent_end, this plugin detects clutch:* session keys
- *   4. Extracts the assistant response and POSTs it to Clutch API → Convex
+ *   3. Plugin tracks agent lifecycle events and updates message delivery status
+ *   4. On agent_end, posts assistant responses back to Clutch API → Convex
  *   5. Convex reactive query updates the Clutch UI
  *
  * Session key format: clutch:{projectSlug}:{chatId}
+ * 
+ * Message correlation strategy:
+ *   - When agent events fire, query for the latest human message in the chat
+ *   - Update its delivery_status based on agent lifecycle
+ *   - This avoids complex message ID tracking across RPC boundaries
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
@@ -52,6 +57,67 @@ function extractTextContent(message: unknown): string {
   }
 
   return "";
+}
+
+/**
+ * Update message delivery status in Clutch
+ */
+async function updateMessageStatus(
+  api: OpenClawPluginApi,
+  chatId: string,
+  messageId: string,
+  status: "sent" | "delivered" | "processing" | "responded" | "failed"
+): Promise<{ ok: boolean; error?: string }> {
+  const clutchUrl = getClutchUrl(api);
+
+  try {
+    const response = await fetch(`${clutchUrl}/api/chats/${chatId}/messages/${messageId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delivery_status: status }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      return { ok: false, error: `HTTP ${response.status}: ${error}` };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to update status",
+    };
+  }
+}
+
+/**
+ * Get the latest human message from a chat (for status updates)
+ */
+async function getLatestHumanMessage(
+  api: OpenClawPluginApi,
+  chatId: string
+): Promise<{ id: string; delivery_status?: string } | null> {
+  const clutchUrl = getClutchUrl(api);
+
+  try {
+    // Use the Convex query through the API
+    const response = await fetch(`${clutchUrl}/api/chats/${chatId}/latest-human-message`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!response.ok) {
+      api.logger.warn(`Clutch: failed to get latest human message for chat ${chatId}: HTTP ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.message;
+  } catch (error) {
+    api.logger.warn(`Clutch: error getting latest human message for chat ${chatId}: ${error}`);
+    return null;
+  }
 }
 
 async function sendToClutch(
@@ -105,9 +171,101 @@ async function sendToClutch(
   }
 }
 
+/**
+ * Handle resilience after gateway restart - find stuck messages and mark as failed
+ */
+async function handleRestartResilience(api: OpenClawPluginApi): Promise<void> {
+  const clutchUrl = getClutchUrl(api);
+
+  try {
+    // Get messages stuck in "sent" or "delivered" status
+    const response = await fetch(`${clutchUrl}/api/chats/messages/stuck`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!response.ok) {
+      api.logger.warn(`Clutch: could not check for stuck messages: HTTP ${response.status}`);
+      return;
+    }
+
+    const data = await response.json();
+    const stuckMessages = data.messages || [];
+
+    for (const msg of stuckMessages) {
+      // Mark messages older than 5 minutes as failed
+      const age = Date.now() - msg.created_at;
+      if (age > 5 * 60 * 1000) { // 5 minutes
+        api.logger.info(`Clutch: marking stuck message ${msg.id} as failed (age: ${Math.round(age/1000)}s)`);
+        await updateMessageStatus(api, msg.chat_id, msg.id, "failed");
+      }
+    }
+  } catch (error) {
+    api.logger.warn(`Clutch: error during restart resilience check: ${error}`);
+  }
+}
+
 export default function register(api: OpenClawPluginApi) {
   // =========================================================================
-  // agent_end hook — persist assistant responses to Clutch/Convex
+  // Plugin initialization - handle restart resilience  
+  // =========================================================================
+  api.logger.info("Clutch channel plugin loading...");
+  
+  // Handle stuck messages after restart
+  setTimeout(() => handleRestartResilience(api), 2000);
+
+  // =========================================================================
+  // message_received hook — update latest human message to "delivered"
+  // =========================================================================
+  api.on("message_received", async (event, ctx) => {
+    const sessionKey = ctx.sessionKey;
+    if (!sessionKey) return;
+
+    const parsed = parseClutchSessionKey(sessionKey);
+    if (!parsed) return;
+
+    const { chatId } = parsed;
+
+    // Find the latest human message in this chat and mark as delivered
+    const latestMessage = await getLatestHumanMessage(api, chatId);
+    
+    if (latestMessage && latestMessage.delivery_status === "sent") {
+      api.logger.info(`Clutch: marking message ${latestMessage.id} as delivered`);
+      const result = await updateMessageStatus(api, chatId, latestMessage.id, "delivered");
+      
+      if (!result.ok) {
+        api.logger.warn(`Clutch: failed to mark message ${latestMessage.id} as delivered: ${result.error}`);
+      }
+    }
+  });
+
+  // =========================================================================
+  // agent_start hook — update to "processing"
+  // =========================================================================
+  api.on("agent_start", async (event, ctx) => {
+    const sessionKey = ctx.sessionKey;
+    if (!sessionKey) return;
+
+    const parsed = parseClutchSessionKey(sessionKey);
+    if (!parsed) return;
+
+    const { chatId } = parsed;
+
+    // Find the latest human message in this chat and mark as processing
+    const latestMessage = await getLatestHumanMessage(api, chatId);
+    
+    if (latestMessage && (latestMessage.delivery_status === "delivered" || latestMessage.delivery_status === "sent")) {
+      api.logger.info(`Clutch: marking message ${latestMessage.id} as processing`);
+      const result = await updateMessageStatus(api, chatId, latestMessage.id, "processing");
+      
+      if (!result.ok) {
+        api.logger.warn(`Clutch: failed to mark message ${latestMessage.id} as processing: ${result.error}`);
+      }
+    }
+  });
+
+  // =========================================================================
+  // agent_end hook — persist assistant responses and update to "responded"/"failed"
   // =========================================================================
   api.on("agent_end", async (event, ctx) => {
     const sessionKey = ctx.sessionKey;
@@ -119,8 +277,17 @@ export default function register(api: OpenClawPluginApi) {
 
     const { chatId } = parsed;
 
+    // Get the latest human message for status update
+    const latestMessage = await getLatestHumanMessage(api, chatId);
+
     if (!event.success) {
       api.logger.warn(`Clutch: agent_end failed for chat ${chatId}: ${event.error}`);
+      
+      // Mark original message as failed if we found it
+      if (latestMessage) {
+        await updateMessageStatus(api, chatId, latestMessage.id, "failed");
+      }
+
       // Still clear typing indicator even on failure/abort
       const clutchUrl = getClutchUrl(api);
       try {
@@ -150,6 +317,12 @@ export default function register(api: OpenClawPluginApi) {
     const trimmed = lastAssistantContent.trim();
     if (!trimmed || trimmed === "NO_REPLY" || trimmed === "HEARTBEAT_OK") {
       api.logger.info(`Clutch: no assistant content to save for chat ${chatId}`);
+      
+      // Mark as responded even with no content  
+      if (latestMessage) {
+        await updateMessageStatus(api, chatId, latestMessage.id, "responded");
+      }
+
       // Still clear typing indicator
       const clutchUrl2 = getClutchUrl(api);
       try {
@@ -175,8 +348,18 @@ export default function register(api: OpenClawPluginApi) {
 
     if (result.ok) {
       api.logger.info(`Clutch: response saved to chat ${chatId}`);
+      
+      // Mark original message as responded
+      if (latestMessage) {
+        await updateMessageStatus(api, chatId, latestMessage.id, "responded");
+      }
     } else {
       api.logger.warn(`Clutch: failed to save response to chat ${chatId}: ${result.error}`);
+      
+      // Mark original message as failed
+      if (latestMessage) {
+        await updateMessageStatus(api, chatId, latestMessage.id, "failed");
+      }
     }
 
     // Clear typing indicator after response is saved
@@ -273,5 +456,5 @@ export default function register(api: OpenClawPluginApi) {
     },
   });
 
-  api.logger.info("Clutch channel plugin loaded (with agent_end hook)");
+  api.logger.info("Clutch channel plugin loaded with delivery status tracking");
 }
