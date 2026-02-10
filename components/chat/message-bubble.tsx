@@ -52,19 +52,17 @@ const AUTHOR_NAMES: Record<string, string> = {
  */
 interface DeliveryStatusProps {
   status: DeliveryStatus | null | undefined
-  layout: 'slack' | 'imessage'
   isOwnMessage: boolean
   onRetry?: () => void
 }
 
-function DeliveryStatus({ status, layout, isOwnMessage, onRetry }: DeliveryStatusProps) {
+function DeliveryStatus({ status, isOwnMessage, onRetry }: DeliveryStatusProps) {
   // Don't show anything for legacy messages without status
   if (!status) return null
 
-  // Only show for user messages in iMessage layout (isOwnMessage implies user message)
-  // In slack layout, we show inline with timestamp for all user messages
-  const shouldShow = layout === 'imessage' ? isOwnMessage : !isOwnMessage
-  if (!shouldShow) return null
+  // Only show for user messages (isOwnMessage implies user message)
+  // Agent/bot messages don't need delivery status indicators
+  if (!isOwnMessage) return null
 
   const baseClasses = "inline-flex items-center gap-0.5 text-xs transition-colors duration-200"
   
@@ -358,7 +356,6 @@ export function MessageBubble({
             {chatLayout === 'slack' && (
               <DeliveryStatus
                 status={message.delivery_status}
-                layout={chatLayout}
                 isOwnMessage={isOwnMessage}
               />
             )}
@@ -396,10 +393,9 @@ export function MessageBubble({
 
         {/* Delivery status - under bubble for imessage layout */}
         {chatLayout === 'imessage' && isOwnMessage && (
-          <div className={`mt-1 ${isOwnMessage ? "text-right" : "text-left"}`}>
+          <div className="mt-1 text-right">
             <DeliveryStatus
               status={message.delivery_status}
-              layout={chatLayout}
               isOwnMessage={isOwnMessage}
             />
           </div>
