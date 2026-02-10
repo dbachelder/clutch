@@ -342,6 +342,17 @@ curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Conte
 - If a pre-commit failure is in code you didn't touch, fix it anyway — leave the codebase cleaner than you found it.
 - Do NOT skip, disable, or work around pre-commit hooks under any circumstances.
 
+## Work Already Completed
+
+**If the work is already done** (e.g., completed by another PR already merged to main):
+- Do NOT move the task to done yourself
+- Move it to \`in_review\` with a comment explaining what you found:
+  \`\`\`bash
+  curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "Work already completed in PR #XXX (commit abc123). Verified: <what you checked>.", "author": "agent", "author_type": "agent"}'
+  curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "in_review"}'
+  \`\`\`
+- A reviewer will verify and close it
+
 **After implementation, push and create PR (follow this EXACT sequence):**
 
 \`\`\`bash
