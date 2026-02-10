@@ -13,12 +13,12 @@ function mapEventType(eventType: string): Event["type"] {
     agent_assigned: "agent_started",
     agent_completed: "agent_completed",
     agent_reaped: "agent_completed",
-    pr_opened: "task_moved",
+    pr_opened: "pr_opened",
     pr_merged: "task_completed",
     comment_added: "comment_added",
-    triage_sent: "task_moved",
-    triage_resolved: "task_moved",
-    triage_escalated: "task_moved",
+    triage_sent: "triage_sent",
+    triage_resolved: "triage_sent",
+    triage_escalated: "triage_sent",
   }
   return mapping[eventType] ?? "task_moved"
 }

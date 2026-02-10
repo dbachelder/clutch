@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { 
   GitCommit, 
+  GitPullRequest,
   User, 
   Bot, 
   MessageSquare, 
@@ -11,6 +12,7 @@ import {
   Clock,
   ExternalLink,
   AlertCircle,
+  AlertTriangle,
   RotateCcw
 } from "lucide-react"
 import type { Event, EventType } from "@/lib/types"
@@ -32,6 +34,7 @@ interface EventData {
   pr_number?: number
   pr_action?: string
   branch?: string
+  triage_count?: number
   reap_reason?: string
   error?: string
   comment_preview?: string
@@ -73,6 +76,16 @@ const EVENT_CONFIG: Record<EventType, { label: string; icon: React.ReactNode; co
     label: "Agent completed",
     icon: <Bot className="h-4 w-4" />,
     color: "text-cyan-500",
+  },
+  pr_opened: {
+    label: "PR opened",
+    icon: <GitPullRequest className="h-4 w-4" />,
+    color: "text-green-500",
+  },
+  triage_sent: {
+    label: "Triage",
+    icon: <AlertTriangle className="h-4 w-4" />,
+    color: "text-amber-500",
   },
   chat_created: {
     label: "Chat created",
@@ -305,6 +318,21 @@ function EventTitle({ event, config, data }: EventTitleProps) {
         )
       }
       return <span className="text-sm font-medium text-[var(--text-primary)]">Agent completed</span>
+    
+    case "pr_opened":
+      return (
+        <span className="text-sm font-medium text-[var(--text-primary)]">
+          PR opened{data.pr_number ? <span className="text-green-400"> #{String(data.pr_number)}</span> : null}
+          {data.branch ? <span className="text-[var(--text-muted)]"> ({String(data.branch)})</span> : null}
+        </span>
+      )
+    
+    case "triage_sent":
+      return (
+        <span className="text-sm font-medium text-[var(--text-primary)]">
+          Triage sent <span className="text-amber-400">(attempt {String(data.triage_count ?? "?")})</span>
+        </span>
+      )
     
     case "comment_added":
       return <span className="text-sm font-medium text-[var(--text-primary)]">Comment added</span>

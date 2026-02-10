@@ -149,6 +149,8 @@ export type EventType =
   | "comment_added"
   | "agent_started"
   | "agent_completed"
+  | "pr_opened"
+  | "triage_sent"
   | "chat_created"
   | "message_sent"
 
