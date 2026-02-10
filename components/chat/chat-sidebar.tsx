@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useChatStore, type ChatWithLastMessage } from "@/lib/stores/chat-store"
+import { DEFAULT_USER } from "@/lib/constants"
 import { TaskModal } from "@/components/board/task-modal"
 import { NewIssueDialog } from "@/components/chat/new-issue-dialog"
 import { useConvexTasks } from "@/lib/hooks/use-convex-tasks"
@@ -36,6 +37,7 @@ const AUTHOR_COLORS: Record<string, string> = {
   "sonnet-reviewer": "#22c55e",
   "haiku-triage": "#eab308",
   dan: "#64748b",
+  user: "#64748b",
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -270,7 +272,7 @@ export function ChatSidebar({ projectId, projectSlug, isOpen = true, onClose, is
     }
 
     // Send the command as a message - the chat input will process it as a slash command
-    await sendMessage(activeChat.id, issueCommand, "dan")
+    await sendMessage(activeChat.id, issueCommand, DEFAULT_USER.name)
   }, [activeChat, sendMessage])
 
   useEffect(() => {
