@@ -66,7 +66,7 @@ export default defineSchema({
     dispatch_requested_at: v.optional(v.number()),
     dispatch_requested_by: v.optional(v.string()),
     // Agent tracking (written by work loop each cycle)
-    agent_session_key: v.optional(v.string()),
+    agent_session_key: v.optional(v.union(v.string(), v.null())),
     agent_retry_count: v.optional(v.number()), // Track retry attempts for orphaned tasks
     // Triage tracking (when blocked tasks were reported to Ada)
     triage_sent_at: v.optional(v.number()),
