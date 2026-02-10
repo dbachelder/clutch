@@ -241,11 +241,12 @@ ${params.taskDescription}${commentsSection}
    git push --force-with-lease
    \`\`\`
 
-7. **Post success comment and mark done:**
+7. **Post success comment and move to in_review (so a reviewer can verify and merge):**
    \`\`\`bash
    curl -X POST http://localhost:3002/api/tasks/${params.taskId}/comments -H 'Content-Type: application/json' -d '{"content": "Resolved merge conflicts. Branch rebased onto main and force-pushed. PR is now ready for review.", "author": "agent", "author_type": "agent"}'
-   curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "done"}'
+   curl -X PATCH http://localhost:3002/api/tasks/${params.taskId} -H 'Content-Type: application/json' -d '{"status": "in_review"}'
    \`\`\`
+   ⚠️ **NEVER move tasks to done.** Your job is conflict resolution only — a reviewer must review and merge the PR.
 
 ## If Conflicts Cannot Be Resolved
 
