@@ -174,7 +174,8 @@ Options:
   --help, -h          Show this help message
 
 Task Create Options:
-  --description "..."  Task description (use \\n for newlines)
+  --description '...'  Task description (use \\n for newlines)
+                       ⚠️  Use single quotes — double quotes let zsh interpret backticks
   --status <status>    Initial status (default: ready)
   --priority <level>   Priority: low/medium/high/urgent (default: medium)
   --role <role>        Role: pm/dev/research/reviewer/conflict_resolver
@@ -182,7 +183,7 @@ Task Create Options:
 
 Task Update Options:
   --title "..."             New title
-  --description "..."       New description (supports \\n for newlines)
+  --description '...'       New description (use single quotes, supports \\n)
   --status <status>         New status
   --priority <level>        New priority
   --role <role>             New role
