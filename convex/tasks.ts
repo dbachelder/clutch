@@ -461,11 +461,21 @@ export const getWithActiveAgents = query({
 export const getWithActiveAgentSessions = query({
   args: { projectId: v.string() },
   handler: async (ctx, args): Promise<TaskWithAgentSession[]> => {
-    // Get tasks with agent_session_key
+    // Get tasks with agent_session_key that are actively being worked on.
+    // Only in_progress and in_review tasks have live agents — done/blocked/ready
+    // tasks retain agent_session_key for history but aren't "active".
     const tasks = await ctx.db
       .query('tasks')
       .withIndex('by_project', (q) => q.eq('project_id', args.projectId))
-      .filter((q) => q.neq('agent_session_key', null))
+      .filter((q) =>
+        q.and(
+          q.neq(q.field('agent_session_key'), null),
+          q.or(
+            q.eq(q.field('status'), 'in_progress'),
+            q.eq(q.field('status'), 'in_review')
+          )
+        )
+      )
       .collect()
 
     // Sort by most recently updated first
