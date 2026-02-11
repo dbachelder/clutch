@@ -722,95 +722,21 @@ interface ClosedPRSweepContext {
 async function checkClosedPRsOnDoneTasks(ctx: ClosedPRSweepContext): Promise<number> {
   const { convex, project, doneTasks, cycle, log } = ctx
 
-  // Only check tasks completed in the last 24 hours — older done tasks with
-  // closed PRs were almost certainly intentionally abandoned, not accidental.
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000
-  const cutoff = Date.now() - ONE_DAY_MS
-  const doneTasksWithPRs = doneTasks.filter(task =>
-    task.pr_number &&
-    task.completed_at &&
-    task.completed_at > cutoff
-  )
+  // DISABLED: This sweep was recovering ALL done tasks with closed PRs,
+  // including intentionally abandoned ones. Even with a 24h recency filter,
+  // the recovery itself resets completed_at, creating an infinite loop.
+  // 
+  // The right fix: the reviewer/gate phase should check PR merge status
+  // before marking a task as done in the first place (which PR #604's
+  // isPRMerged fix already handles for new completions).
+  //
+  // Re-enable once we add a "pr_recovery_attempted" flag to prevent loops.
+  console.log(`[cleanup] Closed-PR recovery sweep disabled (see cleanup.ts comments)`)
+  return 0
 
-  if (doneTasksWithPRs.length === 0) {
-    return 0
-  }
-
-  console.log(`[cleanup] Checking ${doneTasksWithPRs.length} recently-completed tasks for closed-but-not-merged PRs`)
-
-  let recoveredCount = 0
-
-  for (const task of doneTasksWithPRs) {
-    const prNumber = task.pr_number!
-
-    // Check if PR was closed without merging
-    const closedWithoutMerge = isPRClosedWithoutMerge(prNumber, project)
-
-    if (!closedWithoutMerge) {
-      continue
-    }
-
-    // PR was closed without merge - move task back to ready
-    console.log(`[cleanup] Moving task ${task.id.slice(0, 8)} back to ready — PR #${prNumber} was closed without merge`)
-
-    try {
-      // Move task back to ready (force bypasses the done→ready guard)
-      await convex.mutation(api.tasks.move, {
-        id: task.id,
-        status: "ready",
-        reason: "pr_closed_without_merge",
-        force: true,
-      })
-
-      // Reset retry count since this is a new attempt
-      await convex.mutation(api.tasks.update, {
-        id: task.id,
-        agent_retry_count: 0,
-        agent_session_key: undefined,
-        agent_spawned_at: undefined,
-      })
-
-      // Add comment explaining the recovery
-      await convex.mutation(api.comments.create, {
-        taskId: task.id,
-        author: "work-loop",
-        authorType: "coordinator",
-        content: `Task was marked as done but PR #${prNumber} was closed without merging. Moving back to ready for rework.`,
-        type: "status_change",
-      })
-
-      // Log recovery action
-      await log({
-        projectId: project.id,
-        cycle,
-        phase: "cleanup",
-        action: "task_recovered_from_closed_pr",
-        taskId: task.id,
-        details: {
-          prNumber,
-        },
-      })
-
-      recoveredCount++
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[cleanup] Failed to recover task ${task.id.slice(0, 8)}:`, msg)
-      await log({
-        projectId: project.id,
-        cycle,
-        phase: "cleanup",
-        action: "task_recovery_failed",
-        taskId: task.id,
-        details: { prNumber, error: msg },
-      })
-    }
-  }
-
-  if (recoveredCount > 0) {
-    console.log(`[cleanup] Recovered ${recoveredCount} task(s) from closed-but-not-merged PRs`)
-  }
-
-  return recoveredCount
+  // TODO: Re-enable with a "pr_recovery_attempted" flag on tasks to prevent
+  // infinite recovery loops. The gate/reviewer phase should check PR merge
+  // status before marking done (isPRMerged from PR #604 handles new completions).
 }
 
 // ============================================
@@ -910,7 +836,7 @@ async function checkMergedPRsOnNonDoneTasks(ctx: MergedPRSweepContext): Promise<
       })
 
       completedCount++
-    } catch (err) {
+    } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(`[cleanup] Failed to auto-complete task ${task.id.slice(0, 8)}:`, msg)
       await log({
