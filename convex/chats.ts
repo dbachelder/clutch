@@ -1119,6 +1119,58 @@ export const getOldestSentMessage = query({
   },
 })
 
+// Get ALL human messages with "sent" status (for batch delivery marking)
+export const getAllSentMessages = query({
+  args: {
+    chat_id: v.string(),
+  },
+  returns: v.array(
+    v.object({
+      id: v.string(),
+      chat_id: v.string(),
+      author: v.string(),
+      content: v.string(),
+      run_id: v.optional(v.string()),
+      session_key: v.optional(v.string()),
+      is_automated: v.optional(v.number()),
+      delivery_status: v.optional(v.union(
+        v.literal("sent"),
+        v.literal("delivered"),
+        v.literal("processing"),
+        v.literal("responded"),
+        v.literal("failed"),
+      )),
+      created_at: v.number(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    // Find all messages where author is not "ada" and delivery_status is "sent"
+    const messages = await ctx.db
+      .query('chatMessages')
+      .withIndex('by_chat', (q) => q.eq('chat_id', args.chat_id))
+      .filter((q) =>
+        q.and(
+          q.neq(q.field('author'), 'ada'),
+          q.eq(q.field('delivery_status'), 'sent')
+        )
+      )
+      .order('asc') // oldest first
+      .take(100) // reasonable limit
+
+    return messages.map((message) => ({
+      id: message.id,
+      chat_id: message.chat_id,
+      author: message.author,
+      content: message.content,
+      run_id: message.run_id,
+      session_key: message.session_key,
+      is_automated: message.is_automated ? 1 : 0,
+      delivery_status: message.delivery_status,
+      created_at: message.created_at,
+    }))
+  },
+})
+
 // Get the oldest human message with "delivered" status (FIFO for processing)
 export const getOldestDeliveredMessage = query({
   args: {
