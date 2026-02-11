@@ -93,7 +93,9 @@ export class AgentManager {
       sessionKey,
       model: params.model,
       thinking: params.thinking ?? "off",
-      timeout: params.timeoutSeconds ?? 600,
+      // timeout=0 means "no timeout" — omit the field so OpenClaw uses its default
+      // If caller wants no timeout (staleness handled by loop reaper), pass 0 → omit
+      ...(params.timeoutSeconds ? { timeout: params.timeoutSeconds } : {}),
     })
 
     // Agent was accepted — it's now running on the gateway.
