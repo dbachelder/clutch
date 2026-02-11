@@ -220,8 +220,8 @@ export function ChatInput({
         if (!result.shouldSendMessage) {
           setContent("")
         } else {
-          // Unknown command - send as message after showing warning
-          await onSend(messageText, undefined)
+          // Command wants to send a (possibly augmented) message to the agent
+          await onSend(result.response || messageText, undefined)
           setContent("")
         }
       } catch (error) {
