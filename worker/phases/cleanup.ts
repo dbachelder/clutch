@@ -158,8 +158,65 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
 
     // Handle ghost task based on status
     if (task.status === "in_progress") {
-      // Move to blocked for triage - the agent finished/stopped but task
-      // wasn't properly transitioned
+      const hasPartialWork = !!(task.branch || task.pr_number)
+      const retryCount = task.agent_retry_count ?? 0
+      const MAX_AUTO_RETRIES = 3
+
+      if (!hasPartialWork && retryCount < MAX_AUTO_RETRIES) {
+        // No branch or PR — agent died before doing real work.
+        // Auto-reset to ready so a fresh agent can retry.
+        try {
+          await convex.mutation(api.tasks.move, {
+            id: task.id,
+            status: "ready",
+          })
+          await convex.mutation(api.tasks.update, {
+            id: task.id,
+            agent_session_key: undefined,
+            agent_retry_count: retryCount + 1,
+          })
+        } catch {
+          // Non-fatal — task may have been moved already
+        }
+
+        const retryReason = ghostReason === "session_completed"
+          ? `Agent session completed without producing a branch/PR (attempt ${retryCount + 1}/${MAX_AUTO_RETRIES}). Auto-resetting to ready.`
+          : ghostReason === "session_stale"
+            ? `Agent session became stale without producing a branch/PR (attempt ${retryCount + 1}/${MAX_AUTO_RETRIES}). Auto-resetting to ready.`
+            : `No active session found after grace period, no branch/PR produced (attempt ${retryCount + 1}/${MAX_AUTO_RETRIES}). Auto-resetting to ready.`
+
+        try {
+          await convex.mutation(api.comments.create, {
+            taskId: task.id,
+            author: "work-loop",
+            authorType: "coordinator",
+            content: retryReason,
+            type: "status_change",
+          })
+        } catch {
+          // Non-fatal
+        }
+
+        await log({
+          projectId: project.id,
+          cycle,
+          phase: "cleanup",
+          action: "ghost_task_auto_retry",
+          taskId: task.id,
+          details: {
+            status: task.status,
+            ghostReason,
+            agentSessionKey: task.agent_session_key,
+            retryCount: retryCount + 1,
+            inProgressDurationMs,
+          },
+        })
+
+        actions++
+        continue
+      }
+
+      // Has partial work (branch/PR) or exhausted retries — block for triage
       try {
         await convex.mutation(api.tasks.move, {
           id: task.id,
@@ -169,7 +226,6 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
         await convex.mutation(api.tasks.update, {
           id: task.id,
           agent_session_key: undefined,
-          // Reset retry count since this is a new triage cycle
           agent_retry_count: 0,
         })
       } catch {
@@ -177,11 +233,13 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
       }
 
       // Add a comment explaining why it was blocked
-      const blockReason = ghostReason === "session_completed"
-        ? "Agent session completed but task was not properly transitioned. Moving to blocked for triage."
-        : ghostReason === "session_stale"
-          ? "Agent session became stale (unresponsive). Moving to blocked for triage."
-          : "No active session found for this task after grace period. Moving to blocked for triage."
+      const blockReason = hasPartialWork
+        ? `Agent died with partial work (branch: ${task.branch || "none"}, PR: ${task.pr_number || "none"}). Moving to blocked for human review.`
+        : ghostReason === "session_completed"
+          ? `Agent session completed but task was not properly transitioned. ${MAX_AUTO_RETRIES} auto-retries exhausted. Moving to blocked for triage.`
+          : ghostReason === "session_stale"
+            ? `Agent session became stale (unresponsive). ${MAX_AUTO_RETRIES} auto-retries exhausted. Moving to blocked for triage.`
+            : `No active session found for this task after grace period. ${MAX_AUTO_RETRIES} auto-retries exhausted. Moving to blocked for triage.`
 
       try {
         await convex.mutation(api.comments.create, {
@@ -204,6 +262,8 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
         details: {
           status: task.status,
           ghostReason,
+          hasPartialWork,
+          retryCount,
           agentSessionKey: task.agent_session_key,
           inProgressDurationMs,
         },
