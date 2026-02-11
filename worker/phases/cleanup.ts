@@ -130,7 +130,7 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
 
     const now = Date.now()
     const inProgressDurationMs = now - task.updated_at
-    const GHOST_GRACE_PERIOD_MS = 2 * 60 * 1000 // 2 minutes grace period
+    const GHOST_GRACE_PERIOD_MS = 5 * 60 * 1000 // 5 minutes grace period for all ghost types
 
     // Determine if this is a ghost task
     let isGhost = false
@@ -143,11 +143,17 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
         ghostReason = "no_session_record"
       }
     } else if (sessionStatus.status === "completed") {
-      isGhost = true
-      ghostReason = "session_completed"
+      // Session completed - but give it grace period in case it just finished
+      if (inProgressDurationMs > GHOST_GRACE_PERIOD_MS) {
+        isGhost = true
+        ghostReason = "session_completed"
+      }
     } else if (sessionStatus.status === "stale") {
-      isGhost = true
-      ghostReason = "session_stale"
+      // Session stale - also respect grace period
+      if (inProgressDurationMs > GHOST_GRACE_PERIOD_MS) {
+        isGhost = true
+        ghostReason = "session_stale"
+      }
     }
     // active/idle sessions are NOT ghosts - agent is still running
 
