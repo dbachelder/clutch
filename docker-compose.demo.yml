@@ -28,15 +28,11 @@ services:
     container_name: openclutch-convex-demo
     restart: unless-stopped
     ports:
-      - "3230:3230"  # Convex API port (demo)
-      - "6811:6811"  # Convex dashboard port (demo)
+      - "3230:3210"  # Convex API port (demo) - maps external 3230 to internal 3210
+      - "6811:3211"  # Convex dashboard port (demo) - maps external 6811 to internal 3211
     volumes:
       - convex-demo-data:/convex/data
     environment:
-      # Admin key for Convex demo instance
-      # This is a demo key - generate a new one with:
-      # docker run --rm ghcr.io/get-convex/convex-backend:latest generate-key
-      - CONVEX_ADMIN_KEY=${CONVEX_DEMO_ADMIN_KEY:-convex-self-hosted|00000000000000000000000000000000000000000000000000000000000000000000000000000000}
       # Storage configuration
       - CONVEX_STORAGE_TYPE=${CONVEX_STORAGE_TYPE:-sqlite}
       - CONVEX_SQLITE_PATH=${CONVEX_SQLITE_PATH:-/convex/data/convex.db}

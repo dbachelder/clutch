@@ -17,6 +17,57 @@ OpenClutch is an autonomous software development platform that orchestrates AI a
 - **CLI Tool** — Command-line interface for task management and deployment
 - **Multi-Project Support** — Manage multiple repositories with isolated worktrees
 
+## Screenshots
+
+<details>
+<summary><b>🏠 Observatory Dashboard</b> — Real-time work-loop monitoring with live stats, active agents, and activity logs</summary>
+
+![Observatory](./docs/observatory-screenshot.png)
+
+</details>
+
+<details>
+<summary><b>📋 Kanban Board</b> — Drag-and-drop task management across all statuses</summary>
+
+![Board](./docs/board-screenshot.png)
+
+</details>
+
+<details>
+<summary><b>💬 Agent Chat</b> — Bidirectional conversations with AI agents</summary>
+
+![Chat](./docs/chat-screenshot.png)
+
+</details>
+
+<details>
+<summary><b>🔄 Work Loop</b> — Live analytics and monitoring</summary>
+
+![Work Loop](./docs/work-loop-screenshot.png)
+
+</details>
+
+<details>
+<summary><b>🗺️ Roadmap</b> — Project phases and requirements tracking</summary>
+
+![Roadmap](./docs/roadmap-screenshot.png)
+
+</details>
+
+<details>
+<summary><b>📊 Sessions</b> — Token usage and cost tracking</summary>
+
+![Sessions](./docs/sessions-screenshot.png)
+
+</details>
+
+<details>
+<summary><b>🧪 Prompt Lab</b> — Prompt versions and performance metrics</summary>
+
+![Prompt Lab](./docs/prompt-lab-screenshot.png)
+
+</details>
+
 ## Architecture
 
 ```
