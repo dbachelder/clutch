@@ -46,61 +46,10 @@ export async function listSessionsWithEffectiveModel(): Promise<{ sessions: Sess
 /**
  * Get model context window size in tokens.
  */
-function getModelContextWindow(model: string): number {
-  const lowerModel = model.toLowerCase();
-
-  // Anthropic models
-  if (lowerModel.includes('claude-opus-4-6')) return 200000;
-  if (lowerModel.includes('claude-opus-4-5')) return 200000;
-  if (lowerModel.includes('claude-opus')) return 200000;
-  if (lowerModel.includes('claude-sonnet-4')) return 200000;
-  if (lowerModel.includes('claude-sonnet')) return 200000;
-  if (lowerModel.includes('claude-haiku')) return 200000;
-  if (lowerModel.includes('claude')) return 200000;
-
-  // Moonshot / Kimi models
-  if (lowerModel.includes('kimi-k2-thinking') || lowerModel.includes('kimi-k2.5-thinking'))
-    return 131072;
-  if (lowerModel.includes('kimi-k2')) return 256000;
-  if (lowerModel.includes('kimi-for-coding')) return 262144;
-  if (lowerModel.includes('kimi')) return 200000;
-  if (lowerModel.includes('moonshot')) return 200000;
-
-  // OpenAI models
-  if (lowerModel.includes('gpt-4.5')) return 128000;
-  if (lowerModel.includes('gpt-4o')) return 128000;
-  if (lowerModel.includes('gpt-4-turbo')) return 128000;
-  if (lowerModel.includes('gpt-4')) return 8192;
-  if (lowerModel.includes('gpt-3.5-turbo')) return 16385;
-  if (lowerModel.includes('gpt-3.5')) return 4096;
-  if (lowerModel.includes('gpt-5')) return 128000;
-
-  // Google models
-  if (lowerModel.includes('gemini-1.5-pro')) return 2000000;
-  if (lowerModel.includes('gemini-1.5-flash')) return 1000000;
-  if (lowerModel.includes('gemini-1.5')) return 1000000;
-  if (lowerModel.includes('gemini')) return 1000000;
-
-  // Z.AI / GLM models
-  if (lowerModel.includes('glm-4.5')) return 128000;
-  if (lowerModel.includes('glm-4')) return 128000;
-  if (lowerModel.includes('glm')) return 128000;
-
-  // MiniMax models
-  if (lowerModel.includes('minimax')) return 1000000;
-
-  // Default fallback for unknown models (assume 128k)
-  return 128000;
-}
 
 /**
  * Calculate context percentage based on token usage.
  */
-function calculateContextPercentage(tokensTotal: number, model: string): number {
-  const contextWindow = getModelContextWindow(model);
-  const percentage = (tokensTotal / contextWindow) * 100;
-  return Math.min(percentage, 100);
-}
 
 /**
  * Get session preview with message history.
@@ -159,7 +108,8 @@ export async function getSessionPreview(
         effectiveModel = previewModel;
       }
     }
-  } catch (_error) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (error) {
     // RPC failed (e.g., 502 when WebSocket disconnected) - return session without messages
     // This prevents console flood and allows the UI to show session metadata
     console.warn(`[getSessionPreview] RPC unavailable, returning session without messages: ${sessionKey}`);

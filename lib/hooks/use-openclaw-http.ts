@@ -23,6 +23,7 @@ export { openclawApi };
  * @deprecated Session list with polling has been removed.
  * Use Convex sessions table queries (api.sessions.list) for reactive session data.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function useSessionList(_refreshIntervalMs = 30000, _shouldPoll = false) {
   console.warn('[use-openclaw-http] useSessionList is deprecated. Use Convex sessions table queries (api.sessions.list)');
 
@@ -173,6 +174,7 @@ export function useOpenClawHttpRpc() {
   }, []);
 
   // Stub implementations for agent methods (not implemented in HTTP API yet)
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   const listAgents = useCallback(async (): Promise<{ agents: []; total: number }> => {
     return { agents: [], total: 0 };
   }, []);
@@ -208,6 +210,7 @@ export function useOpenClawHttpRpc() {
   const updateAgentConfig = useCallback(async (_agentId: string, _config: Record<string, unknown>): Promise<{ agent: AgentDetail }> => {
     throw new Error("updateAgentConfig not implemented in HTTP API");
   }, []);
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   const getGatewayStatus = useCallback(async (): Promise<null> => {
     return null;

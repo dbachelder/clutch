@@ -56,6 +56,7 @@ interface DeliveryStatusProps {
   onRetry?: () => void
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function DeliveryStatus({ status, isOwnMessage: _isOwnMessage, onRetry }: DeliveryStatusProps) {
   // Don't show anything for legacy messages or bot messages without status
   if (!status) return null

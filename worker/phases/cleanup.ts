@@ -25,7 +25,7 @@ import { execFileSync } from "node:child_process"
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
 import type { Task } from "../../lib/types"
-import { isPRMerged, isPRClosedWithoutMerge, type ProjectInfo } from "./github"
+import { isPRMerged, type ProjectInfo } from "./github"
 import { handleSelfDeploy } from "./self-deploy"
 import {
   cleanMergedLocalBranches,
@@ -786,7 +786,8 @@ interface ClosedPRSweepContext {
  * @returns Number of tasks moved back to ready
  */
 async function checkClosedPRsOnDoneTasks(ctx: ClosedPRSweepContext): Promise<number> {
-  const { convex, project, doneTasks, cycle, log } = ctx
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { convex: _convex, project: _project, doneTasks: _doneTasks, cycle: _cycle, log: _log } = ctx
 
   // DISABLED: This sweep was recovering ALL done tasks with closed PRs,
   // including intentionally abandoned ones. Even with a 24h recency filter,

@@ -50,6 +50,7 @@ async function main() {
     if (!response.ok) {
       throw new Error(`Server returned ${response.status}`)
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (error) {
     console.error("❌ Dev server not responding at", BASE_URL)
     console.error("   Make sure to run: pnpm demo:dev")
@@ -77,7 +78,7 @@ async function main() {
       // For now, we provide instructions for manual screenshots
       console.log(`      ⚠️  Manual screenshot required`)
       console.log()
-    } catch (error) {
+    } catch (  error) {
       console.error(`      ❌ Failed:`, error)
     }
 
