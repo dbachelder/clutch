@@ -355,6 +355,7 @@ export class GatewayRpcClient {
     // Count pending requests that aren't the connect handshake
     // Agent requests have long timeouts, connect has short ones
     let count = 0
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for (const req of this.pending.values()) {
       // We can't perfectly distinguish agent calls from other RPCs,
       // but in practice only agent calls have long timeouts

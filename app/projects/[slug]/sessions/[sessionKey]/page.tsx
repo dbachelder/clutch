@@ -150,7 +150,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ slug: 
     }
 
     loadSession();
-  }, [sessionKey]);
+  }, [sessionKey, slug]);
 
   const toggleToolExpansion = (toolId: string) => {
     const newExpanded = new Set(expandedTools);

@@ -244,6 +244,7 @@ export async function cleanStaleWorktrees(
   ctx: MergedBranchCleanupContext & { _worktreesPath: string },
   activeTaskBranches: Set<string>
 ): Promise<{ actions: number; worktreesRemoved: string[] }> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { repoPath, _worktreesPath, projectId, cycle, log } = ctx
   let actions = 0
   const worktreesRemoved: string[] = []

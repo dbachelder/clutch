@@ -330,6 +330,7 @@ async function computeAndStoreMetrics(
   period: 'day' | 'week' | 'all_time',
   periodStart: number,
   analyses: TaskAnalysis[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _computedAt: number
 ): Promise<void> {
   if (analyses.length === 0) {

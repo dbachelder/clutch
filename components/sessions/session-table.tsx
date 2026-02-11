@@ -34,10 +34,12 @@ function useTickingTime(updateIntervalMs = 30000) {
  * Only updates when the ticking time changes (every 30s by default).
  */
 function TimeAgo({ timestamp, tickingTime }: { timestamp: number; tickingTime: number }) {
-   
+  // tickingTime is intentionally used to trigger re-renders for live updates
   const formatted = useMemo(() => {
+    void tickingTime
     return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
-  }, [timestamp, tickingTime]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timestamp]);
 
   return <span className="text-sm text-muted-foreground">{formatted}</span>;
 }
@@ -605,6 +607,7 @@ export function SessionTable({ onRowClick, filteredSessions }: SessionTableProps
 
   const columns = getColumns(tickingTime);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,

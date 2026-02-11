@@ -217,6 +217,7 @@ export function MarkdownContent({ content, className = "", variant = "chat" }: M
           // Images - thumbnail with click to expand
           img: ({ src, alt }) => (
             <span className="inline-block my-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={src}
                 alt={alt || "Image"}
@@ -238,6 +239,7 @@ export function MarkdownContent({ content, className = "", variant = "chat" }: M
           <DialogTitle className="sr-only">Image Preview</DialogTitle>
           {lightboxImage && (
             <div className="relative flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={lightboxImage}
                 alt="Full size"

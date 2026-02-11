@@ -242,7 +242,6 @@ export default function CreateAgentWizard({ onClose, onSuccess }: CreateAgentWiz
   };
 
   const isLastStep = currentStep === WIZARD_STEPS.length - 1;
-  const canProceed = currentStep < WIZARD_STEPS.length - 1;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">

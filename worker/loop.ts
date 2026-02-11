@@ -76,11 +76,6 @@ function sleep(ms: number): Promise<void> {
 // GitHub PR Helpers (for auto-merge fallback)
 // ============================================
 
-interface PRStatus {
-  mergeable: string
-  reviewDecision: string
-  state: string
-}
 
 interface PRExpandedStatus {
   mergeable: string
@@ -102,24 +97,6 @@ interface PRExpandedStatus {
  * Check if a PR is approved and mergeable.
  * Returns PR status or null on error.
  */
-function getPRStatus(prNumber: number, project: ProjectInfo): PRStatus | null {
-  try {
-    const result = execFileSync(
-      "gh",
-      ["pr", "view", String(prNumber), "--json", "mergeable,reviewDecision,state"],
-      {
-        encoding: "utf-8",
-        timeout: 10_000,
-        cwd: project.local_path!,
-      }
-    )
-    return JSON.parse(result) as PRStatus
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn(`[WorkLoop] Failed to check PR #${prNumber} status: ${message}`)
-    return null
-  }
-}
 
 /**
  * Get expanded PR status including CI checks and review details.

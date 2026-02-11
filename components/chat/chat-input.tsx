@@ -47,17 +47,20 @@ export function ChatInput({
   onSend,
   onStop,
   onSlashCommand,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onReset,
   disabled = false,
   placeholder = "Type a message...",
   isAssistantTyping = false,
   sessionKey = "main",
   projectId,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   lastSentAt = null,
 }: ChatInputProps) {
   const [content, setContent] = useState("")
   const [sending, setSending] = useState(false)
   const [stopping, setStopping] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [contextUpdateTrigger, setContextUpdateTrigger] = useState(0)
   const [images, setImages] = useState<ImagePreview[]>([])
   const [slashCommandMode, setSlashCommandMode] = useState<{
@@ -318,7 +321,7 @@ export function ChatInput({
     return () => {
       images.forEach(img => URL.revokeObjectURL(img.url))
     }
-  }, [])
+  }, [images])
 
   const hasContent = content.trim() || images.length > 0
 
@@ -330,6 +333,7 @@ export function ChatInput({
           {images.map(image => (
             <div key={image.id} className="relative group">
               <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-[var(--border)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={image.url}
                   alt="Image preview"

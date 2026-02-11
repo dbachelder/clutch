@@ -18,7 +18,7 @@ import { SessionTable } from '@/components/sessions/session-table';
 import { useSessions } from '@/lib/hooks/use-sessions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { Session, SessionType } from '@/convex/sessions';
+import type { SessionType } from '@/convex/sessions';
 
 function ConnectionBadge({ connected }: { connected: boolean }) {
   const status = connected ? 'connected' : 'disconnected';
@@ -88,7 +88,7 @@ export interface SessionsListProps {
 
 export function SessionsList({
   projectSlug,
-  projectId,
+  
   onSessionClick,
   showStats = true,
   title = 'Sessions',

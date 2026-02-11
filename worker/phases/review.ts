@@ -170,6 +170,7 @@ interface TaskProcessResult {
 async function processTask(
   ctx: ReviewContext,
   task: Task,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _allActiveTasks: Task[]
 ): Promise<TaskProcessResult> {
   const { convex, project } = ctx
