@@ -1049,6 +1049,7 @@ export const move = mutation({
       v.literal('merged')
     )),
     reason: v.optional(v.string()),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<Task> => {
     const existing = await ctx.db
@@ -1070,9 +1071,9 @@ export const move = mutation({
     const toStatus = args.status
 
     // Guard: prevent moving tasks backward from 'done' to any earlier status.
-    // Only humans should resurrect completed tasks (via the UI with force flag).
-    // This prevents bugs where stale agent reaping accidentally un-completes tasks.
-    if (existing.status === 'done' && args.status !== 'done') {
+    // The force flag allows programmatic reopening (e.g., cleanup recovering
+    // tasks whose PRs were closed without merging).
+    if (existing.status === 'done' && args.status !== 'done' && !args.force) {
       throw new Error(
         `Cannot move task from 'done' to '${args.status}'. ` +
         `Completed tasks can only be reopened manually.`

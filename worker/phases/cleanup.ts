@@ -747,11 +747,12 @@ async function checkClosedPRsOnDoneTasks(ctx: ClosedPRSweepContext): Promise<num
     console.log(`[cleanup] Moving task ${task.id.slice(0, 8)} back to ready — PR #${prNumber} was closed without merge`)
 
     try {
-      // Move task back to ready
+      // Move task back to ready (force bypasses the done→ready guard)
       await convex.mutation(api.tasks.move, {
         id: task.id,
         status: "ready",
         reason: "pr_closed_without_merge",
+        force: true,
       })
 
       // Reset retry count since this is a new attempt
