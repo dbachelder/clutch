@@ -201,7 +201,7 @@ export function ChatInput({
   // Core send logic, accepts optional content override (used by autocomplete)
   const handleSendWithContent = async (overrideContent?: string) => {
     const messageText = (overrideContent ?? content).trim()
-    if ((!messageText && images.length === 0) || sending || disabled || isAssistantTyping) return
+    if ((!messageText && images.length === 0) || sending || disabled) return
 
     const imagesToUpload = [...images]
 
@@ -396,7 +396,7 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={placeholder}
-            disabled={disabled || sending}
+            disabled={disabled}
             rows={1}
             className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-xl px-3 md:px-4 py-3 text-sm md:text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-blue)] resize-none touch-manipulation min-h-[44px]"
           />
