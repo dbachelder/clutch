@@ -484,7 +484,7 @@ async function processTask(
         role: "conflict_resolver",
         message: prompt,
         model: conflictResolverModel,
-        timeoutSeconds: 600,
+        timeoutSeconds: 0,  // No OpenClaw run timeout — staleness is handled by our reaper
         retryCount: task.agent_retry_count ?? 0,
       })
 
@@ -591,7 +591,7 @@ async function processTask(
       role: "reviewer",
       message: prompt,
       model: reviewerModel,
-      timeoutSeconds: 600,
+      timeoutSeconds: 0,  // No OpenClaw run timeout — staleness is handled by our reaper
       retryCount: task.review_count ?? 0,
     })
 

@@ -449,7 +449,7 @@ export async function runWork(ctx: WorkContext): Promise<WorkPhaseResult> {
         message: prompt,
         model,
         thinking: "off",
-        timeoutSeconds: 600,
+        timeoutSeconds: 0,  // No OpenClaw run timeout — staleness is handled by our reaper
         retryCount: task.agent_retry_count ?? 0,
       })
 
