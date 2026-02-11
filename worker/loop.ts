@@ -358,6 +358,13 @@ async function runProjectCycle(
   convex: ConvexHttpClient,
   project: ProjectInfo
 ): Promise<void> {
+  // Check if project is paused via Observatory UI
+  const currentState = await convex.query(api.workLoop.getState, { projectId: project.id })
+  if (currentState?.status === 'paused') {
+    console.log(`[WorkLoop] Project ${project.slug} is paused — skipping cycle ${cycle}`)
+    return  // Don't overwrite state
+  }
+
   // Validate project configuration before running any phases
   if (!project.local_path) {
     console.error(`[WorkLoop] Project ${project.slug} has no local_path — skipping cycle`)
@@ -368,6 +375,10 @@ async function runProjectCycle(
   }
 
   const cycleStart = Date.now()
+
+  // Use the existing status if available, otherwise default to "running"
+  // This preserves "paused" state if user paused mid-cycle (though we checked above)
+  const status = currentState?.status ?? 'running'
 
   // Reap finished agents before doing anything else.
   // Queries Convex for active tasks and checks their JSONL files for completion.
@@ -834,7 +845,7 @@ async function runProjectCycle(
   // Update state to show we're starting a cycle
   await convex.mutation(api.workLoop.upsertState, {
     project_id: project.id,
-    status: "running",
+    status,
     current_phase: "cleanup",
     current_cycle: cycle,
     active_agents: activeAgentCount,
@@ -861,7 +872,7 @@ async function runProjectCycle(
   // Update state to review phase
   await convex.mutation(api.workLoop.upsertState, {
     project_id: project.id,
-    status: "running",
+    status,
     current_phase: "review",
     current_cycle: cycle,
     active_agents: activeAgentCount,
@@ -888,7 +899,7 @@ async function runProjectCycle(
   // Update state to work phase
   await convex.mutation(api.workLoop.upsertState, {
     project_id: project.id,
-    status: "running",
+    status,
     current_phase: "work",
     current_cycle: cycle,
     active_agents: activeAgentCount,
@@ -920,7 +931,7 @@ async function runProjectCycle(
   // Update state to triage phase (runs after work + review)
   await convex.mutation(api.workLoop.upsertState, {
     project_id: project.id,
-    status: "running",
+    status,
     current_phase: "triage",
     current_cycle: cycle,
     active_agents: activeAgentCount,
@@ -969,7 +980,7 @@ async function runProjectCycle(
   // Update final state for this cycle
   await convex.mutation(api.workLoop.upsertState, {
     project_id: project.id,
-    status: "running",
+    status,
     current_phase: "idle",
     current_cycle: cycle,
     active_agents: activeAgentCount,
