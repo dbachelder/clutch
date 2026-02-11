@@ -10,9 +10,9 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, RotateCcw, Archive, AlertCircle, X, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useSessionStore } from '@/lib/stores/session-store';
+import { useSession } from '@/lib/hooks/use-session';
 import { useOpenClawHttpRpc } from '@/lib/hooks/use-openclaw-http';
-import { SessionPreview } from '@/lib/types';
+import type { SessionMessage } from '@/lib/types/session';
 import {
   Dialog,
   DialogContent,
@@ -48,9 +48,9 @@ export default function SessionDetailPage() {
     }
   })();
   
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [sessionPreview, setSessionPreview] = useState<SessionPreview | null>(null);
+  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<SessionMessage[] | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
@@ -59,7 +59,6 @@ export default function SessionDetailPage() {
     message: string;
     type: 'success' | 'error';
   } | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
 
   // Simple toast function
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -67,85 +66,41 @@ export default function SessionDetailPage() {
     setTimeout(() => setNotification(null), 5000);
   };
   
-  const session = useSessionStore((state) => state.getSessionByKey(sessionId));
+  // Session metadata from Convex (reactive, real-time)
+  const { session: convexSession, isLoading: convexLoading } = useSession(sessionId);
   const { getSessionPreview, resetSession, compactSession, cancelSession } = useOpenClawHttpRpc();
 
-  // Load session preview data with timeout and retry logic
-  useEffect(() => {
-    const loadSessionPreview = async (attempt = 0) => {
-      if (!sessionId) return;
-      
-      try {
-        setIsLoading(true);
-        setLoadError(null);
-        
-        // Add timeout to prevent hanging
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout after 15 seconds')), 15000);
-        });
-        
-        const dataPromise = getSessionPreview(sessionId);
-        const preview = await Promise.race([dataPromise, timeoutPromise]);
-        
-        setSessionPreview(preview);
-        setLoadError(null);
-        setRetryCount(0);
-      } catch (error) {
-        console.error('Failed to load session preview:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        setLoadError(errorMessage);
-        
-        // Auto-retry up to 3 times with exponential backoff
-        if (attempt < 3) {
-          const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-          console.log(`[SessionDetail] Retrying in ${delay}ms (attempt ${attempt + 1}/3)`);
-          setTimeout(() => {
-            setRetryCount(attempt + 1);
-            loadSessionPreview(attempt + 1);
-          }, delay);
-          return; // Don't set isLoading to false yet
-        } else {
-          showToast(`Failed to load session details: ${errorMessage}`, "error");
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadSessionPreview();
-  }, [sessionId, getSessionPreview]);
-
-  // Add manual retry function
-  const retryLoad = () => {
-    setRetryCount(0);
-    const loadSessionPreview = async () => {
-      if (!sessionId) return;
-      
-      try {
-        setIsLoading(true);
-        setLoadError(null);
-        
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout after 15 seconds')), 15000);
-        });
-        
-        const dataPromise = getSessionPreview(sessionId);
-        const preview = await Promise.race([dataPromise, timeoutPromise]);
-        
-        setSessionPreview(preview);
-        setLoadError(null);
-      } catch (error) {
-        console.error('Failed to load session preview:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        setLoadError(errorMessage);
-        showToast(`Failed to load session details: ${errorMessage}`, "error");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Load message history via RPC
+  const loadMessages = async () => {
+    if (!sessionId) return;
     
-    loadSessionPreview();
+    try {
+      setMessagesLoading(true);
+      setMessagesError(null);
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout after 15 seconds')), 15000);
+      });
+      
+      const dataPromise = getSessionPreview(sessionId);
+      const preview = await Promise.race([dataPromise, timeoutPromise]);
+      
+      setMessages(preview.messages);
+      setMessagesError(null);
+    } catch (error) {
+      console.error('Failed to load message history:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setMessagesError(errorMessage);
+    } finally {
+      setMessagesLoading(false);
+    }
   };
+
+  // Load messages on mount
+  useEffect(() => {
+    loadMessages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   // Handle session reset
   const handleResetSession = async () => {
@@ -154,9 +109,7 @@ export default function SessionDetailPage() {
       setShowResetDialog(false);
       await resetSession(sessionId);
       showToast("Session has been reset successfully", "success");
-      // Reload session preview after reset
-      const preview = await getSessionPreview(sessionId);
-      setSessionPreview(preview);
+      await loadMessages();
     } catch (error) {
       console.error('Failed to reset session:', error);
       showToast("Failed to reset session", "error");
@@ -171,9 +124,7 @@ export default function SessionDetailPage() {
       setIsCompacting(true);
       await compactSession(sessionId);
       showToast("Session context has been compacted successfully", "success");
-      // Reload session preview after compact
-      const preview = await getSessionPreview(sessionId);
-      setSessionPreview(preview);
+      await loadMessages();
     } catch (error) {
       console.error('Failed to compact session:', error);
       showToast("Failed to compact session context", "error");
@@ -188,9 +139,7 @@ export default function SessionDetailPage() {
       setIsCanceling(true);
       await cancelSession(sessionId);
       showToast("Session has been canceled successfully", "success");
-      // Reload session preview after cancel
-      const preview = await getSessionPreview(sessionId);
-      setSessionPreview(preview);
+      await loadMessages();
     } catch (error) {
       console.error('Failed to cancel session:', error);
       showToast("Failed to cancel session", "error");
@@ -199,51 +148,20 @@ export default function SessionDetailPage() {
     }
   };
 
-  if (isLoading) {
+  // Show loading only when both Convex and messages are still loading
+  if (convexLoading && messagesLoading) {
     return (
       <div className="container mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin mb-4" />
         <p className="text-muted-foreground text-center">
           Loading session details...
-          {retryCount > 0 && (
-            <span className="block text-sm mt-2">
-              Retry attempt {retryCount}/3
-            </span>
-          )}
         </p>
       </div>
     );
   }
 
-  if (loadError && !sessionPreview) {
-    return (
-      <div className="container mx-auto py-8 px-4">
-        <Button variant="ghost" onClick={() => router.push('/sessions')} className="mb-4">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Sessions
-        </Button>
-        <div className="rounded-lg border p-8 text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold mb-2">Failed to Load Session</h1>
-          <p className="text-muted-foreground mb-4">
-            {loadError}
-          </p>
-          <div className="flex gap-2 justify-center">
-            <Button onClick={retryLoad} variant="outline">
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Try Again
-            </Button>
-            <Button variant="ghost" onClick={() => router.push('/sessions')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Sessions
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!sessionPreview && !isLoading && !loadError) {
+  // Session not found in Convex (after loading completes)
+  if (!convexLoading && !convexSession) {
     return (
       <div className="container mx-auto py-8 px-4">
         <Button variant="ghost" onClick={() => router.push('/sessions')} className="mb-4">
@@ -255,16 +173,34 @@ export default function SessionDetailPage() {
           <p className="text-muted-foreground mb-4">
             The session you&apos;re looking for doesn&apos;t exist or has been removed.
           </p>
-          <Button variant="outline" onClick={retryLoad}>
+          <Button variant="outline" onClick={() => router.push('/sessions')}>
             <RotateCcw className="h-4 w-4 mr-2" />
-            Try Again
+            Back to Sessions
           </Button>
         </div>
       </div>
     );
   }
 
-  const displaySession = sessionPreview?.session || session;
+  const displaySession = convexSession;
+
+  // Compute context percentage from real token data
+  const contextPercentage = displaySession?.model && displaySession.tokens_total
+    ? (() => {
+        const model = displaySession.model;
+        const lowerModel = model.toLowerCase();
+        let contextWindow = 128000; // default
+        if (lowerModel.includes('claude')) contextWindow = 200000;
+        else if (lowerModel.includes('kimi-k2')) contextWindow = 256000;
+        else if (lowerModel.includes('kimi-for-coding')) contextWindow = 262144;
+        else if (lowerModel.includes('kimi')) contextWindow = 200000;
+        else if (lowerModel.includes('gemini')) contextWindow = 1000000;
+        else if (lowerModel.includes('gpt-5')) contextWindow = 128000;
+        else if (lowerModel.includes('gpt-4o') || lowerModel.includes('gpt-4-turbo')) contextWindow = 128000;
+        else if (lowerModel.includes('glm')) contextWindow = 128000;
+        return Math.min((displaySession.tokens_total / contextWindow) * 100, 100);
+      })()
+    : null;
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -350,7 +286,7 @@ export default function SessionDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div>
             <div className="text-sm text-muted-foreground">Model</div>
-            <div className="font-medium">{displaySession?.model}</div>
+            <div className="font-medium">{displaySession?.model || 'unknown'}</div>
           </div>
           <div>
             <div className="text-sm text-muted-foreground">Total Tokens</div>
@@ -359,9 +295,9 @@ export default function SessionDetailPage() {
           <div>
             <div className="text-sm text-muted-foreground">Context Usage</div>
             <div className="font-medium">
-              {sessionPreview?.contextPercentage 
-                ? `${sessionPreview.contextPercentage.toFixed(1)}%`
-                : 'Loading...'}
+              {contextPercentage !== null
+                ? `${contextPercentage.toFixed(1)}%`
+                : '—'}
             </div>
           </div>
           <div>
@@ -412,10 +348,23 @@ export default function SessionDetailPage() {
         {/* Session History */}
         <div className="border-t pt-6">
           <h2 className="text-lg font-semibold mb-4">Conversation History</h2>
-          {sessionPreview?.messages ? (
+          {messagesLoading ? (
+            <div className="h-32 w-full rounded-md border flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin mr-2" />
+              Loading conversation history...
+            </div>
+          ) : messagesError ? (
+            <div className="rounded-md border p-6 text-center">
+              <p className="text-muted-foreground mb-2">Failed to load messages: {messagesError}</p>
+              <Button variant="outline" size="sm" onClick={loadMessages}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          ) : messages && messages.length > 0 ? (
             <div className="h-96 w-full rounded-md border overflow-y-auto">
               <div className="p-4 space-y-4">
-                {sessionPreview.messages.map((message) => (
+                {messages.map((message) => (
                   <div
                     key={message.id}
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -441,20 +390,14 @@ export default function SessionDetailPage() {
                     </div>
                   </div>
                 ))}
-                {sessionPreview.messages.length === 0 && (
-                  <div className="text-center text-muted-foreground py-8">
-                    <p className="mb-2">No messages available.</p>
-                    <p className="text-sm opacity-70">
-                      Conversation history requires OpenClaw RPC connection. Session metadata is still available.
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           ) : (
-            <div className="h-32 w-full rounded-md border flex items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin mr-2" />
-              Loading conversation history...
+            <div className="text-center text-muted-foreground py-8">
+              <p className="mb-2">No messages available.</p>
+              <p className="text-sm opacity-70">
+                Conversation history requires OpenClaw RPC connection. Session metadata is still available.
+              </p>
             </div>
           )}
         </div>
