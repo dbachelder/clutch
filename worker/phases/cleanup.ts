@@ -25,7 +25,7 @@ import { execFileSync } from "node:child_process"
 import type { ConvexHttpClient } from "convex/browser"
 import { api } from "../../convex/_generated/api"
 import type { Task } from "../../lib/types"
-import { isPRMerged, type ProjectInfo } from "./github"
+import { isPRMerged, isPRClosedWithoutMerge, type ProjectInfo } from "./github"
 import { handleSelfDeploy } from "./self-deploy"
 import {
   cleanMergedLocalBranches,
@@ -259,6 +259,22 @@ export async function runCleanup(ctx: CleanupContext): Promise<CleanupResult> {
     log,
   })
   actions += mergedPRActions
+  
+  // ------------------------------------------------------------------
+  // 2.6. Check for closed-but-not-merged PRs on done tasks
+  //
+  //    If a task was mistakenly marked as done when its PR was closed
+  //    without merging, move it back to ready. This fixes the bug where
+  //    tasks show as complete but the code never landed on main.
+  // ------------------------------------------------------------------
+  const closedPRActions = await checkClosedPRsOnDoneTasks({
+    convex,
+    project,
+    doneTasks,
+    cycle,
+    log,
+  })
+  actions += closedPRActions
   // ------------------------------------------------------------------
 
   // ------------------------------------------------------------------
@@ -680,6 +696,113 @@ async function cleanMergedRemoteBranches(ctx: BranchCleanupContext): Promise<Bra
   }
 
   return { actions, hadMergedBranches }
+}
+
+// ============================================
+// Closed PR Sweep
+// ============================================
+
+interface ClosedPRSweepContext {
+  convex: ConvexHttpClient
+  project: ProjectInfo
+  doneTasks: Task[]
+  cycle: number
+  log: (params: LogRunParams) => Promise<void>
+}
+
+/**
+ * Check for closed-but-not-merged PRs on done tasks.
+ * 
+ * If a task was marked as done but its PR was actually closed without
+ * merging, move it back to ready. This fixes the bug where tasks show
+ * as complete but the code never landed on main.
+ *
+ * @returns Number of tasks moved back to ready
+ */
+async function checkClosedPRsOnDoneTasks(ctx: ClosedPRSweepContext): Promise<number> {
+  const { convex, project, doneTasks, cycle, log } = ctx
+
+  // Find done tasks with PR numbers that might have closed PRs
+  const doneTasksWithPRs = doneTasks.filter(task => task.pr_number)
+
+  if (doneTasksWithPRs.length === 0) {
+    return 0
+  }
+
+  console.log(`[cleanup] Checking ${doneTasksWithPRs.length} done tasks for closed-but-not-merged PRs`)
+
+  let recoveredCount = 0
+
+  for (const task of doneTasksWithPRs) {
+    const prNumber = task.pr_number!
+
+    // Check if PR was closed without merging
+    const closedWithoutMerge = isPRClosedWithoutMerge(prNumber, project)
+
+    if (!closedWithoutMerge) {
+      continue
+    }
+
+    // PR was closed without merge - move task back to ready
+    console.log(`[cleanup] Moving task ${task.id.slice(0, 8)} back to ready — PR #${prNumber} was closed without merge`)
+
+    try {
+      // Move task back to ready
+      await convex.mutation(api.tasks.move, {
+        id: task.id,
+        status: "ready",
+        reason: "pr_closed_without_merge",
+      })
+
+      // Reset retry count since this is a new attempt
+      await convex.mutation(api.tasks.update, {
+        id: task.id,
+        agent_retry_count: 0,
+        agent_session_key: undefined,
+        agent_spawned_at: undefined,
+      })
+
+      // Add comment explaining the recovery
+      await convex.mutation(api.comments.create, {
+        taskId: task.id,
+        author: "work-loop",
+        authorType: "coordinator",
+        content: `Task was marked as done but PR #${prNumber} was closed without merging. Moving back to ready for rework.`,
+        type: "status_change",
+      })
+
+      // Log recovery action
+      await log({
+        projectId: project.id,
+        cycle,
+        phase: "cleanup",
+        action: "task_recovered_from_closed_pr",
+        taskId: task.id,
+        details: {
+          prNumber,
+        },
+      })
+
+      recoveredCount++
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[cleanup] Failed to recover task ${task.id.slice(0, 8)}:`, msg)
+      await log({
+        projectId: project.id,
+        cycle,
+        phase: "cleanup",
+        action: "task_recovery_failed",
+        taskId: task.id,
+        details: { prNumber, error: msg },
+      })
+    }
+  }
+
+  if (recoveredCount > 0) {
+    console.log(`[cleanup] Recovered ${recoveredCount} task(s) from closed-but-not-merged PRs`)
+  }
+
+  return recoveredCount
 }
 
 // ============================================

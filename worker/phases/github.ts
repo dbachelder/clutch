@@ -35,6 +35,11 @@ export interface PRInfo {
  * Check if a PR has been merged (not just closed).
  * Used to auto-close tasks whose PR was merged but task status wasn't updated.
  *
+ * A PR is considered merged if and only if mergedAt is not null.
+ * This correctly distinguishes between:
+ * - Merged PRs: state="MERGED", mergedAt="timestamp" 
+ * - Closed without merge: state="CLOSED", mergedAt=null
+ *
  * @param prNumber - The PR number to check
  * @param project - The project containing the repo
  * @returns true if the PR is merged, false otherwise
@@ -43,7 +48,7 @@ export function isPRMerged(prNumber: number, project: ProjectInfo): boolean {
   try {
     const result = execFileSync(
       "gh",
-      ["pr", "view", String(prNumber), "--json", "state"],
+      ["pr", "view", String(prNumber), "--json", "state,mergedAt"],
       {
         encoding: "utf-8",
         timeout: 10_000,
@@ -51,8 +56,9 @@ export function isPRMerged(prNumber: number, project: ProjectInfo): boolean {
       }
     )
 
-    const pr = JSON.parse(result) as { state: string }
-    return pr.state === "MERGED"
+    const pr = JSON.parse(result) as { state: string; mergedAt: string | null }
+    // A PR is merged if and only if mergedAt is not null
+    return pr.mergedAt !== null
   } catch {
     return false
   }
@@ -183,4 +189,22 @@ export function getPRDetails(
     console.warn(`[GitHubUtils] Failed to get PR #${prNumber} details: ${message}`)
     return null
   }
+}
+
+/**
+ * Check if a PR was closed without merging.
+ * Used to identify tasks that should be moved back to ready instead of done.
+ *
+ * @param prNumber - The PR number to check
+ * @param project - The project containing the repo
+ * @returns true if the PR is closed but not merged, false otherwise
+ */
+export function isPRClosedWithoutMerge(prNumber: number, project: ProjectInfo): boolean {
+  const prDetails = getPRDetails(prNumber, project)
+  if (!prDetails) {
+    return false
+  }
+  
+  // PR is closed without merge if state is CLOSED and mergedAt is null
+  return prDetails.state === "CLOSED" && prDetails.mergedAt === null
 }
