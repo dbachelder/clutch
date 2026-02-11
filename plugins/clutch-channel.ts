@@ -104,30 +104,30 @@ async function updateMessageStatus(
 }
 
 /**
- * Get the oldest human message with "sent" status (FIFO for message_received)
+ * Get ALL human messages with "sent" status (for batch delivery marking)
  */
-async function getOldestSentMessage(
+async function getAllSentMessages(
   api: OpenClawPluginApi,
   chatId: string
-): Promise<{ id: string; delivery_status?: string } | null> {
+): Promise<{ id: string; delivery_status?: string }[]> {
   const clutchUrl = getClutchUrl(api);
 
   try {
-    const response = await fetch(`${clutchUrl}/api/chats/${chatId}/oldest-sent-message`, {
+    const response = await fetch(`${clutchUrl}/api/chats/${chatId}/all-sent-messages`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     });
 
     if (!response.ok) {
-      api.logger.warn(`Clutch: failed to get oldest sent message for chat ${chatId}: HTTP ${response.status}`);
-      return null;
+      api.logger.warn(`Clutch: failed to get all sent messages for chat ${chatId}: HTTP ${response.status}`);
+      return [];
     }
 
     const data = await response.json();
-    return data.message;
+    return data.messages || [];
   } catch (error) {
-    api.logger.warn(`Clutch: error getting oldest sent message for chat ${chatId}: ${error}`);
-    return null;
+    api.logger.warn(`Clutch: error getting all sent messages for chat ${chatId}: ${error}`);
+    return [];
   }
 }
 
@@ -441,7 +441,7 @@ export default function register(api: OpenClawPluginApi) {
   setTimeout(() => startHeartbeatMonitoring(api), 5000);
 
   // =========================================================================
-  // message_received hook — update oldest "sent" message to "delivered" (FIFO)
+  // message_received hook — update ALL "sent" messages to "delivered"
   // =========================================================================
   api.on("message_received", async (event, ctx) => {
     // message_received context has channelId + conversationId, not sessionKey
@@ -450,15 +450,21 @@ export default function register(api: OpenClawPluginApi) {
     const chatId = ctx.conversationId;
     if (!chatId) return;
 
-    // Find the oldest human message with "sent" status and mark as delivered (FIFO)
-    const oldestSentMessage = await getOldestSentMessage(api, chatId);
-    
-    if (oldestSentMessage && oldestSentMessage.delivery_status === "sent") {
-      api.logger.info(`Clutch: marking oldest sent message ${oldestSentMessage.id} as delivered (FIFO)`);
-      const result = await updateMessageStatus(api, chatId, oldestSentMessage.id, "delivered");
-      
-      if (!result.ok) {
-        api.logger.warn(`Clutch: failed to mark message ${oldestSentMessage.id} as delivered: ${result.error}`);
+    // Mark ALL sent messages as delivered since the gateway has received them all
+    // This fixes the issue where queued messages stayed stuck at "sent" status
+    const sentMessages = await getAllSentMessages(api, chatId);
+
+    if (sentMessages.length > 0) {
+      api.logger.info(`Clutch: marking ${sentMessages.length} sent message(s) as delivered for chat ${chatId}`);
+
+      for (const message of sentMessages) {
+        if (message.delivery_status === "sent") {
+          const result = await updateMessageStatus(api, chatId, message.id, "delivered");
+
+          if (!result.ok) {
+            api.logger.warn(`Clutch: failed to mark message ${message.id} as delivered: ${result.error}`);
+          }
+        }
       }
     }
   });
