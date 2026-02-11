@@ -119,6 +119,28 @@ async function takeScreenshot(browser: Browser, config: typeof SCREENSHOTS[0]) {
     // Wait for content to load
     await page.waitForTimeout(config.waitFor)
 
+    // For chat page, click into the first chat to show actual conversation
+    if (config.path.includes("/chat")) {
+      try {
+        // Wait for chat list to be visible
+        await page.waitForSelector('[data-testid="chat-list-item"], .chat-list-item, [role="listitem"]', { timeout: 5000 })
+        // Click the first chat in the list
+        const chatItem = await page.locator('[data-testid="chat-list-item"], .chat-list-item, [role="listitem"]').first()
+        if (await chatItem.isVisible().catch(() => false)) {
+          await chatItem.click()
+          // Wait for chat content to load
+          await page.waitForTimeout(2000)
+        }
+      } catch {
+        // If selectors don't work, try generic approach
+        const firstRow = await page.locator('a[href*="/chat/"], [class*="chat"]').first()
+        if (await firstRow.isVisible().catch(() => false)) {
+          await firstRow.click()
+          await page.waitForTimeout(2000)
+        }
+      }
+    }
+
     // Hide scrollbars for clean screenshot
     await hideScrollbars(page)
 
