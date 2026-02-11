@@ -722,14 +722,21 @@ interface ClosedPRSweepContext {
 async function checkClosedPRsOnDoneTasks(ctx: ClosedPRSweepContext): Promise<number> {
   const { convex, project, doneTasks, cycle, log } = ctx
 
-  // Find done tasks with PR numbers that might have closed PRs
-  const doneTasksWithPRs = doneTasks.filter(task => task.pr_number)
+  // Only check tasks completed in the last 24 hours — older done tasks with
+  // closed PRs were almost certainly intentionally abandoned, not accidental.
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000
+  const cutoff = Date.now() - ONE_DAY_MS
+  const doneTasksWithPRs = doneTasks.filter(task =>
+    task.pr_number &&
+    task.completed_at &&
+    task.completed_at > cutoff
+  )
 
   if (doneTasksWithPRs.length === 0) {
     return 0
   }
 
-  console.log(`[cleanup] Checking ${doneTasksWithPRs.length} done tasks for closed-but-not-merged PRs`)
+  console.log(`[cleanup] Checking ${doneTasksWithPRs.length} recently-completed tasks for closed-but-not-merged PRs`)
 
   let recoveredCount = 0
 
