@@ -6,9 +6,13 @@
  * It MUST be run before any destructive demo operation (reset, clean).
  *
  * Safety checks:
- * 1. Verify production containers are NOT running on ports 3210/3211
- * 2. Verify we're not targeting production .env.local
- * 3. Verify demo compose file is being used
+ * 1. Verify demo compose uses demo ports 3230/3231
+ * 2. Verify demo env points to demo ports
+ * 3. Verify demo-reset only runs `docker compose -f docker-compose.demo.yml`
+ * 4. Verify docker compose down targets ONLY demo volume (convex-demo-data)
+ *
+ * Note: Production containers running on 3210/3211 is EXPECTED and normal.
+ * The danger is the demo targeting production, not production existing.
  *
  * Exit codes:
  *   0 - Safe to proceed
@@ -18,15 +22,6 @@
 import { execSync } from "child_process"
 import { existsSync } from "fs"
 import { resolve } from "path"
-
-// Production ports that must NOT be in use during demo operations
-const PRODUCTION_PORTS = [3210, 3211]
-
-// Demo ports that are safe to use
-const DEMO_PORTS = [3230, 3231]
-
-// Production container names that must NOT be running
-const PRODUCTION_CONTAINERS = ["openclutch-convex", "openclutch-app"]
 
 // Production volume name that must NOT be removed
 const PRODUCTION_VOLUME = "convex-data"
@@ -54,81 +49,12 @@ function success(message: string): void {
 }
 
 /**
- * Check if production containers are running on their designated ports
- */
-function checkProductionContainers(): boolean {
-  let isSafe = true
-
-  log("Checking for production containers...")
-
-  for (const port of PRODUCTION_PORTS) {
-    try {
-      // Check if anything is listening on the production port
-      const result = execSync(`lsof -Pi :${port} -sTCP:LISTEN -t 2>/dev/null || echo ""`, {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "ignore"],
-      }).trim()
-
-      if (result) {
-        error(`Something is already listening on production port ${port}`)
-        try {
-          const processInfo = execSync(`lsof -Pi :${port} -sTCP:LISTEN 2>/dev/null || echo ""`, {
-            encoding: "utf-8",
-            stdio: ["pipe", "pipe", "ignore"],
-          }).trim()
-          log(`  Process info:\n${processInfo}`)
-        } catch {
-          // Ignore errors getting process info
-        }
-        isSafe = false
-      }
-    } catch {
-      // lsof not available or other error, try alternative check
-      try {
-        execSync(`nc -z localhost ${port} 2>/dev/null`, { stdio: "ignore" })
-        error(`Port ${port} appears to be in use (connection succeeded)`)
-        isSafe = false
-      } catch {
-        // Port is not in use, which is what we want
-      }
-    }
-  }
-
-  // Also check for known production container names
-  try {
-    const psOutput = execSync("docker ps --format '{{.Names}}' 2>/dev/null || echo \"\"", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "ignore"],
-    }).trim()
-
-    const runningContainers = psOutput.split("\n").filter(Boolean)
-
-    for (const containerName of PRODUCTION_CONTAINERS) {
-      if (runningContainers.some((name) => name.includes(containerName))) {
-        error(`Production container '${containerName}' is currently running`)
-        isSafe = false
-      }
-    }
-  } catch {
-    // Docker not available, skip this check
-    warn("Could not check running Docker containers")
-  }
-
-  if (isSafe) {
-    success("No production containers detected on ports 3210/3211")
-  }
-
-  return isSafe
-}
-
-/**
  * Check if demo environment file exists and is valid
  */
 function checkDemoEnvironment(): boolean {
   log("Checking demo environment configuration...")
 
   const demoEnvPath = resolve(process.cwd(), ".env.demo.local")
-  const productionEnvPath = resolve(process.cwd(), ".env.local")
 
   // Check that demo env exists
   if (!existsSync(demoEnvPath)) {
@@ -156,11 +82,6 @@ function checkDemoEnvironment(): boolean {
     warn("Could not read demo environment file for verification")
   }
 
-  // Ensure production .env.local exists but warn about it
-  if (existsSync(productionEnvPath)) {
-    log("  Note: .env.local exists (this is expected)")
-  }
-
   return true
 }
 
@@ -185,6 +106,7 @@ function checkDemoComposeFile(): boolean {
     const hasDemoPort3230 = composeContent.includes('"3230:3210"')
     const hasDemoPort3231 = composeContent.includes('"3231:3211"')
     const hasDemoVolume = composeContent.includes("convex-demo-data:")
+    const hasProductionVolume = composeContent.includes("convex-data:") && !composeContent.includes("convex-demo-data:")
 
     if (!hasDemoPort3230 || !hasDemoPort3231) {
       error("Demo compose file does not have hardcoded demo ports (3230/3231)")
@@ -196,9 +118,61 @@ function checkDemoComposeFile(): boolean {
       return false
     }
 
+    if (hasProductionVolume) {
+      error("Demo compose file references production volume (convex-data)!")
+      return false
+    }
+
     success("Demo compose file exists with correct ports and volume")
   } catch {
     warn("Could not verify demo compose file contents")
+  }
+
+  return true
+}
+
+/**
+ * Verify that reset operations target only demo resources
+ */
+function checkResetSafety(): boolean {
+  log("Checking reset operation safety...")
+
+  // Verify demo-reset.ts only uses demo compose file
+  const resetScriptPath = resolve(process.cwd(), "scripts/demo-reset.ts")
+
+  if (!existsSync(resetScriptPath)) {
+    warn("Could not find demo-reset.ts to verify reset safety")
+    return true
+  }
+
+  try {
+    const resetScriptContent = execSync(`cat "${resetScriptPath}"`, { encoding: "utf-8" })
+
+    // Check that it only uses docker-compose.demo.yml
+    const usesDemoCompose = resetScriptContent.includes("docker-compose.demo.yml")
+    const usesProductionCompose = resetScriptContent.includes("docker-compose.yml") &&
+      !resetScriptContent.includes("docker-compose.demo.yml")
+
+    // Check that it only removes demo volume
+    const removesDemoVolume = resetScriptContent.includes("convex-demo-data")
+    const removesProductionVolume = resetScriptContent.includes(PRODUCTION_VOLUME) &&
+      !resetScriptContent.includes("convex-demo-data")
+
+    if (usesProductionCompose) {
+      error("demo-reset.ts appears to reference production compose file!")
+      return false
+    }
+
+    if (removesProductionVolume) {
+      error("demo-reset.ts appears to reference production volume!")
+      return false
+    }
+
+    if (usesDemoCompose && removesDemoVolume) {
+      success("Reset script targets only demo resources")
+    }
+  } catch {
+    warn("Could not verify reset script safety")
   }
 
   return true
@@ -213,8 +187,15 @@ function runSafetyChecks(): boolean {
   log("🔒 DEMO SAFETY CHECKS")
   log("=".repeat(60))
   log("")
+  log("Note: Production containers on ports 3210/3211 are EXPECTED.")
+  log("These checks ensure demo operations target ONLY demo resources.")
+  log("")
 
-  const checks = [checkProductionContainers(), checkDemoEnvironment(), checkDemoComposeFile()]
+  const checks = [
+    checkDemoEnvironment(),
+    checkDemoComposeFile(),
+    checkResetSafety(),
+  ]
 
   log("")
   log("=".repeat(60))
@@ -227,20 +208,11 @@ function runSafetyChecks(): boolean {
   } else {
     error("Safety check FAILED - demo operation aborted")
     log("")
-    log("If you're certain production is not running, you can bypass with:")
-    log("  DEMO_UNSAFE_BYPASS=true pnpm demo:reset")
-    log("")
-    log("⚠️  WARNING: Bypassing safety checks may result in DATA LOSS")
+    log("Fix the issues above before retrying.")
     log("=".repeat(60))
     log("")
     return false
   }
-}
-
-// Check for bypass flag
-if (process.env.DEMO_UNSAFE_BYPASS === "true") {
-  warn("SAFETY CHECKS BYPASSED - Proceeding at your own risk!")
-  process.exit(0)
 }
 
 // Run checks
