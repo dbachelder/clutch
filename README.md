@@ -460,6 +460,61 @@ Key outputs:
 - `cloudfront_distribution_id` — For cache invalidation
 - `website_url` — https://clutch.md
 
+### GitHub Actions Deployment
+
+The site automatically deploys via GitHub Actions when changes are pushed to `main` that affect the `site/` directory or the workflow file.
+
+#### Required GitHub Secrets
+
+Configure these secrets in your repository settings (**Settings → Secrets and variables → Actions**):
+
+| Secret | Description | How to Obtain |
+|--------|-------------|---------------|
+| `AWS_ACCOUNT_ID` | Your AWS account ID | AWS Console → Account (top right) or `aws sts get-caller-identity` |
+| `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution ID | From `tofu output cloudfront_distribution_id` or AWS Console → CloudFront |
+
+#### AWS OIDC Setup
+
+The workflow uses OIDC for secure, keyless authentication with AWS. You must configure the IAM role and trust policy first:
+
+1. **Create an IAM OIDC provider for GitHub** (if not already done):
+   ```bash
+   aws iam create-open-id-connect-provider \
+     --url https://token.actions.githubusercontent.com \
+     --thumbprint-list 6938fd4e98bab03faadb97b34396831e3780aea1 \
+     --client-id-list sts.amazonaws.com
+   ```
+
+2. **Create the IAM role** (`GitHubActionsClutchDeployRole`) with this trust policy:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": {
+           "Federated": "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {
+             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+           },
+           "StringLike": {
+             "token.actions.githubusercontent.com:sub": "repo:YOUR_ORG/clutch:ref:refs/heads/main"
+           }
+         }
+       }
+     ]
+   }
+   ```
+
+3. **Attach permissions** to the role:
+   - `s3:PutObject`, `s3:DeleteObject` on the `clutch.md` bucket
+   - `cloudfront:CreateInvalidation` on the distribution
+
+For detailed OIDC setup instructions, see the [AWS documentation on configuring OpenID Connect in AWS](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services).
+
 ---
 
 ## Deployment
