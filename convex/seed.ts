@@ -487,6 +487,20 @@ export const insertSession = mutation({
     completed_at: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Check if a session with this ID already exists (prevents duplicates on re-seed)
+    const existingById = await ctx.db.query("sessions").withIndex("by_uuid", (q) => q.eq("id", args.id)).unique()
+    if (existingById) {
+      // Session with this ID already exists, skip insertion
+      return
+    }
+    // Also check if a session with this session_key already exists (prevents duplicate session_keys)
+    if (args.session_key) {
+      const existingByKey = await ctx.db.query("sessions").withIndex("by_session_key", (q) => q.eq("session_key", args.session_key)).unique()
+      if (existingByKey) {
+        // Session with this session_key already exists, skip insertion
+        return
+      }
+    }
     await ctx.db.insert("sessions", args as any)
   },
 })
