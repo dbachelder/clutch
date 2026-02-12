@@ -28,7 +28,7 @@ export function ActiveAgents({ projectId, projectSlug, projectName }: ActiveAgen
       role: item.task.role ?? "dev",
       // Session data (now from sessions table via Convex)
       sessionKey: item.task.agent_session_key,
-      model: item.session?.model ?? "unknown",
+      model: item.session?.model ?? null,
       provider: item.session?.provider ?? null,
       status: item.session?.status ?? "idle",
       tokensInput: item.session?.tokens_input ?? 0,
@@ -38,7 +38,8 @@ export function ActiveAgents({ projectId, projectSlug, projectName }: ActiveAgen
       lastActiveAt: item.session?.last_active_at ?? null,
       outputPreview: item.session?.output_preview ?? null,
       stopReason: item.session?.stop_reason ?? null,
-      sessionCreatedAt: item.session?.created_at ?? null,
+      // Use agent_spawned_at from task as fallback for timing (session created_at may not be set yet)
+      sessionCreatedAt: item.session?.created_at ?? item.task.agent_spawned_at ?? null,
       sessionUpdatedAt: item.session?.updated_at ?? 0,
       projectName: projectName,
     }))
@@ -107,7 +108,7 @@ interface AgentCardProps {
     taskTitle: string
     role: string
     sessionKey: string | null
-    model: string
+    model: string | null
     provider: string | null
     status: string
     tokensInput: number
@@ -146,7 +147,7 @@ function AgentCard({ agent, projectSlug }: AgentCardProps) {
 
   // Format model name for display
   const displayModel = useMemo(() => {
-    if (agent.model === "unknown") return "unknown"
+    if (!agent.model) return "starting..."
     // Extract short name from full model path (e.g., "anthropic/claude-sonnet-4" -> "claude-sonnet")
     const parts = agent.model.split('/')
     const shortName = parts[parts.length - 1]
@@ -160,7 +161,7 @@ function AgentCard({ agent, projectSlug }: AgentCardProps) {
 
   // Calculate duration from session start time
   const duration = useMemo(() => {
-    if (!agent.sessionCreatedAt) return "Unknown"
+    if (!agent.sessionCreatedAt) return "just started"
     return formatDuration(agent.sessionCreatedAt)
   }, [agent.sessionCreatedAt])
 
