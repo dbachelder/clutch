@@ -186,6 +186,11 @@
     word-break: break-all;
     white-space: pre-wrap;
   }
+
+  /* Preserve line breaks in markdown paragraphs */
+  .markdown-content p {
+    white-space: pre-line;
+  }
   
   /* Handle long URLs and text that might not break naturally */
   .markdown-content a {
