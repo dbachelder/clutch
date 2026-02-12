@@ -94,7 +94,7 @@ function CustomLegend({
             style={{ backgroundColor: entry.color }}
           />
           <span className="text-muted-foreground">{entry.value}:</span>
-          <span className="font-medium">${entry.payload.cost.toFixed(2)}</span>
+          <span className="font-medium">${(entry.payload.cost ?? 0).toFixed(2)}</span>
           <span className="text-muted-foreground text-xs">({entry.payload.percentage.toFixed(1)}%)</span>
         </div>
       ))}
