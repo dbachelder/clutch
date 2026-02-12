@@ -49,7 +49,7 @@ services:
       # Logging
       - RUST_LOG=${RUST_LOG:-info}
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3210/version"]
+      test: ["CMD", "curl", "-f", "http://localhost:3210/version"]
       interval: 10s
       timeout: 5s
       retries: 5

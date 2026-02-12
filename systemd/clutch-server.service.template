@@ -5,6 +5,7 @@ After=network.target
 
 [Service]
 Type=simple
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:{{HOME}}/.volta/bin:{{HOME}}/.local/bin:{{HOME}}/bin:{{HOME}}/.cargo/bin:/home/linuxbrew/.linuxbrew/bin
 WorkingDirectory={{INSTALL_DIR}}
 EnvironmentFile={{ENV_FILE}}
 Environment=NODE_ENV=production
