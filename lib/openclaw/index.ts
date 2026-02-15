@@ -34,14 +34,12 @@ export type {
 // High-level API
 export {
   // Session management
-  listSessions,
-  listSessionsWithEffectiveModel,
   getSessionPreview,
   resetSession,
   compactSession,
   abortSession,
   cancelSession,
-  
+
   // Chat operations
   sendChatMessage,
 } from './api';

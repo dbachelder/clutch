@@ -294,38 +294,6 @@ export class GatewayRpcClient {
   }
 
   /**
-   * List active sessions from the gateway.
-   */
-  async listSessions(activeMinutes = 30): Promise<Array<{
-    key: string
-    sessionId: string
-    updatedAt: number
-    inputTokens: number
-    outputTokens: number
-    totalTokens: number
-    model: string
-    contextTokens: number
-    abortedLastRun: boolean
-  }>> {
-    const result = await this.request<{ sessions: Array<Record<string, unknown>> }>(
-      "sessions.list",
-      { activeMinutes },
-      10_000,
-    )
-    return (result?.sessions ?? []) as Array<{
-      key: string
-      sessionId: string
-      updatedAt: number
-      inputTokens: number
-      outputTokens: number
-      totalTokens: number
-      model: string
-      contextTokens: number
-      abortedLastRun: boolean
-    }>
-  }
-
-  /**
    * Delete (kill) a session on the gateway.
    *
    * Used to terminate stuck agent sessions that are no longer making progress.
