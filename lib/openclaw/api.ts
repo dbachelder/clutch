@@ -26,24 +26,6 @@ export type { GatewayStatus } from './rpc';
 // ============================================================================
 
 /**
- * @deprecated Sessions are now fetched reactively from Convex.
- * Use Convex sessions table queries (api.sessions.list) instead.
- */
-export async function listSessions(): Promise<{ sessions: Session[]; total: number }> {
-  console.warn('[openclaw/api] listSessions is deprecated. Use Convex sessions table queries (api.sessions.list)');
-  return { sessions: [], total: 0 };
-}
-
-/**
- * @deprecated Sessions are now fetched reactively from Convex.
- * Use Convex sessions table queries (api.sessions.list) instead.
- */
-export async function listSessionsWithEffectiveModel(): Promise<{ sessions: Session[]; total: number }> {
-  console.warn('[openclaw/api] listSessionsWithEffectiveModel is deprecated. Use Convex sessions table queries (api.sessions.list)');
-  return { sessions: [], total: 0 };
-}
-
-/**
  * Get model context window size in tokens.
  */
 function getModelContextWindow(model: string): number {

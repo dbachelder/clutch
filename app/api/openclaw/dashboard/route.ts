@@ -140,50 +140,19 @@ async function fetchStatus(
   }
 }
 
-/** Fetch sessions list from OpenClaw */
-async function fetchSessions(
-  client: ReturnType<typeof getOpenClawClient>
-): Promise<{
+/** Fetch sessions list from OpenClaw
+ *
+ * NOTE: Session tracking moved to Convex (agent_session_key, agent_spawned_at).
+ * This RPC-based approach is deprecated. Returns empty data for backwards compatibility.
+ */
+async function fetchSessions(): Promise<{
   total: number
   active: number
   byAgent: Array<{ agentId: string; count: number }>
 } | null> {
-  try {
-    const result = await client.rpc<{
-      sessions?: Array<{
-        agentId?: string
-        lastActivityAt?: number
-      }>
-      total?: number
-    }>("sessions.list", { limit: 1000 })
-
-    const sessions = result.sessions ?? []
-    const total = result.total ?? sessions.length
-
-    // Count active sessions (updated in last 10 minutes)
-    const tenMinutesAgo = Date.now() - 10 * 60 * 1000
-    const active = sessions.filter(
-      (s) => s.lastActivityAt && s.lastActivityAt > tenMinutesAgo
-    ).length
-
-    // Group by agent
-    const agentCounts = new Map<string, number>()
-    for (const session of sessions) {
-      const agentId = session.agentId ?? "unknown"
-      agentCounts.set(agentId, (agentCounts.get(agentId) ?? 0) + 1)
-    }
-
-    const byAgent = Array.from(agentCounts.entries()).map(
-      ([agentId, count]) => ({
-        agentId,
-        count,
-      })
-    )
-
-    return { total, active, byAgent }
-  } catch {
-    return null
-  }
+  // Sessions are now tracked via Convex fields (agent_session_key, agent_spawned_at)
+  // and session-file-reader.ts. The RPC-based sessions.list is deprecated.
+  return { total: 0, active: 0, byAgent: [] }
 }
 
 /** Fetch usage data from OpenClaw */
@@ -318,7 +287,7 @@ export async function GET(): Promise<NextResponse> {
     await Promise.all([
       fetchHealth(client),
       fetchStatus(client),
-      fetchSessions(client),
+      fetchSessions(),
       fetchUsage(client),
       fetchChannels(client),
       fetchCron(client),
